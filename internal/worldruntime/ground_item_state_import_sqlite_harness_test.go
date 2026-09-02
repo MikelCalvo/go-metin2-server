@@ -267,6 +267,220 @@ func TestSQLiteHarnessGroundItemStateImportAcceptsEmptyExport(t *testing.T) {
 	}
 }
 
+func TestSQLiteHarnessGroundItemStateImportReplaceOverwritesCanonicalRows(t *testing.T) {
+	db := openSQLiteGroundItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{{
+		Login:  "ground-item-owner",
+		Empire: 1,
+		Characters: []loginticket.Character{
+			groundItemStateImportCharacter(0x0103019c, "GroundItemOwner"),
+		},
+	}}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	firstExport, err := ExportBootstrapGroundItemState([]GroundItemSnapshot{{
+		VID: 0x0700002c, Vnum: 3001, Count: 1,
+		OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner",
+		OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c,
+		PickupRange: 300, MapIndex: 1, X: 100, Y: 200,
+		HasSockets: true, Socket0: 4, Socket1: 5, Socket2: 6,
+		HasAttributes: true, Attr0Type: 2, Attr0Value: 5,
+	}})
+	if err != nil {
+		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
+	}
+	if _, err := ImportBootstrapGroundItemState(ctx, db, firstExport); err != nil {
+		t.Fatalf("first insert-only ImportBootstrapGroundItemState: %v", err)
+	}
+	if _, err := ImportBootstrapGroundItemState(ctx, db, firstExport); err == nil {
+		t.Fatal("second insert-only ImportBootstrapGroundItemState succeeded, want unique conflict")
+	}
+
+	replacedExport, err := ExportBootstrapGroundItemState([]GroundItemSnapshot{{
+		VID: 0x0700002c, Vnum: 3001, Count: 3,
+		OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner",
+		OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c,
+		PickupRange: 450, MapIndex: 1, X: 111, Y: 222, Z: 1,
+		HasSockets: true, Socket0: 7, Socket1: 8, Socket2: 9,
+		HasAttributes: true, Attr0Type: 3, Attr0Value: 9,
+	}})
+	if err != nil {
+		t.Fatalf("ExportBootstrapGroundItemState(replaced): %v", err)
+	}
+	result, err := ImportBootstrapGroundItemState(ctx, db, replacedExport, ImportBootstrapGroundItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("replace ImportBootstrapGroundItemState: %v", err)
+	}
+	if !result.Replaced {
+		t.Fatalf("replace result.Replaced = false, want true")
+	}
+	if result.GroundItemCount != 1 || result.ItemShapedCount != 1 || result.GoldShapedCount != 0 {
+		t.Fatalf("unexpected replace counts: %+v", result)
+	}
+
+	var rowCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bootstrap_ground_items`).Scan(&rowCount); err != nil {
+		t.Fatalf("count ground items after replace: %v", err)
+	}
+	if rowCount != 1 {
+		t.Fatalf("ground item rows after replace = %d, want 1", rowCount)
+	}
+	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 3, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 111, 222, 1, 450, true, 7, 8, 9, true, 3, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+
+func TestSQLiteHarnessGroundItemStateImportReplaceLeavesUnlistedVIDsUntouched(t *testing.T) {
+	db := openSQLiteGroundItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{
+		{
+			Login:  "ground-item-owner",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				groundItemStateImportCharacter(0x0103019c, "GroundItemOwner"),
+			},
+		},
+		{
+			Login:  "ground-gold-owner",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				{},
+				groundItemStateImportCharacter(0x0103019d, "GroundGoldOwner"),
+			},
+		},
+	}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	count := uint16(2)
+	gold := uint32(250)
+	fullExport, err := ExportBootstrapGroundItemState([]GroundItemSnapshot{
+		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2},
+		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3},
+	})
+	if err != nil {
+		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
+	}
+	if _, err := ImportBootstrapGroundItemState(ctx, db, fullExport); err != nil {
+		t.Fatalf("seed ImportBootstrapGroundItemState: %v", err)
+	}
+
+	newCount := uint16(9)
+	itemOnly := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		VIDs:             []uint32{0x0700002c},
+		GroundItems: []BootstrapGroundItemStateRow{{
+			VID: 0x0700002c, Vnum: 3001, ItemCount: &newCount,
+			OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c,
+			OwnerName: "GroundItemOwner", MapIndex: 1, X: 1300, Y: 2300, Z: 4, PickupRange: 500,
+		}},
+	}
+	result, err := ImportBootstrapGroundItemState(ctx, db, itemOnly, ImportBootstrapGroundItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("scoped replace ImportBootstrapGroundItemState: %v", err)
+	}
+	if !result.Replaced || result.GroundItemCount != 1 || result.ItemShapedCount != 1 {
+		t.Fatalf("unexpected scoped replace result: %+v", result)
+	}
+
+	var itemRows, goldRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bootstrap_ground_items WHERE vid = 117440556`).Scan(&itemRows); err != nil {
+		t.Fatalf("count item vid rows: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bootstrap_ground_items WHERE vid = 117440557`).Scan(&goldRows); err != nil {
+		t.Fatalf("count gold vid rows: %v", err)
+	}
+	if itemRows != 1 || goldRows != 1 {
+		t.Fatalf("scoped replace left unexpected counts item=%d gold=%d", itemRows, goldRows)
+	}
+	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 9, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 1300, 2300, 4, 500, false, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	assertGroundItemRow(t, db, 0x0700002d, 1, sql.NullInt64{}, sql.NullInt64{Int64: 250, Valid: true}, "ground-gold-owner", 0x0103019d, 0x0204019d, "GroundGoldOwner", 42, 1200, 2200, 3, 750, false, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+}
+
+func TestSQLiteHarnessGroundItemStateImportReplaceWipesListedVIDWithEmptyRows(t *testing.T) {
+	db := openSQLiteGroundItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	}
+
+	accounts := []accountstore.Account{{
+		Login:  "ground-item-owner",
+		Empire: 1,
+		Characters: []loginticket.Character{
+			groundItemStateImportCharacter(0x0103019c, "GroundItemOwner"),
+		},
+	}}
+	rosterExport, err := accountstore.ExportAccountCharacterRoster(accounts)
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, rosterExport); err != nil {
+		t.Fatalf("ImportAccountCharacterRoster: %v", err)
+	}
+
+	seedExport, err := ExportBootstrapGroundItemState([]GroundItemSnapshot{{
+		VID: 0x0700002c, Vnum: 3001, Count: 1,
+		OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner",
+		OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c,
+		PickupRange: 300, MapIndex: 1, X: 100, Y: 200,
+	}})
+	if err != nil {
+		t.Fatalf("ExportBootstrapGroundItemState: %v", err)
+	}
+	if _, err := ImportBootstrapGroundItemState(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportBootstrapGroundItemState: %v", err)
+	}
+
+	emptyWipe := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		VIDs:             []uint32{0x0700002c},
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+	result, err := ImportBootstrapGroundItemState(ctx, db, emptyWipe, ImportBootstrapGroundItemStateOptions{Replace: true})
+	if err != nil {
+		t.Fatalf("empty wipe replace: %v", err)
+	}
+	if !result.Replaced || result.GroundItemCount != 0 || len(result.VIDs) != 1 || result.VIDs[0] != 0x0700002c {
+		t.Fatalf("unexpected empty wipe result: %+v", result)
+	}
+
+	var rowCount int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bootstrap_ground_items`).Scan(&rowCount); err != nil {
+		t.Fatalf("count ground items after wipe: %v", err)
+	}
+	if rowCount != 0 {
+		t.Fatalf("ground item rows after empty wipe = %d, want 0", rowCount)
+	}
+}
+
 func assertGroundItemRow(
 	t *testing.T,
 	db *sql.DB,

@@ -34,6 +34,22 @@ type BootstrapGroundItemStateImportResult struct {
 	ItemShapedCount  int      `json:"item_shaped_count"`
 	GoldShapedCount  int      `json:"gold_shaped_count"`
 	VIDs             []uint32 `json:"vids"`
+	// Replaced is true when ImportBootstrapGroundItemState ran with the opt-in
+	// scoped replace policy (delete then insert for listed ground VIDs).
+	// Omitted from JSON when false so legacy insert-only import-result files stay
+	// valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportBootstrapGroundItemStateOptions controls opt-in mutation policy for
+// ImportBootstrapGroundItemState. The zero value keeps today's insert-only
+// behavior.
+type ImportBootstrapGroundItemStateOptions struct {
+	// Replace, when true, deletes existing tip-0010 rows for every ground VID in
+	// the quarantined export summary before inserting the canonicalized export
+	// rows, all inside one transaction. VIDs not listed in the export remain
+	// untouched.
+	Replace bool
 }
 
 // ImportBootstrapGroundItemState validates a retained 0010 ground-item-state
@@ -42,12 +58,22 @@ type BootstrapGroundItemStateImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. Parent character rows
 // from 0002 must already exist (or the engine FK check fails closed). This
-// primitive does not mutate bootstrap file stores or live shared-world handles,
-// does not rewrite schema_migrations, and does not invent upsert / merge
-// policy: duplicate primary keys fail closed and roll the transaction back.
-func ImportBootstrapGroundItemState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export BootstrapGroundItemStateExport) (BootstrapGroundItemStateImportResult, error) {
+// primitive does not mutate bootstrap file stores or live shared-world handles
+// and does not rewrite schema_migrations. Without options (or with
+// Replace=false) it does not invent upsert / merge policy: duplicate primary
+// keys fail closed and roll the transaction back. Pass
+// ImportBootstrapGroundItemStateOptions{Replace: true} for the opt-in scoped
+// replace path frozen by the tip-0010 replace contract.
+func ImportBootstrapGroundItemState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export BootstrapGroundItemStateExport, opts ...ImportBootstrapGroundItemStateOptions) (BootstrapGroundItemStateImportResult, error) {
 	if groundItemStateImportExecutorIsNil(executor) {
 		return BootstrapGroundItemStateImportResult{}, ErrBootstrapGroundItemStateImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return BootstrapGroundItemStateImportResult{}, fmt.Errorf("ImportBootstrapGroundItemState accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineBootstrapGroundItemStateExport(export)
@@ -62,6 +88,7 @@ func ImportBootstrapGroundItemState(ctx context.Context, executor dbmigrations.S
 		ItemShapedCount:  summary.ItemShapedCount,
 		GoldShapedCount:  summary.GoldShapedCount,
 		VIDs:             append([]uint32(nil), summary.VIDs...),
+		Replaced:         replace,
 	}
 	if result.VIDs == nil {
 		result.VIDs = []uint32{}
@@ -74,6 +101,14 @@ func ImportBootstrapGroundItemState(ctx context.Context, executor dbmigrations.S
 
 	if err := requireBootstrapGroundItemStateSchema(ctx, tx); err != nil {
 		return BootstrapGroundItemStateImportResult{}, rollbackAfterGroundItemStateImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, vid := range summary.VIDs {
+			if err := deleteBootstrapGroundItemForVID(ctx, tx, vid); err != nil {
+				return BootstrapGroundItemStateImportResult{}, rollbackAfterGroundItemStateImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.GroundItems {
@@ -121,6 +156,13 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceSocketsMigrationVersion, BootstrapGroundItemInstanceSocketsMigrationName)
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceAttributesMigrationVersion, BootstrapGroundItemInstanceAttributesMigrationName)
+}
+
+func deleteBootstrapGroundItemForVID(ctx context.Context, tx *sql.Tx, vid uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM bootstrap_ground_items WHERE vid = ?`, int64(vid)); err != nil {
+		return fmt.Errorf("delete bootstrap ground item vid %d: %w", vid, err)
+	}
+	return nil
 }
 
 func insertBootstrapGroundItem(ctx context.Context, tx *sql.Tx, row BootstrapGroundItemStateRow) error {

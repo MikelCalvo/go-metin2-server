@@ -44,6 +44,6 @@ insert-only primary-key / unique-index conflicts.
 
 ## Status
 
-GREEN on `lane/persistence`. Follow-on tip-`0010` ground-item-state scoped-replace freeze is owned by
-[bootstrap ground-item-state import replace/upsert contract freeze](2026-09-02-bootstrap-ground-item-state-import-replace-upsert-contract-freeze.md);
+GREEN on `lane/persistence`. Follow-on tip-`0010` ground-item-state scoped replace GREEN is owned by
+[bootstrap ground-item-state import scoped replace GREEN](2026-09-02-bootstrap-ground-item-state-import-scoped-replace-green.md);
 production-engine selection remains deferred.

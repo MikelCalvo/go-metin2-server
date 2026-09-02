@@ -2,6 +2,7 @@ package worldruntime
 
 import (
 	"fmt"
+	"sort"
 )
 
 // BootstrapGroundItemStateQuarantineSummary is the metadata-only result of
@@ -53,6 +54,21 @@ func canonicalizeBootstrapGroundItemStateExport(export BootstrapGroundItemStateE
 		return BootstrapGroundItemStateExport{}, BootstrapGroundItemStateQuarantineSummary{}, fmt.Errorf("%w: ground_items must be present", ErrInvalidBootstrapGroundItemStateExport)
 	}
 
+	vidScope := make(map[uint32]struct{}, len(export.GroundItems)+len(export.VIDs))
+	if export.VIDs != nil {
+		seenDeclared := make(map[uint32]struct{}, len(export.VIDs))
+		for _, vid := range export.VIDs {
+			if vid == 0 {
+				return BootstrapGroundItemStateExport{}, BootstrapGroundItemStateQuarantineSummary{}, fmt.Errorf("%w: vids entries must be > 0", ErrInvalidBootstrapGroundItemStateExport)
+			}
+			if _, exists := seenDeclared[vid]; exists {
+				return BootstrapGroundItemStateExport{}, BootstrapGroundItemStateQuarantineSummary{}, fmt.Errorf("%w: duplicate vids entry %d", ErrInvalidBootstrapGroundItemStateExport, vid)
+			}
+			seenDeclared[vid] = struct{}{}
+			vidScope[vid] = struct{}{}
+		}
+	}
+
 	snapshots := make([]GroundItemSnapshot, 0, len(export.GroundItems))
 	for _, row := range export.GroundItems {
 		snapshot, err := groundItemSnapshotFromExportRow(row)
@@ -60,6 +76,7 @@ func canonicalizeBootstrapGroundItemStateExport(export BootstrapGroundItemStateE
 			return BootstrapGroundItemStateExport{}, BootstrapGroundItemStateQuarantineSummary{}, err
 		}
 		snapshots = append(snapshots, snapshot)
+		vidScope[row.VID] = struct{}{}
 	}
 
 	canonical, err := ExportBootstrapGroundItemState(snapshots)
@@ -67,11 +84,20 @@ func canonicalizeBootstrapGroundItemStateExport(export BootstrapGroundItemStateE
 		return BootstrapGroundItemStateExport{}, BootstrapGroundItemStateQuarantineSummary{}, err
 	}
 
+	sortedVIDs := make([]uint32, 0, len(vidScope))
+	for vid := range vidScope {
+		sortedVIDs = append(sortedVIDs, vid)
+	}
+	sort.Slice(sortedVIDs, func(i, j int) bool { return sortedVIDs[i] < sortedVIDs[j] })
+
+	canonical.VIDs = append([]uint32(nil), sortedVIDs...)
+	if canonical.VIDs == nil {
+		canonical.VIDs = []uint32{}
+	}
+
 	itemShapedCount := 0
 	goldShapedCount := 0
-	vids := make([]uint32, 0, len(canonical.GroundItems))
 	for _, row := range canonical.GroundItems {
-		vids = append(vids, row.VID)
 		switch {
 		case row.ItemCount != nil:
 			itemShapedCount++
@@ -84,7 +110,7 @@ func canonicalizeBootstrapGroundItemStateExport(export BootstrapGroundItemStateE
 		GroundItemCount: len(canonical.GroundItems),
 		ItemShapedCount: itemShapedCount,
 		GoldShapedCount: goldShapedCount,
-		VIDs:            vids,
+		VIDs:            append([]uint32(nil), sortedVIDs...),
 	}
 	if summary.VIDs == nil {
 		summary.VIDs = []uint32{}

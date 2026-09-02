@@ -203,6 +203,7 @@ func sampleBootstrapGroundItemStateExport() BootstrapGroundItemStateExport {
 	return BootstrapGroundItemStateExport{
 		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
 		MigrationName:    BootstrapGroundItemStateMigrationName,
+		VIDs:             []uint32{0x0700002c, 0x0700002d},
 		GroundItems: []BootstrapGroundItemStateRow{
 			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
 			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -48,6 +49,66 @@ func TestImportBootstrapGroundItemStateRejectsNilGroundItemsBeforeOpeningTransac
 	_, err := ImportBootstrapGroundItemState(context.Background(), failingGroundItemStateImportExecutor{}, export)
 	if !errors.Is(err, ErrInvalidBootstrapGroundItemStateExport) {
 		t.Fatalf("ImportBootstrapGroundItemState(nil ground_items) error = %v, want %v", err, ErrInvalidBootstrapGroundItemStateExport)
+	}
+}
+
+func TestImportBootstrapGroundItemStateRejectsTooManyOptions(t *testing.T) {
+	export := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+	_, err := ImportBootstrapGroundItemState(
+		context.Background(),
+		failingGroundItemStateImportExecutor{},
+		export,
+		ImportBootstrapGroundItemStateOptions{Replace: true},
+		ImportBootstrapGroundItemStateOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "at most one options") {
+		t.Fatalf("ImportBootstrapGroundItemState(too many options) error = %v, want at most one options", err)
+	}
+}
+
+func TestQuarantineBootstrapGroundItemStateExportMergesDeclaredVIDs(t *testing.T) {
+	export := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		VIDs:             []uint32{0x0700002c},
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+	canonical, summary, err := QuarantineBootstrapGroundItemStateExport(export)
+	if err != nil {
+		t.Fatalf("quarantine declared wipe export: %v", err)
+	}
+	if summary.GroundItemCount != 0 || summary.ItemShapedCount != 0 || summary.GoldShapedCount != 0 {
+		t.Fatalf("declared wipe should keep zero ground counts: %#v", summary)
+	}
+	if len(summary.VIDs) != 1 || summary.VIDs[0] != 0x0700002c {
+		t.Fatalf("unexpected declared wipe summary vids: %#v", summary)
+	}
+	if len(canonical.VIDs) != 1 || canonical.VIDs[0] != 0x0700002c {
+		t.Fatalf("unexpected canonical vids: %#v", canonical.VIDs)
+	}
+}
+
+func TestQuarantineBootstrapGroundItemStateExportRejectsInvalidDeclaredVIDs(t *testing.T) {
+	base := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+
+	zeroVID := base
+	zeroVID.VIDs = []uint32{0}
+	if _, _, err := QuarantineBootstrapGroundItemStateExport(zeroVID); err == nil || !errors.Is(err, ErrInvalidBootstrapGroundItemStateExport) {
+		t.Fatalf("zero vids error = %v, want invalid export", err)
+	}
+
+	dupVID := base
+	dupVID.VIDs = []uint32{0x0700002c, 0x0700002c}
+	if _, _, err := QuarantineBootstrapGroundItemStateExport(dupVID); err == nil || !errors.Is(err, ErrInvalidBootstrapGroundItemStateExport) {
+		t.Fatalf("duplicate vids error = %v, want invalid export", err)
 	}
 }
 

@@ -34,9 +34,15 @@ var ErrInvalidBootstrapGroundItemStateExport = errors.New("invalid bootstrap gro
 // apply migrations, mutate runtime ground state, or make ground handles durable
 // across process restart.
 type BootstrapGroundItemStateExport struct {
-	MigrationVersion int                           `json:"migration_version"`
-	MigrationName    string                        `json:"migration_name"`
-	GroundItems      []BootstrapGroundItemStateRow `json:"ground_items"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// VIDs optionally declares the replace/wipe ground VID scope for
+	// ImportBootstrapGroundItemState(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from ground-item rows (legacy insert-only
+	// exports stay valid). Explicit ids merge with ground-row-derived VIDs so a
+	// listed VID with zero ground rows can still wipe-to-empty.
+	VIDs        []uint32                      `json:"vids,omitempty"`
+	GroundItems []BootstrapGroundItemStateRow `json:"ground_items"`
 }
 
 // BootstrapGroundItemStateRow mirrors the bootstrap_ground_items table columns

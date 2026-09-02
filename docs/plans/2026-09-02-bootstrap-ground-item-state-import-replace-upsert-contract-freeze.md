@@ -174,6 +174,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed. Tip-`0010` scoped replace GREEN remains follow-on.
+Docs/spec freeze landed. Tip-`0010` scoped replace GREEN is owned by
+[bootstrap ground-item-state import scoped replace GREEN](2026-09-02-bootstrap-ground-item-state-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
 Production-engine selection remains deferred.
