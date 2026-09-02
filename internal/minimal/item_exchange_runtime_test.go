@@ -4687,6 +4687,148 @@ func TestGameRuntimeStoragePacketsFailClosedWithoutMutation(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeItemExchangeMutualAcceptFinalizesPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+
+	ownerSockets := inventory.SocketValues{7, 0, 9}
+	ownerAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	peerSockets := inventory.SocketValues{}
+	peerAttributes := inventory.AttributeValues{}
+
+	owner := peerVisibilityCharacter("ExchangePreserveOwner", 0x010307d1, 0x020407d1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{
+		ID: 870, Vnum: 11270, Count: 1, Slot: 5,
+		Sockets: &ownerSockets, Attributes: &ownerAttributes,
+	}}
+	peer := peerVisibilityCharacter("ExchangePreservePeer", 0x010307d2, 0x020407d2, 1120, 2120, 0, 101, 201)
+	peer.Gold = 7000
+	peer.Inventory = []inventory.ItemInstance{{
+		ID: 871, Vnum: 11271, Count: 1, Slot: 6,
+		Sockets: &peerSockets, Attributes: &peerAttributes,
+	}}
+	ownerLogin := "ex-preserve-owner"
+	peerLogin := "ex-preserve-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x707070d1, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x707070d2, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange preserve owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange preserve peer account: %v", err)
+	}
+
+	ownerTemplate := itemcatalog.Template{
+		Vnum: 11270, Name: "Preserve Owner Blade", Stackable: false, MaxCount: 1,
+		Sockets:    itemcatalog.SocketValues{1, 2, 3},
+		Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}},
+	}
+	peerTemplate := itemcatalog.Template{
+		Vnum: 11271, Name: "Preserve Peer Blade", Stackable: false, MaxCount: 1,
+		Sockets:    itemcatalog.SocketValues{4, 5, 6},
+		Attributes: itemcatalog.AttributeValues{{Type: 4, Value: -5}},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{ownerTemplate, peerTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange preserve runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x707070d1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x707070d2)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected preserve exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected preserve exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 3, Position: itemproto.InventoryPosition(5)}))); err != nil {
+		t.Fatalf("unexpected preserve owner item-add error: %v", err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+	if _, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 4, Position: itemproto.InventoryPosition(6)}))); err != nil {
+		t.Fatalf("unexpected preserve peer item-add error: %v", err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept}))); err != nil {
+		t.Fatalf("unexpected preserve owner accept error: %v", err)
+	}
+	_ = flushServerFrames(t, peerFlow)
+
+	peerAcceptOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderAccept})))
+	if err != nil {
+		t.Fatalf("unexpected preserve peer accept error: %v", err)
+	}
+	if len(peerAcceptOut) < 3 {
+		t.Fatalf("expected preserve mutual-accept finalize peer burst, got %d frames", len(peerAcceptOut))
+	}
+	peerItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, peerAcceptOut[2]))
+	if err != nil {
+		t.Fatalf("decode preserve peer item set: %v", err)
+	}
+	if peerItemSet.Position != itemproto.InventoryPosition(6) || peerItemSet.Vnum != ownerTemplate.Vnum || peerItemSet.Count != 1 {
+		t.Fatalf("unexpected preserve peer item set: %+v", peerItemSet)
+	}
+	wantPeerSockets := [itemproto.ItemSocketCount]int32{7, 0, 9}
+	if peerItemSet.Sockets != wantPeerSockets {
+		t.Fatalf("expected preserve peer ITEM_SET sockets %+v from owner instance, got %+v", wantPeerSockets, peerItemSet.Sockets)
+	}
+	if peerItemSet.Attributes[0] != (itemproto.Attribute{Type: 1, Value: 25}) || peerItemSet.Attributes[1] != (itemproto.Attribute{Type: 7, Value: -3}) {
+		t.Fatalf("expected preserve peer ITEM_SET attributes from owner instance, got %+v", peerItemSet.Attributes)
+	}
+
+	queuedOwnerAccept := flushServerFrames(t, ownerFlow)
+	if len(queuedOwnerAccept) < 3 {
+		t.Fatalf("expected preserve mutual-accept finalize owner queued burst, got %d frames", len(queuedOwnerAccept))
+	}
+	ownerItemSet, err := itemproto.DecodeSet(decodeSingleFrame(t, queuedOwnerAccept[2]))
+	if err != nil {
+		t.Fatalf("decode preserve owner item set: %v", err)
+	}
+	if ownerItemSet.Position != itemproto.InventoryPosition(5) || ownerItemSet.Vnum != peerTemplate.Vnum || ownerItemSet.Count != 1 {
+		t.Fatalf("unexpected preserve owner item set: %+v", ownerItemSet)
+	}
+	wantOwnerSockets := [itemproto.ItemSocketCount]int32{0, 0, 0}
+	if ownerItemSet.Sockets != wantOwnerSockets {
+		t.Fatalf("expected preserve owner ITEM_SET sockets %+v from peer explicit-zero instance, got %+v", wantOwnerSockets, ownerItemSet.Sockets)
+	}
+	if ownerItemSet.Attributes[0] != (itemproto.Attribute{}) {
+		t.Fatalf("expected preserve owner ITEM_SET attributes from peer explicit-zero instance, got %+v", ownerItemSet.Attributes)
+	}
+
+	ownerAccount, err := accounts.Load(ownerLogin)
+	if err != nil {
+		t.Fatalf("load preserve owner account: %v", err)
+	}
+	peerAccount, err := accounts.Load(peerLogin)
+	if err != nil {
+		t.Fatalf("load preserve peer account: %v", err)
+	}
+	wantOwnerInv := []inventory.ItemInstance{{
+		ID: 871, Vnum: 11271, Count: 1, Slot: 5,
+		Sockets: &peerSockets, Attributes: &peerAttributes,
+	}}
+	wantPeerInv := []inventory.ItemInstance{{
+		ID: 870, Vnum: 11270, Count: 1, Slot: 6,
+		Sockets: &ownerSockets, Attributes: &ownerAttributes,
+	}}
+	if !reflect.DeepEqual(ownerAccount.Characters[0].Inventory, wantOwnerInv) {
+		t.Fatalf("unexpected preserve owner inventory after mutual accept:\n got: %#v\nwant: %#v", ownerAccount.Characters[0].Inventory, wantOwnerInv)
+	}
+	if !reflect.DeepEqual(peerAccount.Characters[0].Inventory, wantPeerInv) {
+		t.Fatalf("unexpected preserve peer inventory after mutual accept:\n got: %#v\nwant: %#v", peerAccount.Characters[0].Inventory, wantPeerInv)
+	}
+}
+
 func TestGameRuntimeItemExchangeMutualAcceptFinalizesDisplayedTradeAndClosesShell(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

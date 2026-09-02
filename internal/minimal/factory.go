@@ -9996,7 +9996,7 @@ func applyMyShopGuestBuy(
 		Count:  plan.Item.Count,
 		Slot:   plan.Item.Slot,
 	}
-	if !exchangePlaceIncomingDisplayedItemPreferringSlots(&guestInventory, display, template, nil) {
+	if !exchangePlaceIncomingDisplayedItemPreferringSlots(&guestInventory, display, template, nil, inventory.ItemInstance{}) {
 		return nil, false
 	}
 	if updatedGuest.Gold < price {
@@ -10096,11 +10096,11 @@ func applyExchangeFinalize(runtime *gameRuntime, accounts accountstore.Store, sh
 		return nil, false
 	}
 	templates := runtime.itemTemplates
-	updatedOrigin, originFrames, ok := buildExchangeFinalizeSide(plan.Origin, plan.OriginItems, plan.PartnerItems, plan.OriginGold, plan.PartnerGold, templates)
+	updatedOrigin, originFrames, ok := buildExchangeFinalizeSide(plan.Origin, plan.OriginItems, plan.PartnerItems, plan.Partner.Inventory, plan.OriginGold, plan.PartnerGold, templates)
 	if !ok {
 		return nil, false
 	}
-	updatedPartner, partnerFrames, ok := buildExchangeFinalizeSide(plan.Partner, plan.PartnerItems, plan.OriginItems, plan.PartnerGold, plan.OriginGold, templates)
+	updatedPartner, partnerFrames, ok := buildExchangeFinalizeSide(plan.Partner, plan.PartnerItems, plan.OriginItems, plan.Origin.Inventory, plan.PartnerGold, plan.OriginGold, templates)
 	if !ok {
 		return nil, false
 	}
@@ -10226,6 +10226,7 @@ func buildExchangeFinalizeSide(
 	self loginticket.Character,
 	outgoing map[uint8]exchangeDisplayedItem,
 	incoming map[uint8]exchangeDisplayedItem,
+	giverInventory []inventory.ItemInstance,
 	outgoingGold uint32,
 	incomingGold uint32,
 	templates map[uint32]itemcatalog.Template,
@@ -10251,7 +10252,11 @@ func buildExchangeFinalizeSide(
 		if !ok || !itemcatalog.ValidTemplate(template) || template.Vnum != display.Vnum {
 			return loginticket.Character{}, nil, false
 		}
-		if !exchangePlaceIncomingDisplayedItemPreferringSlots(&workingInventory, display, template, removedSlots) {
+		sourceIdx, ok := exchangeInventoryIndexForDisplayedItem(giverInventory, display)
+		if !ok {
+			return loginticket.Character{}, nil, false
+		}
+		if !exchangePlaceIncomingDisplayedItemPreferringSlots(&workingInventory, display, template, removedSlots, giverInventory[sourceIdx]) {
 			return loginticket.Character{}, nil, false
 		}
 	}
@@ -10326,7 +10331,7 @@ func exchangeInventoryIndexForDisplayedItem(items []inventory.ItemInstance, disp
 	return matches, true
 }
 
-func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template, preferredSlots []inventory.SlotIndex) bool {
+func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemInstance, display exchangeDisplayedItem, template itemcatalog.Template, preferredSlots []inventory.SlotIndex, source inventory.ItemInstance) bool {
 	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
 		return false
 	}
@@ -10365,7 +10370,13 @@ func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemIn
 	if !ok {
 		return false
 	}
-	placed, err := (inventory.ItemInstance{ID: display.ItemID, Vnum: display.Vnum, Count: remaining}).WithInventorySlot(slot)
+	// Whole-stack free-cell placement preserves presence-aware sockets/attributes
+	// from the giver live source (including explicit zero). Stack-merge above stays
+	// count-only. Zero/omitted source keeps template-fallback encode later.
+	seed := inventory.ItemInstance{ID: display.ItemID, Vnum: display.Vnum, Count: remaining}
+	seed.Sockets = source.CloneSockets()
+	seed.Attributes = source.CloneAttributes()
+	placed, err := seed.WithInventorySlot(slot)
 	if err != nil {
 		return false
 	}

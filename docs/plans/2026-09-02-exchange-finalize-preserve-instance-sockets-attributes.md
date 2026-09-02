@@ -91,6 +91,7 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze landed on `lane/items`. Intentional RED session proof
-`TestGameRuntimeItemExchangeMutualAcceptFinalizesPreservesInstanceSocketsAndAttributes`
-is prepared in the working tree and left uncommitted until GREEN.
+GREEN on `lane/items`: mutual-accept whole-stack free-cell placement preserves
+giver live-source presence-aware sockets/attributes through finalize `ITEM_SET`
+and both account snapshots. Stack-merge attribute/socket policy, refine catalysts,
+and mall remain deferred.
