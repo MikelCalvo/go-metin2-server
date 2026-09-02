@@ -40,6 +40,8 @@ ordinary normal `ATTACK` resumes after a fresh town-side `TARGET`.
 - changing already-owned `/restart_town` transfer / preflight choreography
 - claiming skill / ranged / PvP resume behavior
 - proving source-map reselect after town recovery in this same commit
+  (landed later as
+  `docs/plans/2026-09-02-restart-town-source-map-reselect-resumes-attack.md`)
 
 ## Runtime note
 

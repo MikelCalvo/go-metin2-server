@@ -33,6 +33,8 @@ Prove that after abrupt disconnect / reconnect while still dead, accepted `/rest
 - proving proximity-suppress leave/re-enter policy in this same commit
 - claiming skill / ranged / PvP resume behavior
 - proving source-map reselect after reconnect town recovery in this same commit
+  (same-socket source-map reselect after `/restart_town` is owned separately by
+  `docs/plans/2026-09-02-restart-town-source-map-reselect-resumes-attack.md`)
 
 ## Runtime note
 
