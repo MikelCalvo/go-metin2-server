@@ -3503,6 +3503,123 @@ func TestGameRuntimeMyShopGuestBuyTransfersStockGoldAndClearsDisplaySlot(t *test
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, persistedPeer, "myshop guest buy second guest")
 }
 
+func TestGameRuntimeMyShopGuestBuyPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+
+	hostSockets := inventory.SocketValues{7, 0, 9}
+	hostAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+
+	owner := peerVisibilityCharacter("MyShopPreserveHost", 0x01030881, 0x02040881, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 881, Vnum: 11280, Count: 1, Slot: 5, Sockets: &hostSockets, Attributes: &hostAttributes},
+		{ID: 931, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
+	peer := peerVisibilityCharacter("MyShopPreserveGuest", 0x01030882, 0x02040882, 1120, 2120, 0, 101, 201)
+	peer.Gold = 22222
+	ownerLogin := "myshop-preserve-host"
+	peerLogin := "myshop-preserve-guest"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707181, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707182, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed myshop preserve host account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed myshop preserve guest account: %v", err)
+	}
+
+	activeTemplate := itemcatalog.Template{
+		Vnum: 11280, Name: "Preserve Host Blade", Stackable: false, MaxCount: 1,
+		Sockets:    itemcatalog.SocketValues{1, 2, 3},
+		Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}},
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{activeTemplate})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected myshop preserve runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707181)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707182)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	const listedPrice uint32 = 1500
+	const displayPos uint8 = 7
+	openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+		Sign: "Preserve Shop",
+		Items: []shopproto.ClientMyShopItem{{
+			Vnum:       activeTemplate.Vnum,
+			Count:      1,
+			Position:   itemproto.InventoryPosition(5),
+			Price:      listedPrice,
+			DisplayPos: displayPos,
+		}},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected MYSHOP open error: %v", err)
+	}
+	assertMyShopOpenSuccessBagAndSignWithText(t, openOut, owner.VID, "Preserve Shop", 4, `unexpected accepted MYSHOP before preserve guest buy: out=%d err=%v`)
+	_ = flushServerFrames(t, peerFlow)
+
+	browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+	if err != nil || len(browseOut) != 1 {
+		t.Fatalf("unexpected guest browse before preserve buy: out=%d err=%v", len(browseOut), err)
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0])); err != nil {
+		t.Fatalf("decode guest browse SHOP START before preserve buy: %v", err)
+	}
+
+	buyOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{
+		RawLeadingByte: 1,
+		CatalogSlot:    displayPos,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected guest private-shop SHOP BUY preserve: %v", err)
+	}
+	if len(buyOut) == 0 {
+		t.Fatalf("expected guest private-shop SHOP BUY preserve to mutate and emit frames, got none")
+	}
+
+	var guestItemSet *itemproto.SetPacket
+	for _, raw := range buyOut {
+		f := decodeSingleFrame(t, raw)
+		if set, err := itemproto.DecodeSet(f); err == nil {
+			if set.Vnum == activeTemplate.Vnum && set.Count == 1 {
+				copied := set
+				guestItemSet = &copied
+			}
+		}
+	}
+	if guestItemSet == nil {
+		t.Fatalf("expected guest ITEM_SET for preserved host blade in buy burst, frames=%d", len(buyOut))
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{7, 0, 9}
+	if guestItemSet.Sockets != wantSockets {
+		t.Fatalf("expected preserve guest ITEM_SET sockets %+v from host instance, got %+v", wantSockets, guestItemSet.Sockets)
+	}
+	if guestItemSet.Attributes[0] != (itemproto.Attribute{Type: 1, Value: 25}) || guestItemSet.Attributes[1] != (itemproto.Attribute{Type: 7, Value: -3}) {
+		t.Fatalf("expected preserve guest ITEM_SET attributes from host instance, got %+v", guestItemSet.Attributes)
+	}
+
+	peerAccount, err := accounts.Load(peerLogin)
+	if err != nil {
+		t.Fatalf("load preserve guest account: %v", err)
+	}
+	persistedPeer := findPersistedCharacter(t, peerAccount, peer.Name)
+	if len(persistedPeer.Inventory) != 1 || persistedPeer.Inventory[0].ID != 881 || persistedPeer.Inventory[0].Vnum != 11280 || persistedPeer.Inventory[0].Count != 1 {
+		t.Fatalf("unexpected preserve guest inventory identity after buy: %+v", persistedPeer.Inventory)
+	}
+	if !persistedPeer.Inventory[0].HasSockets() || *persistedPeer.Inventory[0].Sockets != hostSockets {
+		t.Fatalf("expected preserve guest inventory sockets %+v from host instance, got %+v", hostSockets, persistedPeer.Inventory[0].Sockets)
+	}
+	if !persistedPeer.Inventory[0].HasAttributes() || *persistedPeer.Inventory[0].Attributes != hostAttributes {
+		t.Fatalf("expected preserve guest inventory attributes %+v from host instance, got %+v", hostAttributes, persistedPeer.Inventory[0].Attributes)
+	}
+}
+
 func TestGameRuntimeMyShopGuestBuyFansUpdateItemToOtherBrowsingGuest(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

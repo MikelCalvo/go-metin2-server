@@ -65,6 +65,7 @@ git diff --check
 
 ## Status
 
-Docs tip-sync prepared on `lane/items`. Intentional RED session proof
-`TestGameRuntimeMyShopGuestBuyPreservesInstanceSocketsAndAttributes` is left
-uncommitted until GREEN.
+GREEN on `lane/items`: guest private-shop whole-stack free-cell placement
+preserves host live-source presence-aware sockets/attributes through buy-burst
+`ITEM_SET` and the guest account snapshot. Stack-merge attribute/socket policy,
+refine catalysts, and mall remain deferred.

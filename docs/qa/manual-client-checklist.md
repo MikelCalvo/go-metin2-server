@@ -653,6 +653,7 @@ Expected result:
 Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freeze.md`.
 
 - [ ] Have player A open `MYSHOP` with one listed carried row and known price, have player B browse, then send `CG::SHOP BUY` for that `display_pos`
+- [ ] If packet tooling allows it, list a whole-stack free-cell host item with presence-aware instance sockets/attributes (including one explicit-zero sockets case), buy it into an empty guest inventory, and confirm guest `ITEM_SET` plus persisted inventory keep those instance fields instead of template fallback
 - [ ] Confirm guest gold debit + host gold credit + guest item grant + host stack removal + guest `UPDATE_ITEM(vnum=0)` for that slot
 - [ ] Confirm second buy of the same slot fails sold-out / invalid with no further mutation
 - [ ] With a third visible peer C also browsing player A's shop, have player B buy once and confirm player C receives one `UPDATE_ITEM(vnum=0)` for that sold slot with no inventory/gold change on C, then confirm C's buy of the same slot fails sold-out / invalid
@@ -661,7 +662,7 @@ Contract freeze: `docs/plans/2026-08-24-myshop-guest-buy-mutation-contract-freez
 - [ ] Confirm guest `SHOP SELL` / `SELL2` while browsing a private shop stay silent/no-frame
 
 Expected result:
-- one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests
+- one successful guest buy transfers live host stock and gold without bare `GC::SHOP OK`, keeps browse open until leave/host close, and clears the sold display slot for remaining guests; whole-stack free-cell placements carry the host live presence-aware instance sockets/attributes (including explicit zero) into the guest `ITEM_SET` and persisted inventory, while compatible-stack merges stay count-only (`docs/plans/2026-09-03-myshop-guest-buy-preserve-instance-sockets-attributes.md`)
 - a still-browsing second guest sees the sold-slot `UPDATE_ITEM(vnum=0)` fan-out without inventory/gold mutation (`docs/plans/2026-08-24-myshop-guest-buy-multi-guest-update-item-fanout.md`)
 - tax/empire multipliers stay deferred; recipe make/add/list/cancel are owned (see section 4.5.16); guest `SHOP SELL` / `SELL2` while browsing are owned fail-closed (see section 4.5.15); exchange / MYSHOP / safebox / refine open-cube busy rejects are owned (see section 4.5.16)
 

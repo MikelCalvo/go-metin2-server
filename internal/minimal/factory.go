@@ -9996,7 +9996,10 @@ func applyMyShopGuestBuy(
 		Count:  plan.Item.Count,
 		Slot:   plan.Item.Slot,
 	}
-	if !exchangePlaceIncomingDisplayedItemPreferringSlots(&guestInventory, display, template, nil, inventory.ItemInstance{}) {
+	// Whole-stack free-cell guest placement preserves presence-aware sockets/attributes
+	// from the live host source already captured on plan.Item (including explicit zero).
+	// Compatible-stack merges inside the helper stay count-only.
+	if !exchangePlaceIncomingDisplayedItemPreferringSlots(&guestInventory, display, template, nil, plan.Item) {
 		return nil, false
 	}
 	if updatedGuest.Gold < price {
