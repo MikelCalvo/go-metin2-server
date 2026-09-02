@@ -1,0 +1,15 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_safebox",
+      "ref": "npc:qa_warehouse_foreign_reward_items",
+      "text": "Store your goods safely.",
+      "reward_items": [
+        {
+          "item_vnum": 27001,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

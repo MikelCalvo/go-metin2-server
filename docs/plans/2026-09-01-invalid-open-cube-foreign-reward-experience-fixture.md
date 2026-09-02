@@ -88,3 +88,6 @@ git diff --check
    Done for `open_cube` foreign turn-in `consume_experience`:
    `docs/examples/bootstrap-invalid-open-cube-foreign-consume-experience-bundle.json`
    (`docs/plans/2026-09-02-invalid-open-cube-foreign-consume-experience-fixture.md`).
+   Done for `open_safebox` foreign turn-in `reward_items`:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-items-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-safebox-foreign-reward-items-fixture.md`).
