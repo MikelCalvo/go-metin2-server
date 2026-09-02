@@ -112,6 +112,7 @@ After accepted `/restart_here`:
 - later owner-side `TARGET` may succeed again under the ordinary live combat rules
 - later owner-side `ATTACK` still requires a fresh accepted `TARGET`
 - the previously engaged practice mob, if still alive, remains at its current runtime-owned HP rather than resetting because of the owner's recovery
+- once that fresh `TARGET` is accepted, ordinary normal `ATTACK` resumes against the still-live damaged practice mob (`TestGameSessionFlowPracticeMobRestartHereFreshTargetResumesNormalAttack`): the next accepted hit refreshes the selected target one HP step farther, applies one immediate owner-side retaliation point-change from recovered MaxHP, and emits the ordinary self plus visible-peer `DAMAGE_INFO` companions
 
 ## Why this is the next honest slice
 

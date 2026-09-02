@@ -16759,6 +16759,80 @@ func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(
 	}
 }
 
+func TestGameSessionFlowPracticeMobRestartHereFreshTargetResumesNormalAttack(t *testing.T) {
+	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
+	defer closeSessionFlow(t, ownerFlow)
+	defer closeSessionFlow(t, watcherFlow)
+
+	drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t, ownerFlow, watcherFlow, targetVID, owner.VID, advance)
+
+	restartOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected /restart_here error before fresh-target attack resume: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected 4 self bootstrap frames plus 4 visible practice-mob catch-up frames from /restart_here before fresh-target attack resume, got %d", len(restartOut))
+	}
+	if queued := flushServerFrames(t, watcherFlow); len(queued) != 4 {
+		t.Fatalf("expected /restart_here recovery to queue 4 peer refresh frames before fresh-target attack resume, got %d", len(queued))
+	}
+
+	staleAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale attack error after /restart_here before fresh-target attack resume: %v", err)
+	}
+	if len(staleAttackOut) != 0 {
+		t.Fatalf("expected stale attack without fresh target to fail closed after /restart_here before attack resume, got %d frames", len(staleAttackOut))
+	}
+
+	retargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected fresh target-selection error after /restart_here before attack resume: %v", err)
+	}
+	if len(retargetOut) != 1 {
+		t.Fatalf("expected fresh target-selection to succeed after /restart_here before attack resume, got %d frames", len(retargetOut))
+	}
+	retarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, retargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode fresh target-selection after /restart_here before attack resume: %v", err)
+	}
+	if retarget.TargetVID != targetVID || retarget.HPPercent != 90 {
+		t.Fatalf("expected fresh target-selection after /restart_here to preserve the still-live practice mob at 90%% HP before attack resume, got %+v", retarget)
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected resumed normal attack error after /restart_here fresh target: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected resumed post-/restart_here attack to return target refresh, retaliation, and damage-info, got %d frames", len(attackOut))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+	if err != nil {
+		t.Fatalf("decode resumed post-/restart_here attack target refresh: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 80 {
+		t.Fatalf("expected resumed post-/restart_here attack to move the still-live practice mob from 90%% to 80%% HP, got %+v", refresh)
+	}
+	retaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
+	if err != nil {
+		t.Fatalf("decode resumed post-/restart_here attack retaliation point-change: %v", err)
+	}
+	wantHP := initialStatsForRace(owner.RaceNum).MaxHP + bootstrapPracticeMobRetaliationPointDelta
+	if retaliation.VID != owner.VID || retaliation.Type != bootstrapPlayerPointType || retaliation.Amount != bootstrapPracticeMobRetaliationPointDelta || retaliation.Value != wantHP {
+		t.Fatalf("expected resumed post-/restart_here attack retaliation to apply delta %d to recovered owner HP, got %+v want value %d", bootstrapPracticeMobRetaliationPointDelta, retaliation, wantHP)
+	}
+	assertDamageInfoFrame(t, attackOut[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "resumed post-/restart_here mob hit")
+	assertDamageInfoFrame(t, attackOut[3], owner.VID, -bootstrapPracticeMobRetaliationPointDelta, "resumed post-/restart_here owner retaliation")
+	flushSpawnBackedAttackPeerDamageInfoFrames(t, watcherFlow, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), owner.VID, -bootstrapPracticeMobRetaliationPointDelta, "resumed post-/restart_here attack")
+}
+
 func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testing.T) {
 	_, ownerFlow, watcherFlow, targetVID, owner, advance := setupPracticeMobStaticActorZeroHPOwnerRecipientTest(t)
 	defer closeSessionFlow(t, ownerFlow)
