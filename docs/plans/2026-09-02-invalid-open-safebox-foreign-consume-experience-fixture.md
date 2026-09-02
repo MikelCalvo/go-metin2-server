@@ -53,8 +53,8 @@ for an `open_safebox` definition that illegally authors turn-in
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
 - further checked-in foreign-field negatives (open_cube consume experience,
-  reward items, consume items, mutating `quest_to`) unless QA still improvises
-  that JSON later
+  reward/consume items, mutating `quest_to`) unless QA still improvises that
+  JSON later
 
 ## Validation
 
@@ -69,6 +69,8 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. Highest-value remaining twin is `open_cube` foreign
-   turn-in `consume_experience`.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_cube` foreign turn-in
+   `consume_experience`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-consume-experience-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-cube-foreign-consume-experience-fixture.md`).
