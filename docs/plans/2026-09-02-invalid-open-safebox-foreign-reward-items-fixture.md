@@ -52,9 +52,9 @@ fixture for an `open_safebox` definition that illegally authors turn-in
 - weighted/random loot or branching quest scripts
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
-- further checked-in foreign-field negatives (open_cube reward items,
-  warehouse/cube consume items, scalar reward_item_vnum shorthand, mutating
-  `quest_to`) unless QA still improvises that JSON later
+- further checked-in foreign-field negatives (warehouse/cube consume items,
+  scalar reward_item_vnum shorthand, mutating `quest_to`) unless QA still
+  improvises that JSON later
 
 ## Validation
 
@@ -69,7 +69,10 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. Highest-value remaining twins are foreign
-   `reward_items` / `consume_items` on `open_cube`, foreign `consume_items` on
-   `open_safebox`, or mutating `quest_to` on warehouse/cube definitions.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_cube` foreign turn-in `reward_items`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-reward-items-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-cube-foreign-reward-items-fixture.md`).
+   Highest-value remaining twins are foreign `consume_items` on
+   `open_safebox` / `open_cube`, or mutating `quest_to` on warehouse/cube
+   definitions.

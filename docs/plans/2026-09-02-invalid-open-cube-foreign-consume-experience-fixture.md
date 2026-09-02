@@ -73,6 +73,9 @@ git diff --check
    `reward_items`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-items-bundle.json`
    (`docs/plans/2026-09-02-invalid-open-safebox-foreign-reward-items-fixture.md`).
-   Highest-value remaining twins are foreign `reward_items` /
-   `consume_items` on `open_cube`, foreign `consume_items` on `open_safebox`,
-   or mutating `quest_to` on warehouse/cube definitions.
+   Done for `open_cube` foreign turn-in `reward_items`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-reward-items-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-cube-foreign-reward-items-fixture.md`).
+   Highest-value remaining twins are foreign `consume_items` on
+   `open_safebox` / `open_cube`, or mutating `quest_to` on warehouse/cube
+   definitions.
