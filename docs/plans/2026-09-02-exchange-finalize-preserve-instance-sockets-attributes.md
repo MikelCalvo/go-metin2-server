@@ -88,3 +88,9 @@ go test ./internal/minimal ./internal/player -count=1
 gofmt -w internal/minimal/shared_world.go internal/minimal/item_exchange_runtime_test.go
 git diff --check
 ```
+
+## Status
+
+Docs/spec freeze landed on `lane/items`. Intentional RED session proof
+`TestGameRuntimeItemExchangeMutualAcceptFinalizesPreservesInstanceSocketsAndAttributes`
+is prepared in the working tree and left uncommitted until GREEN.
