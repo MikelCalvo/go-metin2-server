@@ -58,5 +58,6 @@ tip-`0013` identity namespaces.
 ## Status
 
 GREEN on `lane/persistence`. Upsert / replace for `auth-login-ticket-handoff`
-(`0007`) remains deferred behind its own freeze; production-engine selection
-remains deferred.
+(`0007`) is frozen in
+[auth-login-ticket-handoff import replace/upsert contract freeze](2026-09-02-auth-login-ticket-handoff-import-replace-upsert-contract-freeze.md);
+RED → GREEN remains follow-on. Production-engine selection remains deferred.
