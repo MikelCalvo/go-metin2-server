@@ -1,0 +1,15 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube_foreign_consume_items",
+      "text": "The craftsman lights the forge.",
+      "consume_items": [
+        {
+          "item_vnum": 27001,
+          "count": 1
+        }
+      ]
+    }
+  ]
+}
