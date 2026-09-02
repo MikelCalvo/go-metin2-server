@@ -53,8 +53,9 @@ turn-in `consume_gold`, so operators do not improvise that reject during
 - new NPC service kinds
 - binary cube headers / OR-materials / craft dialog trees
 - changing the already-owned canonicalize / store reject rule
-- further checked-in foreign-field negatives (consume experience, reward items,
-  mutating `quest_to`) unless QA still improvises that JSON later
+- further checked-in foreign-field negatives (`open_cube` consume experience,
+  reward/consume items, mutating `quest_to`) unless QA still improvises that
+  JSON later
 
 ## Validation
 
@@ -69,5 +70,8 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_safebox` foreign turn-in
+   `consume_experience`:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-consume-experience-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-safebox-foreign-consume-experience-fixture.md`).

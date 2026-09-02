@@ -2188,6 +2188,29 @@ func TestLocalContentBundleValidateEndpointRejectsOpenCubeForeignConsumeGoldExam
 	}
 }
 
+func TestLocalContentBundleValidateEndpointRejectsOpenSafeboxForeignConsumeExperienceExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-open-safebox-foreign-consume-experience-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid open_safebox foreign consume experience example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for checked-in open_safebox foreign consume experience example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
 func TestLocalContentBundleValidateEndpointRejectsConflictingRegisteredCombatProfileSnapshot(t *testing.T) {
 	const profile = "practice_ops_conflict_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
