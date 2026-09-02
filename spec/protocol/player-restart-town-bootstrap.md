@@ -130,6 +130,7 @@ After accepted `/restart_town`:
 - the previously engaged practice mob, if still alive, remains at its current runtime-owned HP rather than resetting because of the owner's recovery
 - source-map live sessions that can still see that mob may freshly `TARGET` it and observe the current runtime-owned HP percentage
 - once a destination-map practice mob is visible after the town-return rebuild, a fresh town-side `TARGET` plus ordinary normal `ATTACK` resumes (`TestGameSessionFlowPracticeMobRestartTownDestinationFreshTargetResumesNormalAttack`): the next accepted hit refreshes that destination target one HP step farther, applies one immediate owner-side retaliation point-change from recovered MaxHP, and emits the ordinary self plus visible destination-peer `DAMAGE_INFO` companions
+- the same destination-map fresh-`TARGET` then normal-`ATTACK` resume also holds after abrupt disconnect / reconnect while the owner was still at the persisted `0`-HP floor and then recovered with `/restart_town` on the new socket (`TestGameSessionFlowPracticeMobReconnectRestartTownDestinationFreshTargetResumesNormalAttack`)
 
 ## Post-restart busy-window / exchange recovery
 
