@@ -69,7 +69,9 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. Highest-value remaining twins are foreign `consume_items`
-   on `open_safebox` / `open_cube`, or mutating `quest_to` on warehouse/cube
-   definitions.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_safebox` foreign turn-in `consume_items`:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-consume-items-bundle.json`
+   (`docs/plans/2026-09-02-invalid-open-safebox-foreign-consume-items-fixture.md`).
+   Highest-value remaining twins are foreign `consume_items` on `open_cube`, or
+   mutating `quest_to` on warehouse/cube definitions.
