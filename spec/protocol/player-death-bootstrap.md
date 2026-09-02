@@ -146,6 +146,7 @@ This keeps the first recovery boundary honest:
 - the practice-mob HP and engagement loop remain shared-world/runtime-owned until the mob's own death/respawn reset seam runs
 - `/phase_select` is therefore only a bootstrap re-entry boundary, not a full corpse / revive / respawn system
 - once that same still-dead `/phase_select` re-entry has rebuilt the persisted floor, accepted same-socket `/restart_here` restores live combat selection and the next fresh `TARGET` + normal `ATTACK` resume against the still-live damaged practice mob (`TestGameSessionFlowPracticeMobPhaseSelectRestartHereFreshTargetResumesNormalAttack`); see `player-restart-here-bootstrap.md` for the recovery carrier details
+- once that same still-dead `/phase_select` re-entry has rebuilt the persisted floor, accepted same-socket `/restart_town` also restores destination-map live combat selection and the next fresh town-side `TARGET` + normal `ATTACK` resume against a destination practice mob (`TestGameSessionFlowPracticeMobPhaseSelectRestartTownDestinationFreshTargetResumesNormalAttack`); see `player-restart-town-bootstrap.md` for the town-return carrier details
 
 ## First owned same-socket `/restart_here` recovery boundary
 
