@@ -4037,6 +4037,126 @@ func TestRuntimeApplyRefineSuccessProbability100ConsumesGoldMaterialsAndReplaces
 	}
 }
 
+func TestRuntimeApplyRefineSuccessPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted sockets and attributes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:    0x01030180,
+				VID:   0x02040180,
+				Name:  "RefinePreserve",
+				Level: 1,
+				Gold:  5000,
+				Inventory: []inventory.ItemInstance{
+					{ID: 701, Vnum: 11200, Count: 1, Slot: 5, Sockets: tc.sockets, Attributes: tc.attributes},
+					{ID: 702, Vnum: 27001, Count: 2, Slot: 6},
+					{ID: 703, Vnum: 27002, Count: 3, Slot: 7},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "refine-preserve", CharacterIndex: 1})
+			sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(100)
+
+			result, ok := runtime.ApplyRefineSuccess(5, 3, 701, remembered, sourceTemplate, resultTemplate)
+			if !ok {
+				t.Fatal("expected probability-100 refine success to apply")
+			}
+			assertRefineResultPreservesPresence(t, result.ResultItem, tc.sockets, tc.attributes)
+			live := runtime.LiveInventory()
+			if len(live) == 0 || live[0].ID != 701 || live[0].Vnum != 11201 {
+				t.Fatalf("unexpected live inventory after refine success preserve: %#v", live)
+			}
+			assertRefineResultPreservesPresence(t, live[0], tc.sockets, tc.attributes)
+			if tc.sockets != nil && live[0].Sockets == tc.sockets {
+				t.Fatal("expected refine success to clone sockets independently from the seed pointer")
+			}
+			if tc.attributes != nil && live[0].Attributes == tc.attributes {
+				t.Fatal("expected refine success to clone attributes independently from the seed pointer")
+			}
+			if runtime.PersistedSnapshot().Inventory[0].Vnum != 11200 {
+				t.Fatalf("refine success mutated persisted snapshot before commit: %#v", runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
+func TestRuntimeApplyRefineDowngradeFailurePreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{7, 0, 9}
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted sockets and attributes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := refineSuccessSeedCharacter(5000)
+			persisted.Inventory[0].Sockets = tc.sockets
+			persisted.Inventory[0].Attributes = tc.attributes
+			runtime := NewRuntime(persisted, SessionLink{Login: "refine-downgrade-preserve", CharacterIndex: 1})
+			sourceTemplate, resultTemplate, remembered := refineSuccessTemplates(75)
+			sourceTemplate.RefineInfo.FailResultVnum = 11199
+			remembered.FailResultVnum = 11199
+			failResultTemplate := itemcatalog.Template{Vnum: 11199, Name: "Downgraded Practice Blade", Stackable: false, MaxCount: 1}
+
+			result, ok := runtime.ApplyRefineDowngradeFailure(5, 3, 701, remembered, sourceTemplate, resultTemplate, failResultTemplate)
+			if !ok {
+				t.Fatal("expected fail_result_vnum downgrade to apply")
+			}
+			assertRefineResultPreservesPresence(t, result.ResultItem, tc.sockets, tc.attributes)
+			live := runtime.LiveInventory()
+			if len(live) == 0 || live[0].ID != 701 || live[0].Vnum != 11199 {
+				t.Fatalf("unexpected live inventory after refine downgrade preserve: %#v", live)
+			}
+			assertRefineResultPreservesPresence(t, live[0], tc.sockets, tc.attributes)
+			if runtime.PersistedSnapshot().Inventory[0].Vnum != 11200 {
+				t.Fatalf("refine downgrade mutated persisted snapshot before commit: %#v", runtime.PersistedSnapshot().Inventory)
+			}
+		})
+	}
+}
+
+func assertRefineResultPreservesPresence(t *testing.T, got inventory.ItemInstance, wantSockets *inventory.SocketValues, wantAttributes *inventory.AttributeValues) {
+	t.Helper()
+	if (wantSockets != nil) != got.HasSockets() {
+		t.Fatalf("HasSockets=%v want %v", got.HasSockets(), wantSockets != nil)
+	}
+	if (wantAttributes != nil) != got.HasAttributes() {
+		t.Fatalf("HasAttributes=%v want %v", got.HasAttributes(), wantAttributes != nil)
+	}
+	if wantSockets != nil {
+		if got.Sockets == nil || *got.Sockets != *wantSockets {
+			t.Fatalf("expected preserved sockets %+v, got %#v", *wantSockets, got.Sockets)
+		}
+	} else if got.Sockets != nil {
+		t.Fatalf("expected omitted sockets, got %#v", got.Sockets)
+	}
+	if wantAttributes != nil {
+		if got.Attributes == nil || *got.Attributes != *wantAttributes {
+			t.Fatalf("expected preserved attributes %+v, got %#v", *wantAttributes, got.Attributes)
+		}
+	} else if got.Attributes != nil {
+		t.Fatalf("expected omitted attributes, got %#v", got.Attributes)
+	}
+}
+
 func TestRuntimeApplyRefineSuccessRejectsProbabilityBelow100WithoutMutation(t *testing.T) {
 	persisted := refineSuccessSeedCharacter(4500)
 	runtime := NewRuntime(persisted, SessionLink{Login: "refine-prob", CharacterIndex: 1})

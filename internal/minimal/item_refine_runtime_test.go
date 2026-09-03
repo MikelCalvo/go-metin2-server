@@ -758,6 +758,194 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PersistsAndEmitsB
 	}
 }
 
+func TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+		wantWireS  [itemproto.ItemSocketCount]int32
+		wantWireA0 itemproto.Attribute
+		wantWireA1 itemproto.Attribute
+	}{
+		{
+			name:    "active sockets and attributes",
+			sockets: &activeSockets, attributes: &activeAttributes,
+			wantWireS:  [itemproto.ItemSocketCount]int32{11, 0, -3},
+			wantWireA0: itemproto.Attribute{Type: 4, Value: 55},
+			wantWireA1: itemproto.Attribute{Type: 9, Value: -7},
+		},
+		{
+			name:       "omitted sockets and attributes use result template fallback",
+			wantWireS:  [itemproto.ItemSocketCount]int32{21, 22, 23},
+			wantWireA0: itemproto.Attribute{Type: 2, Value: 8},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("RefinePreserve", 0x01030770, 0x02040770, 1100, 2100, 0, 101, 201)
+			owner.Gold = 5000
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 630, Vnum: 11230, Count: 1, Slot: 5, Sockets: tc.sockets, Attributes: tc.attributes},
+				{ID: 631, Vnum: 27001, Count: 2, Slot: 6},
+				{ID: 632, Vnum: 27002, Count: 3, Slot: 7},
+			}
+			issuePeerTicket(t, ticketStore, "item-refine-preserve", 0x70707070, owner)
+			if err := accounts.Save(accountstore.Account{Login: "item-refine-preserve", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed item-refine preserve account: %v", err)
+			}
+			sourceTemplate := itemcatalog.Template{
+				Vnum: 11230, Name: "Preserve Practice Blade", Stackable: false, MaxCount: 1, Refineable: true,
+				RefineInfo: &itemcatalog.RefineInfo{
+					ResultVnum: 11231, Cost: 2500, Probability: 100,
+					Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}, {Vnum: 27002, Count: 3}},
+				},
+				Sockets:    itemcatalog.SocketValues{1, 2, 3},
+				Attributes: itemcatalog.AttributeValues{{Type: 1, Value: 1}},
+			}
+			resultTemplate := itemcatalog.Template{
+				Vnum: 11231, Name: "Preserved Practice Blade", Stackable: false, MaxCount: 1,
+				Sockets:    itemcatalog.SocketValues{21, 22, 23},
+				Attributes: itemcatalog.AttributeValues{{Type: 2, Value: 8}},
+			}
+			materialA := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+			materialB := itemcatalog.Template{Vnum: 27002, Name: "Refine Material B", Stackable: true, MaxCount: 200}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, materialA, materialB})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected item-refine preserve runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-preserve", 0x70707070)
+			defer closeSessionFlow(t, flow)
+
+			previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+			if err != nil || len(previewOut) != 1 {
+				t.Fatalf("expected refine preserve preview one frame, got %d err=%v", len(previewOut), err)
+			}
+			confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+			if err != nil {
+				t.Fatalf("unexpected refine preserve confirm error: %v", err)
+			}
+			if len(confirmOut) != 5 {
+				t.Fatalf("expected refine preserve burst of 5 frames (no quickslot dels), got %d", len(confirmOut))
+			}
+			resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[2]))
+			if err != nil {
+				t.Fatalf("decode refine preserve result ITEM_SET: %v", err)
+			}
+			if resultSet.Position.Cell != 5 || resultSet.Vnum != 11231 || resultSet.Count != 1 {
+				t.Fatalf("unexpected refine preserve result ITEM_SET: %+v", resultSet)
+			}
+			if resultSet.Sockets != tc.wantWireS {
+				t.Fatalf("unexpected refine preserve ITEM_SET sockets %+v want %+v", resultSet.Sockets, tc.wantWireS)
+			}
+			if resultSet.Attributes[0] != tc.wantWireA0 || resultSet.Attributes[1] != tc.wantWireA1 {
+				t.Fatalf("unexpected refine preserve ITEM_SET attributes %+v want [%+v %+v]", resultSet.Attributes, tc.wantWireA0, tc.wantWireA1)
+			}
+			persisted, err := accounts.Load("item-refine-preserve")
+			if err != nil {
+				t.Fatalf("load refine preserve account: %v", err)
+			}
+			got := persisted.Characters[0].Inventory[0]
+			if got.ID != 630 || got.Vnum != 11231 || got.Count != 1 || got.Slot != 5 {
+				t.Fatalf("unexpected persisted result cell: %#v", got)
+			}
+			if (tc.sockets != nil) != got.HasSockets() {
+				t.Fatalf("persisted HasSockets=%v want %v", got.HasSockets(), tc.sockets != nil)
+			}
+			if (tc.attributes != nil) != got.HasAttributes() {
+				t.Fatalf("persisted HasAttributes=%v want %v", got.HasAttributes(), tc.attributes != nil)
+			}
+			if tc.sockets != nil {
+				if got.Sockets == nil || *got.Sockets != *tc.sockets {
+					t.Fatalf("expected persisted sockets %+v, got %#v", *tc.sockets, got.Sockets)
+				}
+			} else if got.Sockets != nil {
+				t.Fatalf("expected omitted persisted sockets, got %#v", got.Sockets)
+			}
+			if tc.attributes != nil {
+				if got.Attributes == nil || *got.Attributes != *tc.attributes {
+					t.Fatalf("expected persisted attributes %+v, got %#v", *tc.attributes, got.Attributes)
+				}
+			} else if got.Attributes != nil {
+				t.Fatalf("expected omitted persisted attributes, got %#v", got.Attributes)
+			}
+		})
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewFailResultVnumPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	restore := QueueRefineConfirmRollForTest(76)
+	t.Cleanup(restore)
+
+	activeSockets := inventory.SocketValues{7, 0, 9}
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineDownPreserve", 0x01030771, 0x02040771, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 666, Vnum: 11246, Count: 1, Slot: 5, Sockets: &activeSockets, Attributes: &activeAttributes},
+		{ID: 667, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-down-preserve", 0x70707071, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-down-preserve", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine downgrade-preserve account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum: 11246, Name: "Downgrade Preserve Blade", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11247, Cost: 1000, Probability: 75, FailResultVnum: 11240, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+		Sockets:    itemcatalog.SocketValues{1, 2, 3},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11247, Name: "Unreached Result", Stackable: false, MaxCount: 1, Sockets: itemcatalog.SocketValues{30, 31, 32}}
+	failResultTemplate := itemcatalog.Template{Vnum: 11240, Name: "Downgraded Preserve Blade", Stackable: false, MaxCount: 1, Sockets: itemcatalog.SocketValues{40, 41, 42}, Attributes: itemcatalog.AttributeValues{{Type: 8, Value: 9}}}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, failResultTemplate, material})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine downgrade-preserve runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-down-preserve", 0x70707071)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 6})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected downgrade-preserve preview one frame, got %d err=%v", len(previewOut), err)
+	}
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 6})))
+	if err != nil {
+		t.Fatalf("unexpected downgrade-preserve confirm error: %v", err)
+	}
+	if len(confirmOut) != 4 {
+		t.Fatalf("expected downgrade-preserve burst of 4 frames, got %d", len(confirmOut))
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode downgrade-preserve result ITEM_SET: %v", err)
+	}
+	if resultSet.Vnum != 11240 || resultSet.Count != 1 || resultSet.Position.Cell != 5 {
+		t.Fatalf("unexpected downgrade-preserve ITEM_SET: %+v", resultSet)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{7, 0, 9}
+	if resultSet.Sockets != wantSockets {
+		t.Fatalf("expected preserved downgrade ITEM_SET sockets %+v, got %+v", wantSockets, resultSet.Sockets)
+	}
+	if resultSet.Attributes[0] != (itemproto.Attribute{Type: 1, Value: 25}) || resultSet.Attributes[1] != (itemproto.Attribute{Type: 7, Value: -3}) {
+		t.Fatalf("unexpected downgrade-preserve ITEM_SET attributes %+v", resultSet.Attributes)
+	}
+	account, err := accounts.Load("item-refine-down-preserve")
+	if err != nil {
+		t.Fatalf("load downgrade-preserve account: %v", err)
+	}
+	got := account.Characters[0].Inventory[0]
+	if got.ID != 666 || got.Vnum != 11240 || !got.HasSockets() || !got.HasAttributes() || *got.Sockets != activeSockets || *got.Attributes != activeAttributes {
+		t.Fatalf("expected persisted downgrade preserve presence, got %#v", got)
+	}
+}
+
 func TestGameRuntimeItemRefineConfirmCancelType255LeavesStateUnchanged(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
