@@ -110,8 +110,10 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/items`: compatible stack-merge keeps destination
-presence-aware sockets/attributes and discards source presence as a count-only
-mutation. Whole-stack free-cell preserve paths stay source-preserving as already
-owned. Refine catalysts and mall remain deferred. RED intentionally deferred
-until this contract lands.
+GREEN on `lane/items`: compatible unlocked same-`vnum` stack-merge is proven
+count-only with destination presence-aware sockets/attributes authoritative
+(including explicit zero), source presence discarded, and omitted destination
+presence kept omitted across pickup merge + safebox checkout / exchange finalize
+helper twins. Whole-stack free-cell preserve stays source-preserving; locked /
+over-`max_count` rejects stay non-mutating. Refine catalysts and mall remain
+deferred.
