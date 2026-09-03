@@ -71,5 +71,7 @@ git diff --check
    `reward_item_count` shorthand:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-item-vnum-bundle.json`
    (`docs/plans/2026-09-03-invalid-open-safebox-foreign-reward-item-vnum-fixture.md`).
-   Highest-value remaining twin is the `open_cube` scalar `reward_item_vnum`
-   shorthand reject.
+   ~~Highest-value remaining twin is the `open_cube` scalar `reward_item_vnum`
+   shorthand reject.~~ Done:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-reward-item-vnum-bundle.json`
+   (`docs/plans/2026-09-03-invalid-open-cube-foreign-reward-item-vnum-fixture.md`).
