@@ -107,9 +107,8 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/items`: partial counted `ITEM_DROP2` must mint a fresh
-ground identity and independent presence-aware sockets/attributes clone so the
-owner can pick up the split while the remainder still exists. Whole-stack drop
-stays identity-preserving. Stack-merge attribute/socket policy, refine
-catalysts, and mall remain deferred. RED intentionally deferred until this
-contract lands.
+GREEN on `lane/items`: partial counted `ITEM_DROP2` mints a fresh ground
+identity and independent presence-aware sockets/attributes clone so the owner
+can pick up the split while the remainder still exists. Whole-stack drop stays
+identity-preserving. Stack-merge attribute/socket policy, refine catalysts, and
+mall remain deferred.

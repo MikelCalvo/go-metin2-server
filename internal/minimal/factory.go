@@ -5965,7 +5965,18 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			var droppedItem inventory.ItemInstance
 			var groundVID uint32
 			if liveSharedWorld {
-				droppedItem, ok = droppedInventoryItem(previousSelected, result.From, count)
+				sourceItem, sourceOK := carriedInventoryItemForSlot(previousSelected, result.From)
+				if !sourceOK {
+					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+					refreshLiveCharacterRegistration()
+					return nil, false
+				}
+				if count < sourceItem.Count {
+					nextID := nextCarriedSplitItemID(selectedPlayer)
+					droppedItem, ok = partialDroppedGroundItem(sourceItem, nextID, count)
+				} else {
+					droppedItem, ok = droppedInventoryItem(previousSelected, result.From, count)
+				}
 				if !ok {
 					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 					refreshLiveCharacterRegistration()
@@ -11918,21 +11929,72 @@ func itemDropResultFramesWithTemplates(character loginticket.Character, result i
 }
 
 func droppedInventoryItem(character loginticket.Character, slot inventory.SlotIndex, count uint16) (inventory.ItemInstance, bool) {
+	item, ok := carriedInventoryItemForSlot(character, slot)
+	if !ok {
+		return inventory.ItemInstance{}, false
+	}
+	if count == 0 || count > item.Count {
+		return inventory.ItemInstance{}, false
+	}
+	dropped := item
+	dropped.Count = count
+	if err := dropped.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return dropped, true
+}
+
+func carriedInventoryItemForSlot(character loginticket.Character, slot inventory.SlotIndex) (inventory.ItemInstance, bool) {
 	for _, item := range character.Inventory {
 		if item.Slot != slot || item.Equipped || item.Locked {
 			continue
 		}
-		if count == 0 || count > item.Count {
-			return inventory.ItemInstance{}, false
-		}
-		dropped := item
-		dropped.Count = count
-		if err := dropped.Validate(); err != nil {
-			return inventory.ItemInstance{}, false
-		}
-		return dropped, true
+		return item, true
 	}
 	return inventory.ItemInstance{}, false
+}
+
+// nextCarriedSplitItemID allocates the next item identity from the selected
+// character's live inventory/equipment max+1, matching inventory move splits.
+func nextCarriedSplitItemID(selectedPlayer *player.Runtime) uint64 {
+	if selectedPlayer == nil {
+		return 0
+	}
+	var maxID uint64
+	for _, item := range selectedPlayer.LiveInventory() {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	for _, item := range selectedPlayer.LiveEquipment() {
+		if item.ID > maxID {
+			maxID = item.ID
+		}
+	}
+	if maxID == ^uint64(0) {
+		return 0
+	}
+	return maxID + 1
+}
+
+// partialDroppedGroundItem builds the fresh-identity ground instance for a
+// counted ITEM_DROP2 that leaves a carried remainder. Presence-aware
+// sockets/attributes are cloned so the ground handle cannot alias the remainder.
+func partialDroppedGroundItem(source inventory.ItemInstance, nextID uint64, count uint16) (inventory.ItemInstance, bool) {
+	if nextID == 0 || count == 0 || count >= source.Count {
+		return inventory.ItemInstance{}, false
+	}
+	dropped := source
+	dropped.ID = nextID
+	dropped.Count = count
+	dropped.Equipped = false
+	dropped.EquipSlot = inventory.EquipmentSlotNone
+	dropped.Sockets = source.CloneSockets()
+	dropped.Attributes = source.CloneAttributes()
+	if err := dropped.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return dropped, true
 }
 
 func cloneInventoryItems(items []inventory.ItemInstance) []inventory.ItemInstance {
