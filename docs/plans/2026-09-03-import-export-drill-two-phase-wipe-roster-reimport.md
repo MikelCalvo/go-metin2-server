@@ -112,6 +112,8 @@ Rules:
 - DB-backed runtime repositories / daemon mutation routes
 - remote admin, secrets in git, metrics/tracing
 
+Follow-up owned separately: read-only `synthesize-wipe-export-status` for retained `wipe-quarantine.json` — see [CLI synthesize wipe-export status](2026-09-03-cli-synthesize-wipe-export-status.md).
+
 ## Likely files to change
 
 - `internal/migratecli/synthesize_wipe_export.go` (new)

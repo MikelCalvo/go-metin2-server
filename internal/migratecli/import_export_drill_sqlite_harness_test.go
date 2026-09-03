@@ -573,6 +573,36 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		if strings.Contains(wipeBody, `"summary"`) {
 			t.Fatalf("wipe-quarantine.json for %s must be bare export JSON, got %s", kind, wipeBody)
 		}
+		wipeStatusPath := filepath.Join(exportTree, kind, "wipe-quarantine-status.json")
+		wipeStatusRaw, err := os.ReadFile(wipeStatusPath)
+		if err != nil {
+			t.Fatalf("read wipe-quarantine-status for %s: %v", kind, err)
+		}
+		var wipeStatus synthesizeWipeExportStatus
+		if err := json.Unmarshal(wipeStatusRaw, &wipeStatus); err != nil {
+			t.Fatalf("decode wipe-quarantine-status for %s: %v body=%s", kind, err, string(wipeStatusRaw))
+		}
+		if wipeStatus.Format != synthesizeWipeExportStatusFormat || !wipeStatus.Present || wipeStatus.Kind != kind {
+			t.Fatalf("unexpected wipe-quarantine-status for %s: %#v", kind, wipeStatus)
+		}
+		wipeRaw, err := os.ReadFile(wipePath)
+		if err != nil {
+			t.Fatalf("read wipe-quarantine for %s: %v", kind, err)
+		}
+		wantWipeSHA := sha256Hex(wipeRaw)
+		if wipeStatus.WipeExportSHA256 != wantWipeSHA {
+			t.Fatalf("wipe-quarantine-status sha mismatch for %s: got %s want %s", kind, wipeStatus.WipeExportSHA256, wantWipeSHA)
+		}
+		if wipeStatus.ScopeCount <= 0 || len(wipeStatus.ScopeIDs) != wipeStatus.ScopeCount {
+			t.Fatalf("wipe-quarantine-status scope for %s invalid: %#v", kind, wipeStatus)
+		}
+		wantScopeKey := "character_ids"
+		if kind == "bootstrap-ground-item-state" {
+			wantScopeKey = "vids"
+		}
+		if wipeStatus.ScopeKey != wantScopeKey {
+			t.Fatalf("wipe-quarantine-status scope_key for %s: got %q want %q", kind, wipeStatus.ScopeKey, wantScopeKey)
+		}
 		wipeResultPath := filepath.Join(exportTree, kind, "wipe-import-result.json")
 		wipeResult := mustReadFileString(t, wipeResultPath)
 		if !strings.Contains(wipeResult, `"replaced": true`) && !strings.Contains(compactJSONForAssert(wipeResult), `"replaced":true`) {

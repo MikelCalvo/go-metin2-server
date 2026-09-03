@@ -266,12 +266,19 @@ func TestRunImportExportDrillPrintsTwoPhaseWipeRosterReimport(t *testing.T) {
 			`metin2-migrate synthesize-wipe-export --kind %s --export "$EXPORT_TREE/%s/quarantine.json" > "$EXPORT_TREE/%s/wipe-quarantine.json"`,
 			kind, kind, kind,
 		)
+		wantWipeStatus := fmt.Sprintf(
+			`metin2-migrate synthesize-wipe-export-status --kind %s --wipe-export "$EXPORT_TREE/%s/wipe-quarantine.json" > "$EXPORT_TREE/%s/wipe-quarantine-status.json"`,
+			kind, kind, kind,
+		)
 		wantWipe := fmt.Sprintf(
 			`metin2-migrate import-export --kind %s --export "$EXPORT_TREE/%s/wipe-quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import --i-confirm-scoped-replace > "$EXPORT_TREE/%s/wipe-import-result.json"`,
 			kind, kind, kind,
 		)
 		if !strings.Contains(body, wantSynthesize) {
 			t.Fatalf("expected synthesize line for %s:\nwant %q\nbody:\n%s", kind, wantSynthesize, body)
+		}
+		if !strings.Contains(body, wantWipeStatus) {
+			t.Fatalf("expected wipe-export status line for %s:\nwant %q\nbody:\n%s", kind, wantWipeStatus, body)
 		}
 		if !strings.Contains(body, wantWipe) {
 			t.Fatalf("expected wipe import line for %s:\nwant %q\nbody:\n%s", kind, wantWipe, body)

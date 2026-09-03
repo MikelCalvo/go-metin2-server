@@ -176,6 +176,7 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 		for _, kind := range importExportDrillWipeKinds {
 			fmt.Fprintf(&b, "test -f \"$EXPORT_TREE/%s/quarantine.json\"\n", kind)
 			fmt.Fprintf(&b, "metin2-migrate synthesize-wipe-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" > \"$EXPORT_TREE/%s/wipe-quarantine.json\"\n", kind, kind, kind)
+			fmt.Fprintf(&b, "metin2-migrate synthesize-wipe-export-status --kind %s --wipe-export \"$EXPORT_TREE/%s/wipe-quarantine.json\" > \"$EXPORT_TREE/%s/wipe-quarantine-status.json\"\n", kind, kind, kind)
 		}
 		b.WriteString("\n")
 		b.WriteString("echo '== phase 2: wipe character-FK tip kinds =='\n")
