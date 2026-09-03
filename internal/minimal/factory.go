@@ -8037,11 +8037,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if nextID == 0 {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
-						resultItem = sourceItem
-						resultItem.ID = nextID
-						resultItem.Count = moveCount
-						resultItem.Slot = inventory.SlotIndex(destinationSlot)
-						if err := resultItem.Validate(); err != nil {
+						var ok bool
+						resultItem, ok = safeboxPartialSplitDestinationItem(sourceItem, nextID, moveCount, inventory.SlotIndex(destinationSlot))
+						if !ok {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
 					} else {
@@ -12168,6 +12166,27 @@ func nextSafeboxSplitItemID(selectedPlayer *player.Runtime, safeboxItems map[uin
 		return 0
 	}
 	return maxID + 1
+}
+
+// safeboxPartialSplitDestinationItem builds the new-identity destination cell for a
+// partial empty-destination SAFEBOX_ITEM_MOVE. Presence-aware sockets/attributes are
+// cloned so the split cell cannot alias the source remainder's pointers.
+func safeboxPartialSplitDestinationItem(source inventory.ItemInstance, nextID uint64, count uint16, slot inventory.SlotIndex) (inventory.ItemInstance, bool) {
+	if nextID == 0 || count == 0 || count >= source.Count {
+		return inventory.ItemInstance{}, false
+	}
+	destination := source
+	destination.ID = nextID
+	destination.Count = count
+	destination.Slot = slot
+	destination.Equipped = false
+	destination.EquipSlot = inventory.EquipmentSlotNone
+	destination.Sockets = source.CloneSockets()
+	destination.Attributes = source.CloneAttributes()
+	if err := destination.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return destination, true
 }
 
 func encodeBootstrapSafeboxSetFrame(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {

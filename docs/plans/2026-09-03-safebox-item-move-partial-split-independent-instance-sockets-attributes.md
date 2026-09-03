@@ -90,5 +90,8 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/items`: contract named; RED → GREEN remains follow-on.
-Stack-merge attribute/socket policy, refine catalysts, and mall remain deferred.
+GREEN on `lane/items`: partial empty-destination `SAFEBOX_ITEM_MOVE` clones
+presence-aware sockets/attributes (including explicit zero) onto the new
+destination identity so later source/destination writes cannot alias.
+Compatible merge stays count-only. Stack-merge attribute/socket policy, refine
+catalysts, and mall remain deferred.
