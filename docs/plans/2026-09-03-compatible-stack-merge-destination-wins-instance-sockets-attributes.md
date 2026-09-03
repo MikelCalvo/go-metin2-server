@@ -113,7 +113,8 @@ git diff --check
 GREEN on `lane/items`: compatible unlocked same-`vnum` stack-merge is proven
 count-only with destination presence-aware sockets/attributes authoritative
 (including explicit zero), source presence discarded, and omitted destination
-presence kept omitted across pickup merge + safebox checkout / exchange finalize
-helper twins. Whole-stack free-cell preserve stays source-preserving; locked /
-over-`max_count` rejects stay non-mutating. Refine catalysts and mall remain
-deferred.
+presence kept omitted across pickup merge, carried `ITEM_MOVE` /
+`ITEM_USE_TO_ITEM`, safebox checkout / `SAFEBOX_ITEM_MOVE`, exchange finalize
+helper, and MYSHOP guest-buy merge twins. Whole-stack free-cell preserve stays
+source-preserving; locked / over-`max_count` rejects stay non-mutating. Refine
+catalysts and mall remain deferred.

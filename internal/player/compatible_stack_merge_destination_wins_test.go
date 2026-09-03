@@ -339,6 +339,126 @@ func TestRuntimeUseItemOnItemCompatibleMergeKeepsDestinationInstancePresence(t *
 	}
 }
 
+func TestRuntimeMoveInventoryItemCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {
+	destActiveSockets := inventory.SocketValues{7, 0, 9}
+	destActiveAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	sourceActiveSockets := inventory.SocketValues{1, 2, 3}
+	sourceActiveAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	destZeroSockets := inventory.SocketValues{}
+	destZeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name              string
+		destinationSocks  *inventory.SocketValues
+		destinationAttrs  *inventory.AttributeValues
+		sourceSocks       *inventory.SocketValues
+		sourceAttrs       *inventory.AttributeValues
+		wantHasSockets    bool
+		wantHasAttributes bool
+		wantSockets       inventory.SocketValues
+		wantAttributes    inventory.AttributeValues
+		count             uint16
+		wantSourceRemain  bool
+		wantSourceCount   uint16
+		wantDestCount     uint16
+	}{
+		{
+			name:              "active destination wins on partial counted merge",
+			destinationSocks:  &destActiveSockets,
+			destinationAttrs:  &destActiveAttributes,
+			sourceSocks:       &sourceActiveSockets,
+			sourceAttrs:       &sourceActiveAttributes,
+			wantHasSockets:    true,
+			wantHasAttributes: true,
+			wantSockets:       destActiveSockets,
+			wantAttributes:    destActiveAttributes,
+			count:             2,
+			wantSourceRemain:  true,
+			wantSourceCount:   2,
+			wantDestCount:     8,
+		},
+		{
+			name:              "explicit-zero destination wins on full counted merge",
+			destinationSocks:  &destZeroSockets,
+			destinationAttrs:  &destZeroAttributes,
+			sourceSocks:       &sourceActiveSockets,
+			sourceAttrs:       &sourceActiveAttributes,
+			wantHasSockets:    true,
+			wantHasAttributes: true,
+			wantSockets:       destZeroSockets,
+			wantAttributes:    destZeroAttributes,
+			count:             4,
+			wantSourceRemain:  false,
+			wantDestCount:     10,
+		},
+		{
+			name:              "omitted destination stays omitted on zero-count merge",
+			sourceSocks:       &sourceActiveSockets,
+			sourceAttrs:       &sourceActiveAttributes,
+			wantHasSockets:    false,
+			wantHasAttributes: false,
+			count:             0,
+			wantSourceRemain:  false,
+			wantDestCount:     10,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:   0x01030931,
+				VID:  0x02040931,
+				Name: "MergeDestWinsItemMove",
+				Inventory: []inventory.ItemInstance{
+					{ID: 31, Vnum: 27001, Count: 4, Slot: 5, Sockets: tc.sourceSocks, Attributes: tc.sourceAttrs},
+					{ID: 32, Vnum: 27001, Count: 6, Slot: 8, Sockets: tc.destinationSocks, Attributes: tc.destinationAttrs},
+				},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "merge-dest-wins-item-move", CharacterIndex: 1})
+			sourceBefore := persisted.Inventory[0]
+
+			var (
+				result inventory.MoveResult
+				ok     bool
+			)
+			if tc.count == 0 {
+				result, ok = runtime.MoveInventoryItemBounded(5, 8, 200)
+			} else {
+				result, ok = runtime.MoveInventoryItemCountBounded(5, 8, tc.count, 200)
+			}
+			if !ok {
+				t.Fatal("expected compatible item-move merge to succeed")
+			}
+			if !result.Changed || !result.ToOccupied || !result.CountOnly || result.ToItem.ID != 32 || result.ToItem.Slot != 8 || result.ToItem.Count != tc.wantDestCount {
+				t.Fatalf("unexpected item-move merge result: %+v", result)
+			}
+			if result.FromOccupied != tc.wantSourceRemain {
+				t.Fatalf("unexpected source occupancy: %+v", result)
+			}
+			if tc.wantSourceRemain && (result.FromItem.ID != 31 || result.FromItem.Count != tc.wantSourceCount || result.FromItem.Slot != 5) {
+				t.Fatalf("unexpected source remainder: %+v", result.FromItem)
+			}
+			assertDestinationPresenceWins(t, result.ToItem, sourceBefore, tc.wantHasSockets, tc.wantHasAttributes, tc.wantSockets, tc.wantAttributes)
+
+			live := runtime.LiveInventory()
+			var dest *inventory.ItemInstance
+			for i := range live {
+				if live[i].ID == 32 {
+					dest = &live[i]
+					break
+				}
+			}
+			if dest == nil || dest.Count != tc.wantDestCount || dest.Slot != 8 {
+				t.Fatalf("unexpected live destination after item-move merge: %#v", live)
+			}
+			assertDestinationPresenceWins(t, *dest, sourceBefore, tc.wantHasSockets, tc.wantHasAttributes, tc.wantSockets, tc.wantAttributes)
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+				t.Fatalf("item-move merge mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+			}
+		})
+	}
+}
+
 func assertDestinationPresenceWins(
 	t *testing.T,
 	got inventory.ItemInstance,
