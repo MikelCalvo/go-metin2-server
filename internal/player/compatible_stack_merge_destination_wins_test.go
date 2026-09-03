@@ -496,3 +496,117 @@ func assertDestinationPresenceWins(
 		t.Fatalf("expected omitted destination attributes, got %#v", got.Attributes)
 	}
 }
+
+func TestRuntimeBuyMerchantItemCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {
+	destActiveSockets := inventory.SocketValues{7, 0, 9}
+	destActiveAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	destZeroSockets := inventory.SocketValues{}
+	destZeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name              string
+		destinationSocks  *inventory.SocketValues
+		destinationAttrs  *inventory.AttributeValues
+		wantHasSockets    bool
+		wantHasAttributes bool
+		wantSockets       inventory.SocketValues
+		wantAttributes    inventory.AttributeValues
+	}{
+		{
+			name:              "active destination wins on merchant buy merge",
+			destinationSocks:  &destActiveSockets,
+			destinationAttrs:  &destActiveAttributes,
+			wantHasSockets:    true,
+			wantHasAttributes: true,
+			wantSockets:       destActiveSockets,
+			wantAttributes:    destActiveAttributes,
+		},
+		{
+			name:              "explicit-zero destination wins on merchant buy merge",
+			destinationSocks:  &destZeroSockets,
+			destinationAttrs:  &destZeroAttributes,
+			wantHasSockets:    true,
+			wantHasAttributes: true,
+			wantSockets:       destZeroSockets,
+			wantAttributes:    destZeroAttributes,
+		},
+		{
+			name:              "omitted destination stays omitted on merchant buy merge",
+			wantHasSockets:    false,
+			wantHasAttributes: false,
+		},
+	}
+
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:   0x01030941,
+				VID:  0x02040941,
+				Name: "MergeDestWinsMerchantBuy",
+				Gold: 500,
+				Inventory: []inventory.ItemInstance{{
+					ID:         41,
+					Vnum:       27001,
+					Count:      4,
+					Slot:       0,
+					Sockets:    tc.destinationSocks,
+					Attributes: tc.destinationAttrs,
+				}},
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "merge-dest-wins-merchant-buy", CharacterIndex: 1})
+			result, ok := runtime.BuyMerchantItem(template, 3, 50)
+			if !ok {
+				t.Fatal("expected merchant buy merge to succeed")
+			}
+			if result.Gold != 450 || len(result.Items) != 1 || len(result.ItemChanges) != 1 {
+				t.Fatalf("unexpected merchant buy result: %+v", result)
+			}
+			if result.ItemChanges[0].Created || result.Items[0].ID != 41 || result.Items[0].Count != 7 || result.Items[0].Slot != 0 {
+				t.Fatalf("expected count-only merge into destination id 41, got %+v", result)
+			}
+			assertDestinationPresenceWins(t, result.Items[0], inventory.ItemInstance{}, tc.wantHasSockets, tc.wantHasAttributes, tc.wantSockets, tc.wantAttributes)
+
+			live := runtime.LiveInventory()
+			if len(live) != 1 || live[0].ID != 41 || live[0].Count != 7 || live[0].Slot != 0 {
+				t.Fatalf("unexpected live inventory after merchant buy merge: %#v", live)
+			}
+			assertDestinationPresenceWins(t, live[0], inventory.ItemInstance{}, tc.wantHasSockets, tc.wantHasAttributes, tc.wantSockets, tc.wantAttributes)
+			if runtime.LiveGold() != 450 {
+				t.Fatalf("expected live gold 450 after buy, got %d", runtime.LiveGold())
+			}
+		})
+	}
+}
+
+func TestRuntimeGrantCarriedItemCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {
+	destSockets := inventory.SocketValues{7, 0, 9}
+	destAttributes := inventory.AttributeValues{{Type: 1, Value: 25}}
+	runtime := NewRuntime(loginticket.Character{
+		ID:   0x01030942,
+		VID:  0x02040942,
+		Name: "MergeDestWinsGrant",
+		Inventory: []inventory.ItemInstance{{
+			ID:         42,
+			Vnum:       27001,
+			Count:      6,
+			Slot:       3,
+			Sockets:    &destSockets,
+			Attributes: &destAttributes,
+		}},
+	}, SessionLink{Login: "merge-dest-wins-grant", CharacterIndex: 1})
+
+	result, ok := runtime.GrantCarriedItem(itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}, 2)
+	if !ok {
+		t.Fatal("expected grant merge to succeed")
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != 42 || result.Items[0].Count != 8 || result.Items[0].Slot != 3 {
+		t.Fatalf("unexpected grant merge result: %+v", result)
+	}
+	if !result.Items[0].HasSockets() || *result.Items[0].Sockets != destSockets {
+		t.Fatalf("expected grant merge to keep destination sockets, got %#v", result.Items[0].Sockets)
+	}
+	if !result.Items[0].HasAttributes() || *result.Items[0].Attributes != destAttributes {
+		t.Fatalf("expected grant merge to keep destination attributes, got %#v", result.Items[0].Attributes)
+	}
+}

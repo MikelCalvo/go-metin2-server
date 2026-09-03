@@ -517,3 +517,69 @@ func TestGameRuntimeMyShopGuestBuyCompatibleMergeKeepsDestinationInstancePresenc
 		t.Fatalf("expected merge guest inventory attributes to stay destination presence %+v, got %+v", guestDestAttributes, persistedPeer.Inventory[0].Attributes)
 	}
 }
+
+func TestGameRuntimeMerchantBuyCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {
+	destSockets := inventory.SocketValues{7, 0, 9}
+	destAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	buyer := merchantBuyerCharacter("MerchantMergeDestWins", 0x01030971, 0x02040971, 500, []inventory.ItemInstance{{
+		ID:         971,
+		Vnum:       27001,
+		Count:      4,
+		Slot:       5,
+		Sockets:    &destSockets,
+		Attributes: &destAttributes,
+	}})
+	runtime, accounts, flow, merchantEntityID, login := setupMerchantBuySession(t, "merchant-merge-dest-wins", 0x70707171, buyer)
+	defer closeSessionFlow(t, flow)
+	_ = runtime
+
+	interactWithMerchantForBuy(t, flow, merchantEntityID)
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{
+		RawLeadingByte: 1,
+		CatalogSlot:    0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merchant SHOP BUY merge: %v", err)
+	}
+	if len(buyOut) == 0 {
+		t.Fatal("expected merchant SHOP BUY merge to emit frames")
+	}
+
+	var itemUpdate *itemproto.UpdatePacket
+	for _, raw := range buyOut {
+		f := decodeSingleFrame(t, raw)
+		if update, err := itemproto.DecodeUpdate(f); err == nil {
+			if update.Position == itemproto.InventoryPosition(5) && update.Count == 5 {
+				copied := update
+				itemUpdate = &copied
+			}
+		}
+	}
+	if itemUpdate == nil {
+		t.Fatalf("expected ITEM_UPDATE for destination-wins merchant merge count 5, frames=%d", len(buyOut))
+	}
+	if itemUpdate.Sockets != ([itemproto.ItemSocketCount]int32{7, 0, 9}) {
+		t.Fatalf("expected merchant merge ITEM_UPDATE sockets to stay destination presence, got %+v", itemUpdate.Sockets)
+	}
+	if itemUpdate.Attributes[0] != (itemproto.Attribute{Type: 1, Value: 25}) || itemUpdate.Attributes[1] != (itemproto.Attribute{Type: 7, Value: -3}) {
+		t.Fatalf("expected merchant merge ITEM_UPDATE attributes to stay destination presence, got %+v", itemUpdate.Attributes)
+	}
+
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load merchant merge buyer account: %v", err)
+	}
+	persisted := findPersistedCharacter(t, account, buyer.Name)
+	if persisted.Gold != 450 {
+		t.Fatalf("expected gold 450 after merchant merge buy, got %d", persisted.Gold)
+	}
+	if len(persisted.Inventory) != 1 || persisted.Inventory[0].ID != 971 || persisted.Inventory[0].Vnum != 27001 || persisted.Inventory[0].Count != 5 || persisted.Inventory[0].Slot != 5 {
+		t.Fatalf("unexpected merchant merge inventory: %+v", persisted.Inventory)
+	}
+	if !persisted.Inventory[0].HasSockets() || *persisted.Inventory[0].Sockets != destSockets {
+		t.Fatalf("expected merchant merge inventory sockets to stay destination presence %+v, got %+v", destSockets, persisted.Inventory[0].Sockets)
+	}
+	if !persisted.Inventory[0].HasAttributes() || *persisted.Inventory[0].Attributes != destAttributes {
+		t.Fatalf("expected merchant merge inventory attributes to stay destination presence %+v, got %+v", destAttributes, persisted.Inventory[0].Attributes)
+	}
+}

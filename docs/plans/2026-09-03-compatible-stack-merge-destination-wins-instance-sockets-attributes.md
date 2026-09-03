@@ -64,7 +64,10 @@ placement.
    - open-presentation `SAFEBOX_CHECKOUT` compatible merge and
      `SAFEBOX_ITEM_MOVE` compatible partial/whole merge;
    - exchange mutual-accept finalize compatible-stack merge;
-   - MYSHOP guest-buy compatible-stack merge.
+   - MYSHOP guest-buy compatible-stack merge;
+   - NPC merchant `SHOP BUY` / `BuyMerchantItem` / `GrantCarriedItem`
+     compatible-stack merge (including distributed multi-stack fan-out)
+     (`docs/plans/2026-09-04-merchant-buy-compatible-merge-destination-wins-instance-sockets-attributes.md`).
 5. **Wire / display**: count-only `ITEM_UPDATE` / safebox merge `SAFEBOX_SET`
    continue to encode destination `EffectiveSockets` / `EffectiveAttributes`
    (instance presence including explicit zero wins over template; omitted
@@ -115,6 +118,7 @@ count-only with destination presence-aware sockets/attributes authoritative
 (including explicit zero), source presence discarded, and omitted destination
 presence kept omitted across pickup merge, carried `ITEM_MOVE` /
 `ITEM_USE_TO_ITEM`, safebox checkout / `SAFEBOX_ITEM_MOVE`, exchange finalize
-helper, and MYSHOP guest-buy merge twins. Whole-stack free-cell preserve stays
-source-preserving; locked / over-`max_count` rejects stay non-mutating. Refine
-catalysts and mall remain deferred.
+helper, MYSHOP guest-buy merge, and NPC merchant `SHOP BUY` /
+`BuyMerchantItem` / `GrantCarriedItem` merge twins. Whole-stack free-cell
+preserve stays source-preserving; locked / over-`max_count` rejects stay
+non-mutating. Refine catalysts and mall remain deferred.
