@@ -101,7 +101,7 @@ Rules:
 7. Default insert-only printer and single-pass scoped-replace printer remain
    unchanged.
 8. Contrib helper may forward the same opt-in only when
-   `METIN2_IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER_REIMPORT=YES` (default remains
+   `METIN2_IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER=YES` (default remains
    insert-only / single-pass scoped-replace when that older gate is set).
 
 ## What this is not yet
@@ -139,6 +139,16 @@ go test -tags=sqlite_harness ./internal/migratecli -run 'ImportExportDrillSQLite
 gofmt -l internal/migratecli/*.go
 git diff --check
 ```
+
+## Status
+
+GREEN on `lane/persistence`.
+
+- `metin2-migrate synthesize-wipe-export` emits bare wipe-scope exports for the six character-FK tip kinds and accepts bare or wrapped quarantine JSON.
+- `metin2-migrate import-export` unwraps wrapped `quarantine-export` JSON before decode.
+- `metin2-migrate import-export-drill --i-confirm-print-two-phase-wipe-roster-reimport` prints synthesize → wipe → roster → omit-roster reimport.
+- Contrib helper forwards `METIN2_IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER=YES`.
+- Hermetic seeded SQLite proof executes the printed two-phase script green under `go test -tags=sqlite_harness ./internal/migratecli -run ImportExportDrillSQLiteHermeticPrintedScriptTwoPhase`.
 
 ## Exit criteria
 

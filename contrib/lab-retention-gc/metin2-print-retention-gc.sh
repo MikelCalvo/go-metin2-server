@@ -13,6 +13,7 @@ IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
 IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
 IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
 IMPORT_PRINT_SCOPED_REPLACE="${METIN2_IMPORT_PRINT_SCOPED_REPLACE:-}"
+IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER="${METIN2_IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER:-}"
 PRINT_ASIDE_PURGE="${METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE:-}"
 ASIDE_MIN_AGE_DAYS="${METIN2_GC_ASIDE_MIN_AGE_DAYS:-7}"
 ASIDE_NOW="${METIN2_GC_ASIDE_NOW:-}"
@@ -125,6 +126,12 @@ case "$IMPORT_EXPORT_TREE" in
                   IMPORT_SCOPED_REPLACE_ARGS="--i-confirm-print-scoped-replace"
                   ;;
               esac
+              IMPORT_TWO_PHASE_ARGS=""
+              case "$IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER" in
+                [Yy][Ee][Ss])
+                  IMPORT_TWO_PHASE_ARGS="--i-confirm-print-two-phase-wipe-roster-reimport"
+                  ;;
+              esac
               # shellcheck disable=SC2086
               "$BIN" import-export-drill \
                 --export-tree "$IMPORT_EXPORT_TREE" \
@@ -132,13 +139,21 @@ case "$IMPORT_EXPORT_TREE" in
                 --dsn-env "$IMPORT_DSN_ENV" \
                 --i-confirm-print-sql-import-drill \
                 $IMPORT_SCOPED_REPLACE_ARGS \
+                $IMPORT_TWO_PHASE_ARGS \
                 >"$OUT/import-export-drill.sh"
-              case "$IMPORT_PRINT_SCOPED_REPLACE" in
+              case "$IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER" in
                 [Yy][Ee][Ss])
-                  IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE (scoped-replace opt-in)"
+                  IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE (two-phase wipe→roster→reimport opt-in)"
                   ;;
                 *)
-                  IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+                  case "$IMPORT_PRINT_SCOPED_REPLACE" in
+                    [Yy][Ee][Ss])
+                      IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE (scoped-replace opt-in)"
+                      ;;
+                    *)
+                      IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+                      ;;
+                  esac
                   ;;
               esac
               ;;

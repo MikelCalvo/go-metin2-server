@@ -460,6 +460,158 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptScopedReplaceReimportsSeede
 	assertSeededImportExportDrillSQLiteRows(t, dsn)
 }
 
+func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimportsSeededTipKinds(t *testing.T) {
+	binDir := t.TempDir()
+	migrateBin := mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+
+	exportTree := filepath.Join(t.TempDir(), "20260903T181500Z-twophase")
+	mustMaterializeSeededImportExportQuarantineTree(t, exportTree)
+
+	dbPath := filepath.Join(t.TempDir(), "import-export-drill-two-phase.sqlite")
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?_pragma=foreign_keys(1)"
+
+	mustApplyCatalogToTipWithSQLiteMigrate(t, migrateBin, dsn)
+
+	var insertPrintStdout bytes.Buffer
+	var insertPrintStderr bytes.Buffer
+	insertPrintCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "sqlite",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&insertPrintStdout,
+		&insertPrintStderr,
+	)
+	if insertPrintCode != exitOK {
+		t.Fatalf("expected insert-only import-export-drill exit %d, got %d stderr=%q", exitOK, insertPrintCode, insertPrintStderr.String())
+	}
+	insertScript := insertPrintStdout.String()
+	if strings.Contains(insertScript, "--i-confirm-scoped-replace") {
+		t.Fatalf("insert-only import-export-drill must omit --i-confirm-scoped-replace, got %s", insertScript)
+	}
+
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"METIN2_IMPORT_DSN="+dsn,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, insertScript, env)
+	if code != 0 {
+		t.Fatalf("expected insert-only printed import-export-drill script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertSeededImportExportDrillSQLiteRows(t, dsn)
+
+	var twoPhasePrintStdout bytes.Buffer
+	var twoPhasePrintStderr bytes.Buffer
+	twoPhasePrintCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "sqlite",
+			"--i-confirm-print-sql-import-drill",
+			"--i-confirm-print-two-phase-wipe-roster-reimport",
+		},
+		nil,
+		&twoPhasePrintStdout,
+		&twoPhasePrintStderr,
+	)
+	if twoPhasePrintCode != exitOK {
+		t.Fatalf("expected two-phase import-export-drill exit %d, got %d stderr=%q", exitOK, twoPhasePrintCode, twoPhasePrintStderr.String())
+	}
+	if twoPhasePrintStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from two-phase import-export-drill, got %q", twoPhasePrintStderr.String())
+	}
+	twoPhaseScript := twoPhasePrintStdout.String()
+	for _, want := range []string{
+		"two-phase wipe → roster → omit-roster reimport",
+		"phase 1: synthesize wipe-quarantine.json artifacts",
+		"phase 2: wipe character-FK tip kinds",
+		"phase 3: scoped-replace tip-0002 account-character-roster",
+		"phase 4: scoped-replace reimport non-roster tip kinds",
+		"synthesize-wipe-export --kind character-item-state",
+		"wipe-quarantine.json",
+		"wipe-import-result.json",
+	} {
+		if !strings.Contains(twoPhaseScript, want) {
+			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, twoPhaseScript)
+		}
+	}
+	for _, forbidden := range []string{
+		dsn,
+		"postgres://",
+		"memory://",
+		"CREATE TABLE",
+		"--dsn 'sqlite'",
+		"--dsn sqlite",
+	} {
+		if strings.Contains(twoPhaseScript, forbidden) {
+			t.Fatalf("two-phase import-export-drill must not expose %q, got %s", forbidden, twoPhaseScript)
+		}
+	}
+	idxSynthesize := strings.Index(twoPhaseScript, "phase 1: synthesize wipe-quarantine.json artifacts")
+	idxWipe := strings.Index(twoPhaseScript, "phase 2: wipe character-FK tip kinds")
+	idxRoster := strings.Index(twoPhaseScript, "phase 3: scoped-replace tip-0002 account-character-roster")
+	idxReimport := strings.Index(twoPhaseScript, "phase 4: scoped-replace reimport non-roster tip kinds")
+	if !(idxSynthesize >= 0 && idxWipe > idxSynthesize && idxRoster > idxWipe && idxReimport > idxRoster) {
+		t.Fatalf("expected two-phase ordering synthesize<%d wipe<%d roster<%d reimport<%d\n%s", idxSynthesize, idxWipe, idxRoster, idxReimport, twoPhaseScript)
+	}
+	if strings.Count(twoPhaseScript, `import-export --kind account-character-roster --export "$EXPORT_TREE/account-character-roster/quarantine.json"`) != 1 {
+		t.Fatalf("expected exactly one roster quarantine import line, got:\n%s", twoPhaseScript)
+	}
+
+	stdout, stderr, code = runPrintedShellScriptWithEnv(t, twoPhaseScript, env)
+	if code != 0 {
+		t.Fatalf("expected two-phase printed import-export-drill script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	for _, kind := range importExportDrillWipeKinds {
+		wipePath := filepath.Join(exportTree, kind, "wipe-quarantine.json")
+		wipeBody := mustReadFileString(t, wipePath)
+		if strings.Contains(wipeBody, `"summary"`) {
+			t.Fatalf("wipe-quarantine.json for %s must be bare export JSON, got %s", kind, wipeBody)
+		}
+		wipeResultPath := filepath.Join(exportTree, kind, "wipe-import-result.json")
+		wipeResult := mustReadFileString(t, wipeResultPath)
+		if !strings.Contains(wipeResult, `"replaced": true`) && !strings.Contains(compactJSONForAssert(wipeResult), `"replaced":true`) {
+			t.Fatalf("wipe import-result for %s missing replaced:true, got %s", kind, wipeResult)
+		}
+	}
+
+	wantMarkers := map[string]string{
+		"account-character-roster":     `"character_count": 1`,
+		"character-item-state":         `"inventory_item_count": 1`,
+		"character-point-state":        `"point_row_count": 255`,
+		"character-myshop-unit-prices": `"price_row_count": 2`,
+		"character-quest-state":        `"flag_count": 1`,
+		"character-safebox-state":      `"password_count": 1`,
+		"auth-login-ticket-handoff":    `"ticket_count": 1`,
+		"item-template-state":          `"refine_info_count": 2`,
+		"static-actor-content-state":   `"static_actor_count": 1`,
+		"bootstrap-ground-item-state":  `"ground_item_count": 1`,
+	}
+	for kind, want := range wantMarkers {
+		resultPath := filepath.Join(exportTree, kind, "import-result.json")
+		body := mustReadFileString(t, resultPath)
+		if !strings.Contains(body, want) && !strings.Contains(compactJSONForAssert(body), compactJSONForAssert(want)) {
+			t.Fatalf("kind %s import-result missing %s, got %s", kind, want, body)
+		}
+		if !strings.Contains(body, `"replaced": true`) && !strings.Contains(compactJSONForAssert(body), `"replaced":true`) {
+			t.Fatalf("kind %s import-result missing replaced:true, got %s", kind, body)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", dsn} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("import-result for %s must not contain %q, got %s", kind, forbidden, body)
+			}
+		}
+	}
+	assertImportExportDrillStatusArtifactsForKinds(t, exportTree, wantMarkers, dsn)
+	assertImportExportDrillStatusReplacedForKinds(t, exportTree, wantMarkers, dsn)
+	assertSeededImportExportDrillSQLiteRows(t, dsn)
+}
+
 func omitImportExportDrillKindLines(script, kind string) string {
 	var kept []string
 	for _, line := range strings.Split(script, "\n") {

@@ -114,6 +114,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApply(args[1:], stdin, stdout, stderr)
 	case "quarantine-export":
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
+	case "synthesize-wipe-export":
+		return runSynthesizeWipeExport(args[1:], stdin, stdout, stderr)
 	case "import-export":
 		return runImportExport(args[1:], stdin, stdout, stderr)
 	case "import-export-status":
@@ -2144,6 +2146,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
+	fmt.Fprintln(w, "  synthesize-wipe-export synthesize a wipe-scope export for character-FK tip kinds from retained quarantine/export JSON")
 	fmt.Fprintln(w, "  import-export          import a retained migration-shaped export through the programmatic SQL import seams")
 	fmt.Fprintln(w, "  import-export-status   inspect a retained import-export result without mutating it")
 	fmt.Fprintln(w, "  import-export-drill    print confirmation-gated lab SQL import-export commands from a retained export/quarantine tree")

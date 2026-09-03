@@ -77,7 +77,12 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		return exitError
 	}
 
-	decoded, err := decodeImportExportPayload(kind, raw)
+	exportRaw, err := normalizeImportExportJSON(raw)
+	if err != nil {
+		writeMigrationCommandError(stderr, dsn, "import-export: %v", err)
+		return exitError
+	}
+	decoded, err := decodeImportExportPayload(kind, exportRaw)
 	if err != nil {
 		writeMigrationCommandError(stderr, dsn, "import-export: %v", err)
 		return exitError

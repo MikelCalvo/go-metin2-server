@@ -311,6 +311,68 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 	}
 }
 
+func TestRunImportExportAcceptsWrappedQuarantineExportJSON(t *testing.T) {
+	driverName := registerMigrateCLITestSQLDriver(t)
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	var ledger []dbmigrations.LedgerEntry
+	for _, migration := range catalog {
+		if migration.Version == accountstore.CharacterItemStateMigrationVersion ||
+			migration.Version == accountstore.CharacterItemInstanceSocketsMigrationVersion ||
+			migration.Version == accountstore.CharacterItemInstanceAttributesMigrationVersion {
+			ledger = append(ledger, dbmigrations.LedgerEntry{
+				Version:  migration.Version,
+				Name:     migration.Name,
+				UpSHA256: migration.UpSHA256,
+			})
+		}
+	}
+	driver := currentMigrateCLITestDriver(t)
+	driver.setLedger(ledger)
+
+	raw := `{
+  "summary": {"character_count": 0, "inventory_item_count": 0, "equipment_item_count": 0, "quickslot_count": 0, "character_ids": []},
+  "export": {
+    "migration_version": 3,
+    "migration_name": "character_item_state",
+    "inventory_items": [],
+    "equipment_items": [],
+    "quickslots": []
+  }
+}`
+	dsn := "memory://import-export-wrapped-quarantine"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export",
+			"--kind", "character-item-state",
+			"--export", "-",
+			"--driver", driverName,
+			"--dsn", dsn,
+			"--i-confirm-sql-import",
+		},
+		strings.NewReader(raw),
+		&stdout,
+		&stderr,
+	)
+	if code != exitOK {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+	body := stdout.String()
+	if !strings.Contains(body, `"inventory_item_count": 0`) {
+		t.Fatalf("expected inventory_item_count 0 in stdout %s", body)
+	}
+	if strings.Contains(body, dsn) || strings.Contains(body, "memory://") {
+		t.Fatalf("import-export must not expose DSN text, got %s", body)
+	}
+}
+
 func TestRunImportExportRedactsDSNFromRuntimeErrors(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	secretDSN := "memory://secret-password@db/import-export"

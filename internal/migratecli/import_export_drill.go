@@ -31,11 +31,12 @@ var importExportDrillScopedReplaceKinds = []string{
 }
 
 type importExportDrillPlan struct {
-	ExportTree         string
-	Driver             string
-	DSNEnv             string
-	Kinds              []string
-	PrintScopedReplace bool
+	ExportTree              string
+	Driver                  string
+	DSNEnv                  string
+	Kinds                   []string
+	PrintScopedReplace      bool
+	PrintTwoPhaseWipeRoster bool
 }
 
 func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -46,11 +47,13 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 	var dsnEnv string
 	var confirmPrint bool
 	var confirmPrintScopedReplace bool
+	var confirmPrintTwoPhaseWipeRoster bool
 	flags.StringVar(&exportTree, "export-tree", "", "absolute retained export/quarantine tree (YYYYMMDDTHHMMSSZ-<commit12>)")
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name literal printed into the drill script")
 	flags.StringVar(&dsnEnv, "dsn-env", defaultImportExportDrillDSNEnv, "environment variable name the printed script reads for the import target DSN")
 	flags.BoolVar(&confirmPrint, "i-confirm-print-sql-import-drill", false, "confirm emission of a lab SQL import-export drill script (CLI still does not execute it)")
 	flags.BoolVar(&confirmPrintScopedReplace, "i-confirm-print-scoped-replace", false, "opt-in: print --i-confirm-scoped-replace on every tip-kind import-export line (requires --i-confirm-print-sql-import-drill; default remains insert-only)")
+	flags.BoolVar(&confirmPrintTwoPhaseWipeRoster, "i-confirm-print-two-phase-wipe-roster-reimport", false, "opt-in: print synthesize-wipe → wipe → roster → omit-roster reimport phases for seeded tip-0002 re-backfill (requires --i-confirm-print-sql-import-drill; implies scoped-replace)")
 	flags.Usage = func() { printImportExportDrillUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -70,7 +73,7 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 		return exitError
 	}
 
-	plan, err := buildImportExportDrillPlan(exportTree, driverName, dsnEnv, confirmPrintScopedReplace)
+	plan, err := buildImportExportDrillPlan(exportTree, driverName, dsnEnv, confirmPrintScopedReplace, confirmPrintTwoPhaseWipeRoster)
 	if err != nil {
 		fmt.Fprintf(stderr, "import-export-drill: %v\n", err)
 		return exitError
@@ -82,7 +85,7 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 	return exitOK
 }
 
-func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string, printScopedReplace bool) (importExportDrillPlan, error) {
+func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string, printScopedReplace, printTwoPhaseWipeRoster bool) (importExportDrillPlan, error) {
 	normalizedTree, err := normalizeImportExportDrillAbsolutePath(exportTree, "export-tree")
 	if err != nil {
 		return importExportDrillPlan{}, err
@@ -96,15 +99,19 @@ func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string, printScop
 		return importExportDrillPlan{}, err
 	}
 	kinds := append([]string(nil), exportQuarantineKinds...)
-	if printScopedReplace {
+	if printTwoPhaseWipeRoster {
+		// Two-phase printer owns its own kind sequences in the renderer.
+		kinds = nil
+	} else if printScopedReplace {
 		kinds = append([]string(nil), importExportDrillScopedReplaceKinds...)
 	}
 	return importExportDrillPlan{
-		ExportTree:         normalizedTree,
-		Driver:             normalizedDriver,
-		DSNEnv:             normalizedEnv,
-		Kinds:              kinds,
-		PrintScopedReplace: printScopedReplace,
+		ExportTree:              normalizedTree,
+		Driver:                  normalizedDriver,
+		DSNEnv:                  normalizedEnv,
+		Kinds:                   kinds,
+		PrintScopedReplace:      printScopedReplace || printTwoPhaseWipeRoster,
+		PrintTwoPhaseWipeRoster: printTwoPhaseWipeRoster,
 	}, nil
 }
 
@@ -155,6 +162,45 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "DSN=\"${%s:?%s must be set to the import target DSN}\"\n", plan.DSNEnv, plan.DSNEnv)
 	b.WriteString("\n")
+	if plan.PrintTwoPhaseWipeRoster {
+		b.WriteString("echo '== two-phase wipe → roster → omit-roster reimport from retained quarantine.json artifacts =='\n")
+		b.WriteString("# Reads DSN only from the named environment variable. Never paste DSNs into notes.\n")
+		b.WriteString("# Phase 1: synthesize wipe-scope exports for character-FK tip kinds into wipe-quarantine.json.\n")
+		b.WriteString("# Phase 2: scoped-replace wipe those kinds so tip-0002 roster delete is not blocked by FKs.\n")
+		b.WriteString("# Phase 3: scoped-replace tip-0002 account-character-roster from retained quarantine.json.\n")
+		b.WriteString("# Phase 4: scoped-replace reimport every tip kind except roster from retained quarantine.json.\n")
+		b.WriteString("# Seeded full-tree single-pass including tip-0002 still fails closed while child tip rows remain;\n")
+		b.WriteString("# this two-phase printer is the supported automation for that lab re-backfill path.\n")
+		b.WriteString("\n")
+		b.WriteString("echo '== phase 1: synthesize wipe-quarantine.json artifacts =='\n")
+		for _, kind := range importExportDrillWipeKinds {
+			fmt.Fprintf(&b, "test -f \"$EXPORT_TREE/%s/quarantine.json\"\n", kind)
+			fmt.Fprintf(&b, "metin2-migrate synthesize-wipe-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" > \"$EXPORT_TREE/%s/wipe-quarantine.json\"\n", kind, kind, kind)
+		}
+		b.WriteString("\n")
+		b.WriteString("echo '== phase 2: wipe character-FK tip kinds =='\n")
+		for _, kind := range importExportDrillWipeKinds {
+			fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/wipe-quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import --i-confirm-scoped-replace > \"$EXPORT_TREE/%s/wipe-import-result.json\"\n", kind, kind, kind)
+			fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/wipe-import-result.json\" > \"$EXPORT_TREE/%s/wipe-import-result-status.json\"\n", kind, kind, kind)
+		}
+		b.WriteString("\n")
+		b.WriteString("echo '== phase 3: scoped-replace tip-0002 account-character-roster =='\n")
+		b.WriteString("test -f \"$EXPORT_TREE/account-character-roster/quarantine.json\"\n")
+		b.WriteString("metin2-migrate import-export --kind account-character-roster --export \"$EXPORT_TREE/account-character-roster/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import --i-confirm-scoped-replace > \"$EXPORT_TREE/account-character-roster/import-result.json\"\n")
+		b.WriteString("metin2-migrate import-export-status --kind account-character-roster --import-result \"$EXPORT_TREE/account-character-roster/import-result.json\" > \"$EXPORT_TREE/account-character-roster/import-result-status.json\"\n")
+		b.WriteString("\n")
+		b.WriteString("echo '== phase 4: scoped-replace reimport non-roster tip kinds =='\n")
+		for _, kind := range exportQuarantineKinds {
+			if kind == "account-character-roster" {
+				continue
+			}
+			fmt.Fprintf(&b, "test -f \"$EXPORT_TREE/%s/quarantine.json\"\n", kind)
+			fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import --i-confirm-scoped-replace > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, kind)
+			fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/import-result.json\" > \"$EXPORT_TREE/%s/import-result-status.json\"\n", kind, kind, kind)
+		}
+		return b.String()
+	}
+
 	b.WriteString("echo '== confirmation-gated SQL import from retained quarantine.json artifacts =='\n")
 	b.WriteString("# Reads DSN only from the named environment variable. Never paste DSNs into notes.\n")
 	if plan.PrintScopedReplace {
@@ -162,6 +208,7 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 		b.WriteString("# Kind order is FK-safe for empty/wipe trees: character-scoped child tips before tip-0002 roster.\n")
 		b.WriteString("# Seeded full-tree single-pass including tip-0002 still fails closed while child tip rows remain;\n")
 		b.WriteString("# omit or wipe child domains before roster replace, or run tip-0002 alone after children are absent.\n")
+		b.WriteString("# For seeded tip-0002 inclusive re-backfill, prefer --i-confirm-print-two-phase-wipe-roster-reimport.\n")
 	} else {
 		b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import and remains insert-only.\n")
 	}
@@ -179,5 +226,5 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 
 func printImportExportDrillUsage(w io.Writer) {
 	fmt.Fprintln(w, "import-export-drill usage:")
-	fmt.Fprintln(w, "  metin2-migrate import-export-drill --export-tree <absolute-retained-tree> --driver <database/sql-driver> [--dsn-env METIN2_IMPORT_DSN] --i-confirm-print-sql-import-drill [--i-confirm-print-scoped-replace]")
+	fmt.Fprintln(w, "  metin2-migrate import-export-drill --export-tree <absolute-retained-tree> --driver <database/sql-driver> [--dsn-env METIN2_IMPORT_DSN] --i-confirm-print-sql-import-drill [--i-confirm-print-scoped-replace] [--i-confirm-print-two-phase-wipe-roster-reimport]")
 }

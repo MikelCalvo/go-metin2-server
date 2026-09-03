@@ -82,7 +82,11 @@ Optional (env-gated):
   opens a database or executes `import-export`. Optional
   `METIN2_IMPORT_PRINT_SCOPED_REPLACE=YES` also forwards
   `--i-confirm-print-scoped-replace` so the printed script re-backfills with
-  tip-vocabulary scoped replace; default remains insert-only.
+  tip-vocabulary scoped replace; default remains insert-only. Optional
+  `METIN2_IMPORT_PRINT_TWO_PHASE_WIPE_ROSTER=YES` also forwards
+  `--i-confirm-print-two-phase-wipe-roster-reimport` for seeded tip-0002
+  inclusive wipe→roster→omit-roster reimport automation; the helper still never
+  opens a database or executes `import-export`.
 - `artifact-gc-aside-purge-backups.sh`,
   `artifact-gc-aside-purge-migration-runs.sh`, and
   `artifact-gc-aside-purge-exports.sh` when
