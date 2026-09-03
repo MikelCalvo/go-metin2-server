@@ -37,6 +37,7 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		`DRIVER='sqlite3'`,
 		`DSN_ENV='METIN2_IMPORT_DSN'`,
 		`DSN="${METIN2_IMPORT_DSN:?METIN2_IMPORT_DSN must be set to the import target DSN}"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
 		`test -f "$EXPORT_TREE/account-character-roster/quarantine.json"`,
 		`metin2-migrate import-export --kind account-character-roster --export "$EXPORT_TREE/account-character-roster/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/account-character-roster/import-result.json"`,
 		`metin2-migrate import-export-status --kind account-character-roster --import-result "$EXPORT_TREE/account-character-roster/import-result.json" > "$EXPORT_TREE/account-character-roster/import-result-status.json"`,
@@ -67,6 +68,7 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		`test -f "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json"`,
 		`metin2-migrate import-export --kind bootstrap-ground-item-state --export "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/bootstrap-ground-item-state/import-result.json"`,
 		`metin2-migrate import-export-status --kind bootstrap-ground-item-state --import-result "$EXPORT_TREE/bootstrap-ground-item-state/import-result.json" > "$EXPORT_TREE/bootstrap-ground-item-state/import-result-status.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -173,6 +175,14 @@ func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 			t.Fatalf("expected scoped-replace import line for %s:\nwant %q\nbody:\n%s", kind, want, body)
 		}
 	}
+	for _, want := range []string{
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in scoped-replace drill stdout:\n%s", want, body)
+		}
+	}
 	if !strings.Contains(body, "opt-in scoped replace") {
 		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", body)
 	}
@@ -252,10 +262,12 @@ func TestRunImportExportDrillPrintsTwoPhaseWipeRosterReimport(t *testing.T) {
 	body := stdout.String()
 	for _, want := range []string{
 		"two-phase wipe → roster → omit-roster reimport",
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
 		"phase 1: synthesize wipe-quarantine.json artifacts",
 		"phase 2: wipe character-FK tip kinds",
 		"phase 3: scoped-replace tip-0002 account-character-roster",
 		"phase 4: scoped-replace reimport non-roster tip kinds",
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, body)

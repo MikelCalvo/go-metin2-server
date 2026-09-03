@@ -527,6 +527,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 	twoPhaseScript := twoPhasePrintStdout.String()
 	for _, want := range []string{
 		"two-phase wipe → roster → omit-roster reimport",
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
 		"phase 1: synthesize wipe-quarantine.json artifacts",
 		"phase 2: wipe character-FK tip kinds",
 		"phase 3: scoped-replace tip-0002 account-character-roster",
@@ -534,6 +535,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		"synthesize-wipe-export --kind character-item-state",
 		"wipe-quarantine.json",
 		"wipe-import-result.json",
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(twoPhaseScript, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, twoPhaseScript)
@@ -607,6 +609,32 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		wipeResult := mustReadFileString(t, wipeResultPath)
 		if !strings.Contains(wipeResult, `"replaced": true`) && !strings.Contains(compactJSONForAssert(wipeResult), `"replaced":true`) {
 			t.Fatalf("wipe import-result for %s missing replaced:true, got %s", kind, wipeResult)
+		}
+	}
+
+	for _, name := range []string{"export-tree-status-before.json", "export-tree-status-after.json"} {
+		statusPath := filepath.Join(exportTree, name)
+		statusRaw, err := os.ReadFile(statusPath)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var treeStatus exportTreeStatus
+		if err := json.Unmarshal(statusRaw, &treeStatus); err != nil {
+			t.Fatalf("decode %s: %v body=%s", name, err, string(statusRaw))
+		}
+		if treeStatus.Format != exportTreeStatusFormat || !treeStatus.Present || treeStatus.ExportTree != exportTree {
+			t.Fatalf("unexpected %s envelope: %#v", name, treeStatus)
+		}
+		if !treeStatus.QuarantineComplete {
+			t.Fatalf("%s must report quarantine_complete=true, got %#v", name, treeStatus)
+		}
+		if name == "export-tree-status-after.json" && !treeStatus.TwoPhaseWipeArtifactsComplete {
+			t.Fatalf("export-tree-status-after.json must report two_phase_wipe_artifacts_complete=true, got %#v", treeStatus)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
+			if strings.Contains(string(statusRaw), forbidden) {
+				t.Fatalf("%s must not contain %q, got %s", name, forbidden, string(statusRaw))
+			}
 		}
 	}
 

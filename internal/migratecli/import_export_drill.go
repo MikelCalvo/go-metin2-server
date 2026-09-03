@@ -162,6 +162,9 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "DSN=\"${%s:?%s must be set to the import target DSN}\"\n", plan.DSNEnv, plan.DSNEnv)
 	b.WriteString("\n")
+	b.WriteString("echo '== retain export-tree-status before mutation =='\n")
+	b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" > \"$EXPORT_TREE/export-tree-status-before.json\"\n")
+	b.WriteString("\n")
 	if plan.PrintTwoPhaseWipeRoster {
 		b.WriteString("echo '== two-phase wipe → roster → omit-roster reimport from retained quarantine.json artifacts =='\n")
 		b.WriteString("# Reads DSN only from the named environment variable. Never paste DSNs into notes.\n")
@@ -199,6 +202,9 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 			fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import --i-confirm-scoped-replace > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, kind)
 			fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/import-result.json\" > \"$EXPORT_TREE/%s/import-result-status.json\"\n", kind, kind, kind)
 		}
+		b.WriteString("\n")
+		b.WriteString("echo '== retain export-tree-status after mutation =='\n")
+		b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
 		return b.String()
 	}
 
@@ -222,6 +228,9 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 		fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import%s > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, replaceSuffix, kind)
 		fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/import-result.json\" > \"$EXPORT_TREE/%s/import-result-status.json\"\n", kind, kind, kind)
 	}
+	b.WriteString("\n")
+	b.WriteString("echo '== retain export-tree-status after mutation =='\n")
+	b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
 	return b.String()
 }
 

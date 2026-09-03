@@ -106,6 +106,9 @@ metin2-migrate synthesize-wipe-export-status --kind <kind> --wipe-export "$EXPOR
 The printer remains confirmation-gated and still does not execute synthesize,
 import, or status itself.
 
+Follow-up owned separately: read-only `export-tree-status` for retained
+export/import trees — see [CLI export-tree status](2026-09-04-cli-export-tree-status.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace
