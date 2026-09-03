@@ -73,6 +73,8 @@ git diff --check
    QA to invent JSON.~~ Done for `open_safebox` mutating `quest_to`:
    `docs/examples/bootstrap-invalid-open-safebox-foreign-quest-to-bundle.json`
    (`docs/plans/2026-09-03-invalid-open-safebox-foreign-quest-to-fixture.md`).
-   Highest-value remaining twins are mutating `quest_to` on `open_cube`
-   definitions, or scalar `reward_item_vnum` shorthand rejects on
-   non-`quest_flag` kinds.
+   ~~Also done for `open_cube` mutating `quest_to`:~~
+   `docs/examples/bootstrap-invalid-open-cube-foreign-quest-to-bundle.json`
+   (`docs/plans/2026-09-03-invalid-open-cube-foreign-quest-to-fixture.md`).
+   Highest-value remaining twin is scalar `reward_item_vnum` shorthand rejects
+   on non-`quest_flag` kinds.

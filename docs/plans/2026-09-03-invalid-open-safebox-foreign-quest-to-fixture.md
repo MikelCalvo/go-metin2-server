@@ -66,7 +66,9 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. Highest-value remaining twins are mutating `quest_to` on
-   `open_cube` definitions, or scalar `reward_item_vnum` shorthand rejects on
-   non-`quest_flag` kinds.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_cube` mutating `quest_to`:
+   `docs/examples/bootstrap-invalid-open-cube-foreign-quest-to-bundle.json`
+   (`docs/plans/2026-09-03-invalid-open-cube-foreign-quest-to-fixture.md`).
+   Highest-value remaining twin is scalar `reward_item_vnum` shorthand rejects
+   on non-`quest_flag` kinds.
