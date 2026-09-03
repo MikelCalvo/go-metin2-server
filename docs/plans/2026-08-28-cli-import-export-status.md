@@ -46,7 +46,15 @@ Rules:
    - strict JSON decode with unknown fields / trailing JSON rejected,
    - `migration_version` / `migration_name` match the tip identity for `--kind`,
    - non-negative count fields,
-   - identity-slice lengths match their corresponding count fields,
+   - for tip-`0002` / tip-`0003` / tip-`0004` / tip-`0011` / tip-`0015` /
+     tip-`0023`, account/character identity-slice lengths match their
+     corresponding count fields,
+   - for tip-`0007` / tip-`0009` / tip-`0010` / tip-`0013`, identity slices are
+     **scope** (unique keys / vnums / vids / entity ids / combat profile names)
+     and may differ from row-count fields — including scoped-replace wipe-to-empty
+     (`count = 0` with non-empty scope) and tip-`0007` multi-history
+     (`ticket_count > len(login_keys)`); see
+     [import-export-status scoped-replace identity slices](2026-09-03-import-export-status-scoped-replace-identity-slices.md),
    - identity slices are present (empty arrays allowed; null rejected via decode
      into concrete slices after normalize).
 6. Never emits DSNs, executable SQL, runtime store rows, or import mutation

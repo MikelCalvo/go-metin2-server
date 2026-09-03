@@ -96,6 +96,71 @@ func TestRunImportExportStatusReadsValidRosterResult(t *testing.T) {
 	}
 }
 
+func TestRunImportExportStatusAcceptsScopedReplaceScopeSlices(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	dir := t.TempDir()
+
+	cases := []struct {
+		name string
+		kind string
+		raw  string
+	}{
+		{
+			name: "auth-login-ticket-wipe",
+			kind: "auth-login-ticket-handoff",
+			raw:  `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":0,"active_ticket_count":0,"login_keys":[16909060],"replaced":true}`,
+		},
+		{
+			name: "auth-login-ticket-multi-history",
+			kind: "auth-login-ticket-handoff",
+			raw:  `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":2,"active_ticket_count":1,"login_keys":[16909060],"replaced":true}`,
+		},
+		{
+			name: "item-template-wipe",
+			kind: "item-template-state",
+			raw:  `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":0,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[11200],"replaced":true}`,
+		},
+		{
+			name: "ground-item-wipe",
+			kind: "bootstrap-ground-item-state",
+			raw:  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":0,"item_shaped_count":0,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
+		},
+		{
+			name: "static-actor-wipe",
+			kind: "static-actor-content-state",
+			raw:  `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":0,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[7],"interaction_kinds":[],"combat_profiles":["practice_static_store_import_wolf"],"replaced":true}`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(dir, tc.name+".json")
+			if err := os.WriteFile(path, []byte(tc.raw), 0o600); err != nil {
+				t.Fatalf("write import-result: %v", err)
+			}
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run([]string{"import-export-status", "--kind", tc.kind, "--import-result", path}, nil, &stdout, &stderr)
+			if code != exitOK {
+				t.Fatalf("expected scoped-replace status to succeed, exit=%d stderr=%q", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("expected no stderr on scoped-replace status success, got %q", stderr.String())
+			}
+			var got importExportStatus
+			if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+				t.Fatalf("decode scoped-replace status JSON: %v\nbody:\n%s", err, stdout.String())
+			}
+			if got.Format != importExportStatusFormat || !got.Present || got.Kind != tc.kind {
+				t.Fatalf("unexpected scoped-replace status envelope: %#v", got)
+			}
+			if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+				t.Fatalf("import-export-status must not open a database target, got events %#v", events)
+			}
+		})
+	}
+}
+
 func TestRunImportExportStatusRejectsContractFailures(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	dir := t.TempDir()

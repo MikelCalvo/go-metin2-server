@@ -41,4 +41,6 @@ without insert-only primary-key or active-login-key unique-index conflicts.
 
 GREEN on `lane/persistence`. Current tip vocabulary scoped-replace paths are now
 complete for the landed export kinds; production-engine selection remains
-deferred.
+deferred. Offline `import-export-status` identity-slice acceptance for
+scoped-replace wipe / tip-`0007` multi-history is owned by
+[import-export-status scoped-replace identity slices](2026-09-03-import-export-status-scoped-replace-identity-slices.md).

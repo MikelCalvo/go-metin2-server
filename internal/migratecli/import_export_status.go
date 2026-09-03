@@ -318,10 +318,10 @@ func normalizeAuthLoginTicketHandoffImportResult(result loginticket.AuthLoginTic
 	if result.ActiveTicketCount > result.TicketCount {
 		return loginticket.AuthLoginTicketHandoffImportResult{}, fmt.Errorf("%w: active_ticket_count %d exceeds ticket_count %d", ErrImportExportStatus, result.ActiveTicketCount, result.TicketCount)
 	}
+	// login_keys is unique replace/import scope; ticket_count is inserted row
+	// count (wipe may list keys with ticket_count=0; multi-history may insert
+	// multiple rows for one login key).
 	result.LoginKeys = emptyUint32Slice(result.LoginKeys)
-	if len(result.LoginKeys) != result.TicketCount {
-		return loginticket.AuthLoginTicketHandoffImportResult{}, fmt.Errorf("%w: login_keys length %d does not match ticket_count %d", ErrImportExportStatus, len(result.LoginKeys), result.TicketCount)
-	}
 	return result, nil
 }
 
@@ -340,10 +340,9 @@ func normalizeItemTemplateStateImportResult(result itemstore.ItemTemplateStateIm
 	); err != nil {
 		return itemstore.ItemTemplateStateImportResult{}, err
 	}
+	// vnums is replace/import scope; template_count is inserted template rows
+	// (scoped wipe may list vnums with template_count=0).
 	result.Vnums = emptyUint32Slice(result.Vnums)
-	if len(result.Vnums) != result.TemplateCount {
-		return itemstore.ItemTemplateStateImportResult{}, fmt.Errorf("%w: vnums length %d does not match template_count %d", ErrImportExportStatus, len(result.Vnums), result.TemplateCount)
-	}
 	return result, nil
 }
 
@@ -363,19 +362,16 @@ func normalizeStaticActorContentStateImportResult(result staticstore.StaticActor
 	); err != nil {
 		return staticstore.StaticActorContentStateImportResult{}, err
 	}
+	// entity_ids / combat_profiles are replace/import scope; static_actor_count
+	// / combat_profile_count are inserted rows (scoped wipe may list identities
+	// with zero row counts).
 	result.EntityIDs = emptyUint64Slice(result.EntityIDs)
 	result.InteractionKinds = emptyStringSlice(result.InteractionKinds)
 	result.CombatProfiles = emptyStringSlice(result.CombatProfiles)
-	if len(result.EntityIDs) != result.StaticActorCount {
-		return staticstore.StaticActorContentStateImportResult{}, fmt.Errorf("%w: entity_ids length %d does not match static_actor_count %d", ErrImportExportStatus, len(result.EntityIDs), result.StaticActorCount)
-	}
 	// InteractionKinds is the unique sorted kind set, so it may be shorter than
 	// InteractionDefinitionCount when multiple definitions share a kind.
 	if len(result.InteractionKinds) > result.InteractionDefinitionCount {
 		return staticstore.StaticActorContentStateImportResult{}, fmt.Errorf("%w: interaction_kinds length %d exceeds interaction_definition_count %d", ErrImportExportStatus, len(result.InteractionKinds), result.InteractionDefinitionCount)
-	}
-	if len(result.CombatProfiles) != result.CombatProfileCount {
-		return staticstore.StaticActorContentStateImportResult{}, fmt.Errorf("%w: combat_profiles length %d does not match combat_profile_count %d", ErrImportExportStatus, len(result.CombatProfiles), result.CombatProfileCount)
 	}
 	return result, nil
 }
@@ -397,10 +393,9 @@ func normalizeBootstrapGroundItemStateImportResult(result worldruntime.Bootstrap
 			ErrImportExportStatus, result.ItemShapedCount, result.GoldShapedCount, result.GroundItemCount,
 		)
 	}
+	// vids is replace/import scope; ground_item_count is inserted rows (scoped
+	// wipe may list vids with ground_item_count=0).
 	result.VIDs = emptyUint32Slice(result.VIDs)
-	if len(result.VIDs) != result.GroundItemCount {
-		return worldruntime.BootstrapGroundItemStateImportResult{}, fmt.Errorf("%w: vids length %d does not match ground_item_count %d", ErrImportExportStatus, len(result.VIDs), result.GroundItemCount)
-	}
 	return result, nil
 }
 
