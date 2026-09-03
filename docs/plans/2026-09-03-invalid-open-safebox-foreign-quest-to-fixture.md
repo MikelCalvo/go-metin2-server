@@ -50,7 +50,7 @@ operators do not improvise that reject during `/local/content-bundle/validate`.
 - weighted/random loot or branching quest scripts
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
-- further checked-in foreign-field negatives (cube `quest_to`, scalar
+- further checked-in foreign-field negatives (`open_cube` scalar
   `reward_item_vnum` shorthand) unless QA still improvises that JSON later
 
 ## Validation
@@ -70,5 +70,9 @@ git diff --check
    QA to invent JSON.~~ Done for `open_cube` mutating `quest_to`:
    `docs/examples/bootstrap-invalid-open-cube-foreign-quest-to-bundle.json`
    (`docs/plans/2026-09-03-invalid-open-cube-foreign-quest-to-fixture.md`).
-   Highest-value remaining twin is scalar `reward_item_vnum` shorthand rejects
-   on non-`quest_flag` kinds.
+   Done for `open_safebox` scalar `reward_item_vnum` / `reward_item_count`
+   shorthand:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-item-vnum-bundle.json`
+   (`docs/plans/2026-09-03-invalid-open-safebox-foreign-reward-item-vnum-fixture.md`).
+   Highest-value remaining twin is the `open_cube` scalar `reward_item_vnum`
+   shorthand reject.

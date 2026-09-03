@@ -50,9 +50,8 @@ improvise that reject during `/local/content-bundle/validate`.
 - weighted/random loot or branching quest scripts
 - new NPC service kinds
 - changing the already-owned canonicalize / store reject rule
-- further checked-in foreign-field negatives (scalar `reward_item_vnum`
-  shorthand on non-`quest_flag` kinds) unless QA still improvises that JSON
-  later
+- further checked-in foreign-field negatives (`open_cube` scalar
+  `reward_item_vnum` shorthand) unless QA still improvises that JSON later
 
 ## Validation
 
@@ -67,6 +66,10 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. Highest-value remaining twin is scalar
-   `reward_item_vnum` shorthand rejects on non-`quest_flag` kinds.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `open_safebox` scalar `reward_item_vnum` /
+   `reward_item_count` shorthand:
+   `docs/examples/bootstrap-invalid-open-safebox-foreign-reward-item-vnum-bundle.json`
+   (`docs/plans/2026-09-03-invalid-open-safebox-foreign-reward-item-vnum-fixture.md`).
+   Highest-value remaining twin is the `open_cube` scalar `reward_item_vnum`
+   shorthand reject.
