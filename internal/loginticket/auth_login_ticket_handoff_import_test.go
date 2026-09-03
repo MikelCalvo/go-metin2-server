@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -61,6 +62,66 @@ func TestImportAuthLoginTicketHandoffRejectsNilTicketsBeforeOpeningTransaction(t
 	_, err := ImportAuthLoginTicketHandoff(context.Background(), failingAuthLoginTicketHandoffImportExecutor{}, export)
 	if !errors.Is(err, ErrInvalidAuthLoginTicketHandoffExport) {
 		t.Fatalf("ImportAuthLoginTicketHandoff(nil tickets) error = %v, want %v", err, ErrInvalidAuthLoginTicketHandoffExport)
+	}
+}
+
+func TestImportAuthLoginTicketHandoffRejectsTooManyOptions(t *testing.T) {
+	export := AuthLoginTicketHandoffExport{
+		MigrationVersion: AuthLoginTicketHandoffMigrationVersion,
+		MigrationName:    AuthLoginTicketHandoffMigrationName,
+		Tickets:          []AuthLoginTicketHandoffRow{},
+	}
+	_, err := ImportAuthLoginTicketHandoff(
+		context.Background(),
+		failingAuthLoginTicketHandoffImportExecutor{},
+		export,
+		ImportAuthLoginTicketHandoffOptions{Replace: true},
+		ImportAuthLoginTicketHandoffOptions{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "at most one options") {
+		t.Fatalf("ImportAuthLoginTicketHandoff(too many options) error = %v, want at most one options", err)
+	}
+}
+
+func TestQuarantineAuthLoginTicketHandoffExportMergesDeclaredLoginKeys(t *testing.T) {
+	export := AuthLoginTicketHandoffExport{
+		MigrationVersion: AuthLoginTicketHandoffMigrationVersion,
+		MigrationName:    AuthLoginTicketHandoffMigrationName,
+		LoginKeys:        []uint32{0x01020304},
+		Tickets:          []AuthLoginTicketHandoffRow{},
+	}
+	canonical, summary, err := QuarantineAuthLoginTicketHandoffExport(export)
+	if err != nil {
+		t.Fatalf("quarantine declared wipe export: %v", err)
+	}
+	if summary.TicketCount != 0 || summary.ActiveTicketCount != 0 {
+		t.Fatalf("declared wipe should keep zero ticket counts: %#v", summary)
+	}
+	if len(summary.LoginKeys) != 1 || summary.LoginKeys[0] != 0x01020304 {
+		t.Fatalf("unexpected declared wipe summary login keys: %#v", summary)
+	}
+	if len(canonical.LoginKeys) != 1 || canonical.LoginKeys[0] != 0x01020304 {
+		t.Fatalf("unexpected canonical login_keys: %#v", canonical.LoginKeys)
+	}
+}
+
+func TestQuarantineAuthLoginTicketHandoffExportRejectsInvalidDeclaredLoginKeys(t *testing.T) {
+	base := AuthLoginTicketHandoffExport{
+		MigrationVersion: AuthLoginTicketHandoffMigrationVersion,
+		MigrationName:    AuthLoginTicketHandoffMigrationName,
+		Tickets:          []AuthLoginTicketHandoffRow{},
+	}
+
+	zeroKey := base
+	zeroKey.LoginKeys = []uint32{0}
+	if _, _, err := QuarantineAuthLoginTicketHandoffExport(zeroKey); err == nil || !errors.Is(err, ErrInvalidAuthLoginTicketHandoffExport) {
+		t.Fatalf("zero login_keys error = %v, want invalid export", err)
+	}
+
+	dupKey := base
+	dupKey.LoginKeys = []uint32{0x01020304, 0x01020304}
+	if _, _, err := QuarantineAuthLoginTicketHandoffExport(dupKey); err == nil || !errors.Is(err, ErrInvalidAuthLoginTicketHandoffExport) {
+		t.Fatalf("duplicate login_keys error = %v, want invalid export", err)
 	}
 }
 

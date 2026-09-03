@@ -43,6 +43,8 @@ is owned by
 [item-template-state import scoped replace GREEN](2026-09-02-item-template-state-import-scoped-replace-green.md).
 Tip-`0013` static-actor content-state scoped replace freeze is owned by
 [static-actor content-state import replace/upsert contract freeze](2026-09-02-static-actor-content-state-import-replace-upsert-contract-freeze.md).
-Tip-`0013` scoped replace GREEN is next; upsert / replace for
-`auth-login-ticket-handoff` (`0007`) remains deferred; production-engine
-selection remains deferred.
+Tip-`0013` scoped replace GREEN is Done in
+[static-actor content-state import scoped replace GREEN](2026-09-02-static-actor-content-state-import-scoped-replace-green.md).
+Tip-`0007` auth-login-ticket-handoff scoped replace GREEN is owned by
+[auth-login-ticket-handoff import scoped replace GREEN](2026-09-03-auth-login-ticket-handoff-import-scoped-replace-green.md);
+production-engine selection remains deferred.

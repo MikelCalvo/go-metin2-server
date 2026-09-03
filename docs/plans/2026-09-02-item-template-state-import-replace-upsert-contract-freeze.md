@@ -196,6 +196,5 @@ Insert-only remains the default without the replace option / CLI confirmation.
 Production-engine selection remains deferred. Tip-`0013` static-actor
 content-state scoped replace freeze is owned by
 [static-actor content-state import replace/upsert contract freeze](2026-09-02-static-actor-content-state-import-replace-upsert-contract-freeze.md);
-upsert / replace for `auth-login-ticket-handoff` (`0007`) is frozen in
-[auth-login-ticket-handoff import replace/upsert contract freeze](2026-09-02-auth-login-ticket-handoff-import-replace-upsert-contract-freeze.md);
-RED → GREEN remains follow-on.
+upsert / replace for `auth-login-ticket-handoff` (`0007`) GREEN is owned by
+[auth-login-ticket-handoff import scoped replace GREEN](2026-09-03-auth-login-ticket-handoff-import-scoped-replace-green.md).

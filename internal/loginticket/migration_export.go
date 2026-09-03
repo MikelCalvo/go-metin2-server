@@ -19,9 +19,15 @@ const (
 // does not open a database, emit SQL, apply migrations, mutate the ticket store,
 // or consume one-shot tickets.
 type AuthLoginTicketHandoffExport struct {
-	MigrationVersion int                         `json:"migration_version"`
-	MigrationName    string                      `json:"migration_name"`
-	Tickets          []AuthLoginTicketHandoffRow `json:"tickets"`
+	MigrationVersion int    `json:"migration_version"`
+	MigrationName    string `json:"migration_name"`
+	// LoginKeys optionally declares the replace/wipe login-key scope for
+	// ImportAuthLoginTicketHandoff(..., Replace: true). When omitted or empty,
+	// quarantine derives the scope from ticket rows (legacy insert-only exports
+	// stay valid). Explicit keys merge with ticket-row-derived keys so a listed
+	// login key with zero ticket rows can still wipe-to-empty.
+	LoginKeys []uint32                    `json:"login_keys,omitempty"`
+	Tickets   []AuthLoginTicketHandoffRow `json:"tickets"`
 }
 
 // AuthLoginTicketHandoffRow mirrors the durable auth_login_tickets columns

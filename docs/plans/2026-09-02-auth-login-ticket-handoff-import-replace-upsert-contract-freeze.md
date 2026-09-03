@@ -189,7 +189,7 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 
 ## Status
 
-Docs/spec freeze landed. Tip-`0007` scoped replace RED → GREEN remains the
-immediate follow-on after this freeze (do not open RED in the same docs-only
-commit). Insert-only remains the default without the replace option / CLI
-confirmation. Production-engine selection remains deferred.
+Docs/spec freeze landed. Tip-`0007` scoped replace GREEN is owned by
+[auth-login-ticket-handoff import scoped replace GREEN](2026-09-03-auth-login-ticket-handoff-import-scoped-replace-green.md).
+Insert-only remains the default without the replace option / CLI confirmation.
+Production-engine selection remains deferred.

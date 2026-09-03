@@ -65,7 +65,20 @@ func canonicalizeAuthLoginTicketHandoffExport(export AuthLoginTicketHandoffExpor
 
 	seenPrimaryKeys := make(map[string]struct{}, len(export.Tickets))
 	seenActiveLoginKeys := make(map[uint32]string, len(export.Tickets))
-	loginKeys := make(map[uint32]struct{}, len(export.Tickets))
+	loginKeys := make(map[uint32]struct{}, len(export.Tickets)+len(export.LoginKeys))
+	if export.LoginKeys != nil {
+		seenDeclaredKeys := make(map[uint32]struct{}, len(export.LoginKeys))
+		for _, loginKey := range export.LoginKeys {
+			if loginKey == 0 {
+				return AuthLoginTicketHandoffExport{}, AuthLoginTicketHandoffQuarantineSummary{}, fmt.Errorf("%w: login_keys entries must be > 0", ErrInvalidAuthLoginTicketHandoffExport)
+			}
+			if _, exists := seenDeclaredKeys[loginKey]; exists {
+				return AuthLoginTicketHandoffExport{}, AuthLoginTicketHandoffQuarantineSummary{}, fmt.Errorf("%w: duplicate login_keys entry %08x", ErrInvalidAuthLoginTicketHandoffExport, loginKey)
+			}
+			seenDeclaredKeys[loginKey] = struct{}{}
+			loginKeys[loginKey] = struct{}{}
+		}
+	}
 	tickets := make([]AuthLoginTicketHandoffRow, 0, len(export.Tickets))
 	activeTicketCount := 0
 
@@ -112,7 +125,11 @@ func canonicalizeAuthLoginTicketHandoffExport(export AuthLoginTicketHandoffExpor
 	canonical := AuthLoginTicketHandoffExport{
 		MigrationVersion: AuthLoginTicketHandoffMigrationVersion,
 		MigrationName:    AuthLoginTicketHandoffMigrationName,
+		LoginKeys:        append([]uint32(nil), sortedLoginKeys...),
 		Tickets:          tickets,
+	}
+	if canonical.LoginKeys == nil {
+		canonical.LoginKeys = []uint32{}
 	}
 	summary := AuthLoginTicketHandoffQuarantineSummary{
 		TicketCount:       len(canonical.Tickets),

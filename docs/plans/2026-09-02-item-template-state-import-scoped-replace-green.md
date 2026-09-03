@@ -46,5 +46,6 @@ insert-only primary-key conflicts on `vnum`.
 GREEN on `lane/persistence`. Tip-`0013` static-actor content-state scoped
 replace GREEN is Done in
 [static-actor content-state import scoped replace GREEN](2026-09-02-static-actor-content-state-import-scoped-replace-green.md).
-Upsert / replace for `auth-login-ticket-handoff` (`0007`) remains deferred;
+Tip-`0007` auth-login-ticket-handoff scoped replace GREEN is owned by
+[auth-login-ticket-handoff import scoped replace GREEN](2026-09-03-auth-login-ticket-handoff-import-scoped-replace-green.md);
 production-engine selection remains deferred.

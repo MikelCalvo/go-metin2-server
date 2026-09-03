@@ -32,6 +32,21 @@ type AuthLoginTicketHandoffImportResult struct {
 	TicketCount       int      `json:"ticket_count"`
 	ActiveTicketCount int      `json:"active_ticket_count"`
 	LoginKeys         []uint32 `json:"login_keys"`
+	// Replaced is true when ImportAuthLoginTicketHandoff ran with the opt-in
+	// scoped replace policy (delete then insert for listed login keys). Omitted
+	// from JSON when false so legacy insert-only import-result files stay valid.
+	Replaced bool `json:"replaced,omitempty"`
+}
+
+// ImportAuthLoginTicketHandoffOptions controls opt-in mutation policy for
+// ImportAuthLoginTicketHandoff. The zero value keeps today's insert-only
+// behavior.
+type ImportAuthLoginTicketHandoffOptions struct {
+	// Replace, when true, deletes existing tip-0007 auth_login_tickets rows for
+	// every login key in the quarantined export summary before inserting the
+	// canonicalized export rows, all inside one transaction. Login keys not
+	// listed in the export remain untouched.
+	Replace bool
 }
 
 // ImportAuthLoginTicketHandoff validates a retained 0007 login-ticket handoff
@@ -40,11 +55,21 @@ type AuthLoginTicketHandoffImportResult struct {
 //
 // The caller still owns driver selection and DSN loading. This primitive does
 // not mutate bootstrap file stores, does not rewrite schema_migrations, and
-// does not invent upsert / merge policy: duplicate primary keys or active
-// login-key unique-index collisions fail closed and roll the transaction back.
-func ImportAuthLoginTicketHandoff(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export AuthLoginTicketHandoffExport) (AuthLoginTicketHandoffImportResult, error) {
+// without options (or with Replace=false) does not invent upsert / merge
+// policy: duplicate primary keys or active login-key unique-index collisions
+// fail closed and roll the transaction back. Pass
+// ImportAuthLoginTicketHandoffOptions{Replace: true} for the opt-in scoped
+// replace path frozen by the tip-0007 replace contract.
+func ImportAuthLoginTicketHandoff(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export AuthLoginTicketHandoffExport, opts ...ImportAuthLoginTicketHandoffOptions) (AuthLoginTicketHandoffImportResult, error) {
 	if authLoginTicketHandoffImportExecutorIsNil(executor) {
 		return AuthLoginTicketHandoffImportResult{}, ErrAuthLoginTicketHandoffImportExecutorRequired
+	}
+	if len(opts) > 1 {
+		return AuthLoginTicketHandoffImportResult{}, fmt.Errorf("ImportAuthLoginTicketHandoff accepts at most one options value")
+	}
+	replace := false
+	if len(opts) == 1 {
+		replace = opts[0].Replace
 	}
 
 	canonical, summary, err := QuarantineAuthLoginTicketHandoffExport(export)
@@ -58,6 +83,7 @@ func ImportAuthLoginTicketHandoff(ctx context.Context, executor dbmigrations.SQL
 		TicketCount:       summary.TicketCount,
 		ActiveTicketCount: summary.ActiveTicketCount,
 		LoginKeys:         append([]uint32(nil), summary.LoginKeys...),
+		Replaced:          replace,
 	}
 	if result.LoginKeys == nil {
 		result.LoginKeys = []uint32{}
@@ -70,6 +96,14 @@ func ImportAuthLoginTicketHandoff(ctx context.Context, executor dbmigrations.SQL
 
 	if err := requireAuthLoginTicketHandoffSchema(ctx, tx); err != nil {
 		return AuthLoginTicketHandoffImportResult{}, rollbackAfterAuthLoginTicketHandoffImportFailure(tx, err)
+	}
+
+	if replace {
+		for _, loginKey := range summary.LoginKeys {
+			if err := deleteAuthLoginTicketsForLoginKey(ctx, tx, loginKey); err != nil {
+				return AuthLoginTicketHandoffImportResult{}, rollbackAfterAuthLoginTicketHandoffImportFailure(tx, err)
+			}
+		}
 	}
 
 	for _, row := range canonical.Tickets {
@@ -101,6 +135,13 @@ func requireAuthLoginTicketHandoffSchema(ctx context.Context, querier dbmigratio
 		}
 	}
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrAuthLoginTicketHandoffImportSchemaRequired, latest, AuthLoginTicketHandoffMigrationVersion, AuthLoginTicketHandoffMigrationName)
+}
+
+func deleteAuthLoginTicketsForLoginKey(ctx context.Context, tx *sql.Tx, loginKey uint32) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_login_tickets WHERE login_key = ?`, int64(loginKey)); err != nil {
+		return fmt.Errorf("delete auth login tickets login_key=%08x: %w", loginKey, err)
+	}
+	return nil
 }
 
 func insertAuthLoginTicketHandoff(ctx context.Context, tx *sql.Tx, row AuthLoginTicketHandoffRow) error {
