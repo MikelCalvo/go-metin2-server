@@ -84,7 +84,12 @@ Focused coverage:
 GREEN on `lane/persistence`. `metin2-migrate import-export-drill` now accepts
 opt-in `--i-confirm-print-scoped-replace` (default remains insert-only). Contrib
 helper forwards the same gate via `METIN2_IMPORT_PRINT_SCOPED_REPLACE=YES`.
-Production-engine selection / auto-run remain deferred.
+Hermetic `/bin/sh` SQLite proof for that opt-in path is owned by
+[hermetic import-export-drill opt-in scoped-replace SQLite](2026-09-03-hermetic-import-export-drill-opt-in-scoped-replace-sqlite.md)
+(empty-tree full replace + seeded omit-roster re-backfill; FK-safe print order
+puts tip-`0002` last; seeded tip-`0002` single-pass while child rows remain stays
+fail-closed). Production-engine selection / auto-run / cascade-delete remain
+deferred.
 
 ## Anti-goals
 

@@ -116,6 +116,7 @@ go test ./internal/migratecli -run 'ImportExportDrill|ContribLabRetentionGC' -co
 - prior deferred hermetic `/bin/sh` follow-ups mark this proof done
 - stock binaries remain free of a registered production driver
 - matching hermetic `import-result-status.json` redirect proof is owned by [hermetic import-export status SQLite proof](2026-08-28-hermetic-import-export-status-sqlite.md)
+- matching hermetic opt-in scoped-replace `/bin/sh` proof is owned by [hermetic import-export-drill opt-in scoped-replace SQLite](2026-09-03-hermetic-import-export-drill-opt-in-scoped-replace-sqlite.md)
 - upsert / auto-run remain explicitly deferred
 
 ## Anti-goals / ordering constraints

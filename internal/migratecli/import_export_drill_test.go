@@ -164,7 +164,7 @@ func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 	}
 
 	body := stdout.String()
-	for _, kind := range exportQuarantineKinds {
+	for _, kind := range importExportDrillScopedReplaceKinds {
 		want := fmt.Sprintf(
 			`metin2-migrate import-export --kind %s --export "$EXPORT_TREE/%s/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import --i-confirm-scoped-replace > "$EXPORT_TREE/%s/import-result.json"`,
 			kind, kind, kind,
@@ -176,8 +176,29 @@ func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 	if !strings.Contains(body, "opt-in scoped replace") {
 		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", body)
 	}
+	if !strings.Contains(body, "FK-safe") {
+		t.Fatalf("expected FK-safe ordering comment in opt-in drill stdout:\n%s", body)
+	}
+	if !strings.Contains(body, "Seeded full-tree single-pass") {
+		t.Fatalf("expected seeded tip-0002 limitation comment in opt-in drill stdout:\n%s", body)
+	}
 	if strings.Contains(body, "remains insert-only") {
 		t.Fatalf("opt-in drill must not claim insert-only default wording, got:\n%s", body)
+	}
+
+	idxItem := strings.Index(body, `import-export --kind character-item-state`)
+	idxPoint := strings.Index(body, `import-export --kind character-point-state`)
+	idxMyShop := strings.Index(body, `import-export --kind character-myshop-unit-prices`)
+	idxQuest := strings.Index(body, `import-export --kind character-quest-state`)
+	idxSafebox := strings.Index(body, `import-export --kind character-safebox-state`)
+	idxGround := strings.Index(body, `import-export --kind bootstrap-ground-item-state`)
+	idxTicket := strings.Index(body, `import-export --kind auth-login-ticket-handoff`)
+	idxTemplate := strings.Index(body, `import-export --kind item-template-state`)
+	idxStatic := strings.Index(body, `import-export --kind static-actor-content-state`)
+	idxRoster := strings.Index(body, `import-export --kind account-character-roster`)
+	if !(idxItem < idxPoint && idxPoint < idxMyShop && idxMyShop < idxQuest && idxQuest < idxSafebox && idxSafebox < idxGround && idxGround < idxTicket && idxTicket < idxTemplate && idxTemplate < idxStatic && idxStatic < idxRoster) {
+		t.Fatalf("expected FK-safe scoped-replace tip-kind import ordering, got idxs item=%d point=%d myshop=%d quest=%d safebox=%d ground=%d ticket=%d template=%d static=%d roster=%d\n%s",
+			idxItem, idxPoint, idxMyShop, idxQuest, idxSafebox, idxGround, idxTicket, idxTemplate, idxStatic, idxRoster, body)
 	}
 }
 

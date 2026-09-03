@@ -13,6 +13,23 @@ const defaultImportExportDrillDSNEnv = "METIN2_IMPORT_DSN"
 
 var errInvalidImportExportDrillInput = errors.New("invalid import-export-drill input")
 
+// importExportDrillScopedReplaceKinds is the FK-safe print order used when
+// --i-confirm-print-scoped-replace is set. Character-scoped child tip domains
+// must run before tip-0002 account-character-roster because roster scoped
+// replace deletes characters/accounts without cascading child tip rows.
+var importExportDrillScopedReplaceKinds = []string{
+	"character-item-state",
+	"character-point-state",
+	"character-myshop-unit-prices",
+	"character-quest-state",
+	"character-safebox-state",
+	"bootstrap-ground-item-state",
+	"auth-login-ticket-handoff",
+	"item-template-state",
+	"static-actor-content-state",
+	"account-character-roster",
+}
+
 type importExportDrillPlan struct {
 	ExportTree         string
 	Driver             string
@@ -78,11 +95,15 @@ func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string, printScop
 	if err != nil {
 		return importExportDrillPlan{}, err
 	}
+	kinds := append([]string(nil), exportQuarantineKinds...)
+	if printScopedReplace {
+		kinds = append([]string(nil), importExportDrillScopedReplaceKinds...)
+	}
 	return importExportDrillPlan{
 		ExportTree:         normalizedTree,
 		Driver:             normalizedDriver,
 		DSNEnv:             normalizedEnv,
-		Kinds:              append([]string(nil), exportQuarantineKinds...),
+		Kinds:              kinds,
 		PrintScopedReplace: printScopedReplace,
 	}, nil
 }
@@ -138,6 +159,9 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	b.WriteString("# Reads DSN only from the named environment variable. Never paste DSNs into notes.\n")
 	if plan.PrintScopedReplace {
 		b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import plus opt-in scoped replace.\n")
+		b.WriteString("# Kind order is FK-safe for empty/wipe trees: character-scoped child tips before tip-0002 roster.\n")
+		b.WriteString("# Seeded full-tree single-pass including tip-0002 still fails closed while child tip rows remain;\n")
+		b.WriteString("# omit or wipe child domains before roster replace, or run tip-0002 alone after children are absent.\n")
 	} else {
 		b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import and remains insert-only.\n")
 	}

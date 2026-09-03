@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -202,6 +203,334 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *te
 	assertImportExportDrillStatusArtifacts(t, exportTree, wantMarkers, dsn)
 
 	assertSeededImportExportDrillSQLiteRows(t, dsn)
+}
+
+func TestImportExportDrillSQLiteHermeticPrintedScriptScopedReplaceImportsEmptyTipKinds(t *testing.T) {
+	binDir := t.TempDir()
+	migrateBin := mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+
+	exportTree := filepath.Join(t.TempDir(), "20260903T141000Z-scopedreplace-empty")
+	mustMaterializeEmptyImportExportQuarantineTree(t, exportTree)
+
+	dbPath := filepath.Join(t.TempDir(), "import-export-drill-scoped-replace-empty.sqlite")
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?_pragma=foreign_keys(1)"
+
+	mustApplyCatalogToTipWithSQLiteMigrate(t, migrateBin, dsn)
+
+	var printStdout bytes.Buffer
+	var printStderr bytes.Buffer
+	printCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "sqlite",
+			"--i-confirm-print-sql-import-drill",
+			"--i-confirm-print-scoped-replace",
+		},
+		nil,
+		&printStdout,
+		&printStderr,
+	)
+	if printCode != exitOK {
+		t.Fatalf("expected scoped-replace import-export-drill exit %d, got %d stderr=%q", exitOK, printCode, printStderr.String())
+	}
+	if printStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from scoped-replace import-export-drill, got %q", printStderr.String())
+	}
+	script := printStdout.String()
+	for _, forbidden := range []string{
+		dsn,
+		"postgres://",
+		"memory://",
+		"CREATE TABLE",
+		"--dsn 'sqlite'",
+		"--dsn sqlite",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("scoped-replace import-export-drill must not expose %q, got %s", forbidden, script)
+		}
+	}
+	if !strings.Contains(script, "opt-in scoped replace") {
+		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", script)
+	}
+	if !strings.Contains(script, "FK-safe") {
+		t.Fatalf("expected FK-safe ordering comment in opt-in drill stdout:\n%s", script)
+	}
+	for _, kind := range importExportDrillScopedReplaceKinds {
+		want := fmt.Sprintf(
+			`metin2-migrate import-export --kind %s --export "$EXPORT_TREE/%s/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import --i-confirm-scoped-replace > "$EXPORT_TREE/%s/import-result.json"`,
+			kind, kind, kind,
+		)
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected scoped-replace import line for %s:\nwant %q\nbody:\n%s", kind, want, script)
+		}
+	}
+	idxItem := strings.Index(script, `import-export --kind character-item-state`)
+	idxRoster := strings.Index(script, `import-export --kind account-character-roster`)
+	if !(idxItem >= 0 && idxRoster >= 0 && idxItem < idxRoster) {
+		t.Fatalf("expected FK-safe scoped-replace order with roster after character-item-state, got item=%d roster=%d\n%s", idxItem, idxRoster, script)
+	}
+
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"METIN2_IMPORT_DSN="+dsn,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, script, env)
+	if code != 0 {
+		t.Fatalf("expected scoped-replace printed import-export-drill script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	wantMarkers := map[string]string{
+		"account-character-roster":     `"account_count": 0`,
+		"character-item-state":         `"inventory_item_count": 0`,
+		"character-point-state":        `"point_row_count": 0`,
+		"character-myshop-unit-prices": `"price_row_count": 0`,
+		"character-quest-state":        `"flag_count": 0`,
+		"character-safebox-state":      `"password_count": 0`,
+		"auth-login-ticket-handoff":    `"ticket_count": 0`,
+		"item-template-state":          `"template_count": 0`,
+		"static-actor-content-state":   `"static_actor_count": 0`,
+		"bootstrap-ground-item-state":  `"ground_item_count": 0`,
+	}
+	for _, kind := range exportQuarantineKinds {
+		resultPath := filepath.Join(exportTree, kind, "import-result.json")
+		body := mustReadFileString(t, resultPath)
+		want, ok := wantMarkers[kind]
+		if !ok {
+			t.Fatalf("missing expected marker for kind %q", kind)
+		}
+		if !strings.Contains(body, want) && !strings.Contains(compactJSONForAssert(body), compactJSONForAssert(want)) {
+			t.Fatalf("kind %s import-result missing %s, got %s", kind, want, body)
+		}
+		if !strings.Contains(body, `"replaced": true`) && !strings.Contains(compactJSONForAssert(body), `"replaced":true`) {
+			t.Fatalf("kind %s import-result missing replaced:true, got %s", kind, body)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", dsn} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("import-result for %s must not contain %q, got %s", kind, forbidden, body)
+			}
+		}
+	}
+	assertImportExportDrillStatusArtifacts(t, exportTree, wantMarkers, dsn)
+	assertImportExportDrillStatusReplaced(t, exportTree, dsn)
+}
+
+func TestImportExportDrillSQLiteHermeticPrintedScriptScopedReplaceReimportsSeededTipKindsOmittingRoster(t *testing.T) {
+	binDir := t.TempDir()
+	migrateBin := mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+
+	exportTree := filepath.Join(t.TempDir(), "20260903T140000Z-scopedreplace")
+	mustMaterializeSeededImportExportQuarantineTree(t, exportTree)
+
+	dbPath := filepath.Join(t.TempDir(), "import-export-drill-scoped-replace.sqlite")
+	dsn := "file:" + filepath.ToSlash(dbPath) + "?_pragma=foreign_keys(1)"
+
+	mustApplyCatalogToTipWithSQLiteMigrate(t, migrateBin, dsn)
+
+	var insertPrintStdout bytes.Buffer
+	var insertPrintStderr bytes.Buffer
+	insertPrintCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "sqlite",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&insertPrintStdout,
+		&insertPrintStderr,
+	)
+	if insertPrintCode != exitOK {
+		t.Fatalf("expected insert-only import-export-drill exit %d, got %d stderr=%q", exitOK, insertPrintCode, insertPrintStderr.String())
+	}
+	if insertPrintStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from insert-only import-export-drill, got %q", insertPrintStderr.String())
+	}
+	insertScript := insertPrintStdout.String()
+	if strings.Contains(insertScript, "--i-confirm-scoped-replace") {
+		t.Fatalf("insert-only import-export-drill must omit --i-confirm-scoped-replace, got %s", insertScript)
+	}
+
+	env := append([]string{}, os.Environ()...)
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"METIN2_IMPORT_DSN="+dsn,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, insertScript, env)
+	if code != 0 {
+		t.Fatalf("expected insert-only printed import-export-drill script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	assertSeededImportExportDrillSQLiteRows(t, dsn)
+
+	var replacePrintStdout bytes.Buffer
+	var replacePrintStderr bytes.Buffer
+	replacePrintCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "sqlite",
+			"--i-confirm-print-sql-import-drill",
+			"--i-confirm-print-scoped-replace",
+		},
+		nil,
+		&replacePrintStdout,
+		&replacePrintStderr,
+	)
+	if replacePrintCode != exitOK {
+		t.Fatalf("expected scoped-replace import-export-drill exit %d, got %d stderr=%q", exitOK, replacePrintCode, replacePrintStderr.String())
+	}
+	if replacePrintStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from scoped-replace import-export-drill, got %q", replacePrintStderr.String())
+	}
+	replaceScript := replacePrintStdout.String()
+	for _, forbidden := range []string{
+		dsn,
+		"postgres://",
+		"memory://",
+		"CREATE TABLE",
+		"--dsn 'sqlite'",
+		"--dsn sqlite",
+	} {
+		if strings.Contains(replaceScript, forbidden) {
+			t.Fatalf("scoped-replace import-export-drill must not expose %q, got %s", forbidden, replaceScript)
+		}
+	}
+	if !strings.Contains(replaceScript, "opt-in scoped replace") {
+		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", replaceScript)
+	}
+	if !strings.Contains(replaceScript, "Seeded full-tree single-pass") {
+		t.Fatalf("expected seeded tip-0002 limitation comment in opt-in drill stdout:\n%s", replaceScript)
+	}
+	for _, kind := range importExportDrillScopedReplaceKinds {
+		want := fmt.Sprintf(
+			`metin2-migrate import-export --kind %s --export "$EXPORT_TREE/%s/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import --i-confirm-scoped-replace > "$EXPORT_TREE/%s/import-result.json"`,
+			kind, kind, kind,
+		)
+		if !strings.Contains(replaceScript, want) {
+			t.Fatalf("expected scoped-replace import line for %s:\nwant %q\nbody:\n%s", kind, want, replaceScript)
+		}
+	}
+	idxItem := strings.Index(replaceScript, `import-export --kind character-item-state`)
+	idxRoster := strings.Index(replaceScript, `import-export --kind account-character-roster`)
+	if !(idxItem >= 0 && idxRoster >= 0 && idxItem < idxRoster) {
+		t.Fatalf("expected FK-safe scoped-replace order with roster after character-item-state, got item=%d roster=%d\n%s", idxItem, idxRoster, replaceScript)
+	}
+
+	// Seeded full-tree single-pass still fails closed on tip-0002 while child tip
+	// rows remain (child tip replace re-inserts FK dependents). Prove the operator
+	// omit-roster pass that re-backfills every non-roster tip kind.
+	omitRosterScript := omitImportExportDrillKindLines(replaceScript, "account-character-roster")
+	if strings.Contains(omitRosterScript, `import-export --kind account-character-roster`) {
+		t.Fatalf("omit-roster script still contains account-character-roster import-export:\n%s", omitRosterScript)
+	}
+	stdout, stderr, code = runPrintedShellScriptWithEnv(t, omitRosterScript, env)
+	if code != 0 {
+		t.Fatalf("expected omit-roster scoped-replace printed script exit 0, got %d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+
+	wantMarkers := map[string]string{
+		"character-item-state":         `"inventory_item_count": 1`,
+		"character-point-state":        `"point_row_count": 255`,
+		"character-myshop-unit-prices": `"price_row_count": 2`,
+		"character-quest-state":        `"flag_count": 1`,
+		"character-safebox-state":      `"password_count": 1`,
+		"auth-login-ticket-handoff":    `"ticket_count": 1`,
+		"item-template-state":          `"refine_info_count": 2`,
+		"static-actor-content-state":   `"static_actor_count": 1`,
+		"bootstrap-ground-item-state":  `"ground_item_count": 1`,
+	}
+	for kind, want := range wantMarkers {
+		resultPath := filepath.Join(exportTree, kind, "import-result.json")
+		body := mustReadFileString(t, resultPath)
+		if !strings.Contains(body, want) && !strings.Contains(compactJSONForAssert(body), compactJSONForAssert(want)) {
+			t.Fatalf("kind %s import-result missing %s, got %s", kind, want, body)
+		}
+		if !strings.Contains(body, `"replaced": true`) && !strings.Contains(compactJSONForAssert(body), `"replaced":true`) {
+			t.Fatalf("kind %s import-result missing replaced:true, got %s", kind, body)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", dsn} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("import-result for %s must not contain %q, got %s", kind, forbidden, body)
+			}
+		}
+	}
+	assertImportExportDrillStatusArtifactsForKinds(t, exportTree, wantMarkers, dsn)
+	assertImportExportDrillStatusReplacedForKinds(t, exportTree, wantMarkers, dsn)
+	assertSeededImportExportDrillSQLiteRows(t, dsn)
+}
+
+func omitImportExportDrillKindLines(script, kind string) string {
+	var kept []string
+	for _, line := range strings.Split(script, "\n") {
+		if strings.Contains(line, "/"+kind+"/") || strings.Contains(line, "--kind "+kind+" ") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+func assertImportExportDrillStatusArtifactsForKinds(t *testing.T, exportTree string, wantMarkers map[string]string, dsn string) {
+	t.Helper()
+	for kind, want := range wantMarkers {
+		resultPath := filepath.Join(exportTree, kind, "import-result.json")
+		statusPath := filepath.Join(exportTree, kind, "import-result-status.json")
+		resultRaw, err := os.ReadFile(resultPath)
+		if err != nil {
+			t.Fatalf("read import-result for %s: %v", kind, err)
+		}
+		statusBody := mustReadFileString(t, statusPath)
+		var got importExportStatus
+		if err := json.Unmarshal([]byte(statusBody), &got); err != nil {
+			t.Fatalf("decode import-result-status for %s: %v\nbody:\n%s", kind, err, statusBody)
+		}
+		if got.Format != importExportStatusFormat || !got.Present || got.Kind != kind {
+			t.Fatalf("unexpected import-result-status envelope for %s: %#v", kind, got)
+		}
+		wantSHA := sha256Hex(resultRaw)
+		if got.ImportResultSHA256 != wantSHA {
+			t.Fatalf("unexpected import_result_sha256 for %s: got %s want %s", kind, got.ImportResultSHA256, wantSHA)
+		}
+		resultBytes, err := json.Marshal(got.Result)
+		if err != nil {
+			t.Fatalf("marshal nested status result for %s: %v", kind, err)
+		}
+		resultJSON := string(resultBytes)
+		if !strings.Contains(resultJSON, want) && !strings.Contains(compactJSONForAssert(resultJSON), compactJSONForAssert(want)) {
+			t.Fatalf("kind %s import-result-status missing %s, got %s", kind, want, statusBody)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
+			if strings.Contains(statusBody, forbidden) {
+				t.Fatalf("import-result-status for %s must not contain %q, got %s", kind, forbidden, statusBody)
+			}
+		}
+	}
+}
+
+func assertImportExportDrillStatusReplaced(t *testing.T, exportTree string, dsn string) {
+	t.Helper()
+	kinds := make(map[string]string, len(exportQuarantineKinds))
+	for _, kind := range exportQuarantineKinds {
+		kinds[kind] = ""
+	}
+	assertImportExportDrillStatusReplacedForKinds(t, exportTree, kinds, dsn)
+}
+
+func assertImportExportDrillStatusReplacedForKinds(t *testing.T, exportTree string, kinds map[string]string, dsn string) {
+	t.Helper()
+	for kind := range kinds {
+		statusPath := filepath.Join(exportTree, kind, "import-result-status.json")
+		statusBody := mustReadFileString(t, statusPath)
+		if !strings.Contains(statusBody, `"replaced": true`) && !strings.Contains(compactJSONForAssert(statusBody), `"replaced":true`) {
+			t.Fatalf("kind %s import-result-status missing replaced:true, got %s", kind, statusBody)
+		}
+		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
+			if strings.Contains(statusBody, forbidden) {
+				t.Fatalf("import-result-status for %s must not contain %q, got %s", kind, forbidden, statusBody)
+			}
+		}
+	}
 }
 
 func mustMaterializeEmptyImportExportQuarantineTree(t *testing.T, exportTree string) {
