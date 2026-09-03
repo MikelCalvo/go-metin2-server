@@ -135,8 +135,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
    payloads / character-snapshot bytes). GREEN should add `replaced: true`
    (omitempty) mirroring tip-`0002` / tip-`0003` / tip-`0004` / tip-`0009` /
    tip-`0010` / tip-`0011` / tip-`0013` / tip-`0015` / tip-`0023`.
-3. Print-only `import-export-drill` does **not** auto-enable replace; any later
-   drill printer change is a separate slice.
+3. Print-only `import-export-drill` does **not** auto-enable replace by default; opt-in `--i-confirm-print-scoped-replace` is owned by
+   [import-export-drill opt-in scoped-replace printer](2026-09-03-import-export-drill-opt-in-scoped-replace.md).
 
 ### E. Explicit non-goals
 

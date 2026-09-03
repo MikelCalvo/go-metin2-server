@@ -96,8 +96,8 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 2. Successful stdout remains metadata-only `CharacterSafeboxStateImportResult`
    JSON (no DSN, no SQL text, no password/item payloads). GREEN should add
    `replaced: true` (omitempty) mirroring tip-`0003`.
-3. Print-only `import-export-drill` does **not** auto-enable replace; any later
-   drill printer change is a separate slice.
+3. Print-only `import-export-drill` does **not** auto-enable replace by default; opt-in `--i-confirm-print-scoped-replace` is owned by
+   [import-export-drill opt-in scoped-replace printer](2026-09-03-import-export-drill-opt-in-scoped-replace.md).
 
 ### E. Explicit non-goals
 

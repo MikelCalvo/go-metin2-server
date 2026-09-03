@@ -79,7 +79,10 @@ Optional (env-gated):
   Optional `METIN2_IMPORT_DSN_ENV` defaults to `METIN2_IMPORT_DSN` and is
   forwarded only as the `--dsn-env` name (never a DSN value). The helper always
   passes `--i-confirm-print-sql-import-drill` when printing and still never
-  opens a database or executes `import-export`.
+  opens a database or executes `import-export`. Optional
+  `METIN2_IMPORT_PRINT_SCOPED_REPLACE=YES` also forwards
+  `--i-confirm-print-scoped-replace` so the printed script re-backfills with
+  tip-vocabulary scoped replace; default remains insert-only.
 - `artifact-gc-aside-purge-backups.sh`,
   `artifact-gc-aside-purge-migration-runs.sh`, and
   `artifact-gc-aside-purge-exports.sh` when

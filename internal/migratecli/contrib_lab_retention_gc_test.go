@@ -571,6 +571,7 @@ esac
 			"CREATE TABLE",
 			"DROP TABLE",
 			"password=",
+			"--i-confirm-print-scoped-replace",
 		} {
 			if strings.Contains(importBody, forbidden) {
 				t.Fatalf("import-export-drill print must not embed %q, got %q", forbidden, importBody)
@@ -579,6 +580,56 @@ esac
 		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
 		if !strings.Contains(notes, "import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE") {
 			t.Fatalf("notes must record import-export-drill print, got %q", notes)
+		}
+		if strings.Contains(notes, "scoped-replace opt-in") {
+			t.Fatalf("default import print must stay insert-only, got %q", notes)
+		}
+	})
+
+	t.Run("prints_import_export_drill_scoped_replace_when_env_set", func(t *testing.T) {
+		runPrints := filepath.Join(printsRoot, "import-scoped-replace")
+		mustMkdir(t, runPrints)
+		exportTree := filepath.Join(root, "exports", "20260903T120000Z-abcdef012345")
+		mustMkdir(t, exportTree)
+		cmd := exec.Command("/bin/sh", helperPath)
+		cmd.Env = []string{
+			"PATH=/usr/bin:/bin",
+			"METIN2_MIGRATE_BIN=" + stubPath,
+			"METIN2_OPS_PRINTS_ROOT=" + runPrints,
+			"METIN2_RETENTION_KEEP_DAYS=14",
+			"METIN2_IMPORT_EXPORT_TREE=" + exportTree,
+			"METIN2_IMPORT_DRIVER=sqlite3",
+			"METIN2_IMPORT_PRINT_SCOPED_REPLACE=YES",
+			"HOME=" + root,
+			"TMPDIR=" + root,
+		}
+		var stdout bytes.Buffer
+		var stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("helper exit error: %v stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+		}
+		outDir := strings.TrimSpace(stdout.String())
+		importPath := filepath.Join(outDir, "import-export-drill.sh")
+		importBody := mustReadContribSample(t, importPath)
+		for _, want := range []string{
+			"--export-tree",
+			exportTree,
+			"--driver",
+			"sqlite3",
+			"--dsn-env",
+			"METIN2_IMPORT_DSN",
+			"--i-confirm-print-sql-import-drill",
+			"--i-confirm-print-scoped-replace",
+		} {
+			if !strings.Contains(importBody, want) {
+				t.Fatalf("scoped-replace import-export-drill argv must include %q, got %q", want, importBody)
+			}
+		}
+		notes := mustReadContribSample(t, filepath.Join(outDir, "notes.md"))
+		if !strings.Contains(notes, "import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE (scoped-replace opt-in)") {
+			t.Fatalf("notes must record scoped-replace opt-in print, got %q", notes)
 		}
 	})
 

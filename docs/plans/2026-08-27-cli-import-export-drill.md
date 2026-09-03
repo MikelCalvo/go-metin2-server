@@ -78,6 +78,7 @@ Behavior:
 - ~~hermetic `/bin/sh` execution proof against a real driver-backed database~~ Done — see [hermetic import-export drill SQLite execution proof](2026-08-27-hermetic-import-export-drill-sqlite-execution-proof.md)
 - ~~read-only status helper for retained `import-result.json` beside each drill import~~ Done — see [CLI import-export status](2026-08-28-cli-import-export-status.md)
 - upsert / merge / truncate-and-reload policy
+- ~~opt-in print of `--i-confirm-scoped-replace` from `import-export-drill`~~ Done — see [import-export-drill opt-in scoped-replace printer](2026-09-03-import-export-drill-opt-in-scoped-replace.md)
 - production DB engine selection as a stock default
 - loopback ops mutation endpoint
 - remote admin, secrets in git, metrics/tracing

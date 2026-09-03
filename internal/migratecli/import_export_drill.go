@@ -14,10 +14,11 @@ const defaultImportExportDrillDSNEnv = "METIN2_IMPORT_DSN"
 var errInvalidImportExportDrillInput = errors.New("invalid import-export-drill input")
 
 type importExportDrillPlan struct {
-	ExportTree string
-	Driver     string
-	DSNEnv     string
-	Kinds      []string
+	ExportTree         string
+	Driver             string
+	DSNEnv             string
+	Kinds              []string
+	PrintScopedReplace bool
 }
 
 func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -27,10 +28,12 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 	var driverName string
 	var dsnEnv string
 	var confirmPrint bool
+	var confirmPrintScopedReplace bool
 	flags.StringVar(&exportTree, "export-tree", "", "absolute retained export/quarantine tree (YYYYMMDDTHHMMSSZ-<commit12>)")
 	flags.StringVar(&driverName, "driver", "", "database/sql driver name literal printed into the drill script")
 	flags.StringVar(&dsnEnv, "dsn-env", defaultImportExportDrillDSNEnv, "environment variable name the printed script reads for the import target DSN")
 	flags.BoolVar(&confirmPrint, "i-confirm-print-sql-import-drill", false, "confirm emission of a lab SQL import-export drill script (CLI still does not execute it)")
+	flags.BoolVar(&confirmPrintScopedReplace, "i-confirm-print-scoped-replace", false, "opt-in: print --i-confirm-scoped-replace on every tip-kind import-export line (requires --i-confirm-print-sql-import-drill; default remains insert-only)")
 	flags.Usage = func() { printImportExportDrillUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -50,7 +53,7 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 		return exitError
 	}
 
-	plan, err := buildImportExportDrillPlan(exportTree, driverName, dsnEnv)
+	plan, err := buildImportExportDrillPlan(exportTree, driverName, dsnEnv, confirmPrintScopedReplace)
 	if err != nil {
 		fmt.Fprintf(stderr, "import-export-drill: %v\n", err)
 		return exitError
@@ -62,7 +65,7 @@ func runImportExportDrill(args []string, stdout io.Writer, stderr io.Writer) int
 	return exitOK
 }
 
-func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string) (importExportDrillPlan, error) {
+func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string, printScopedReplace bool) (importExportDrillPlan, error) {
 	normalizedTree, err := normalizeImportExportDrillAbsolutePath(exportTree, "export-tree")
 	if err != nil {
 		return importExportDrillPlan{}, err
@@ -76,10 +79,11 @@ func buildImportExportDrillPlan(exportTree, driverName, dsnEnv string) (importEx
 		return importExportDrillPlan{}, err
 	}
 	return importExportDrillPlan{
-		ExportTree: normalizedTree,
-		Driver:     normalizedDriver,
-		DSNEnv:     normalizedEnv,
-		Kinds:      append([]string(nil), exportQuarantineKinds...),
+		ExportTree:         normalizedTree,
+		Driver:             normalizedDriver,
+		DSNEnv:             normalizedEnv,
+		Kinds:              append([]string(nil), exportQuarantineKinds...),
+		PrintScopedReplace: printScopedReplace,
 	}, nil
 }
 
@@ -132,10 +136,18 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	b.WriteString("\n")
 	b.WriteString("echo '== confirmation-gated SQL import from retained quarantine.json artifacts =='\n")
 	b.WriteString("# Reads DSN only from the named environment variable. Never paste DSNs into notes.\n")
-	b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import and remains insert-only.\n")
+	if plan.PrintScopedReplace {
+		b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import plus opt-in scoped replace.\n")
+	} else {
+		b.WriteString("# Each import-export invocation still requires --i-confirm-sql-import and remains insert-only.\n")
+	}
+	replaceSuffix := ""
+	if plan.PrintScopedReplace {
+		replaceSuffix = " --i-confirm-scoped-replace"
+	}
 	for _, kind := range plan.Kinds {
 		fmt.Fprintf(&b, "test -f \"$EXPORT_TREE/%s/quarantine.json\"\n", kind)
-		fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, kind)
+		fmt.Fprintf(&b, "metin2-migrate import-export --kind %s --export \"$EXPORT_TREE/%s/quarantine.json\" --driver \"$DRIVER\" --dsn \"$DSN\" --i-confirm-sql-import%s > \"$EXPORT_TREE/%s/import-result.json\"\n", kind, kind, replaceSuffix, kind)
 		fmt.Fprintf(&b, "metin2-migrate import-export-status --kind %s --import-result \"$EXPORT_TREE/%s/import-result.json\" > \"$EXPORT_TREE/%s/import-result-status.json\"\n", kind, kind, kind)
 	}
 	return b.String()
@@ -143,5 +155,5 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 
 func printImportExportDrillUsage(w io.Writer) {
 	fmt.Fprintln(w, "import-export-drill usage:")
-	fmt.Fprintln(w, "  metin2-migrate import-export-drill --export-tree <absolute-retained-tree> --driver <database/sql-driver> [--dsn-env METIN2_IMPORT_DSN] --i-confirm-print-sql-import-drill")
+	fmt.Fprintln(w, "  metin2-migrate import-export-drill --export-tree <absolute-retained-tree> --driver <database/sql-driver> [--dsn-env METIN2_IMPORT_DSN] --i-confirm-print-sql-import-drill [--i-confirm-print-scoped-replace]")
 }

@@ -95,6 +95,6 @@ scope rather than row-count twins. Production-engine selection remains deferred.
 ## Anti-goals
 
 - Do not change Import* result JSON shapes.
-- Do not auto-enable scoped replace in `import-export-drill`.
+- Do not auto-enable scoped replace in `import-export-drill` by default (opt-in print flag is a separate owned slice).
 - Do not register a stock production driver.
 - Do not push `origin/main`.

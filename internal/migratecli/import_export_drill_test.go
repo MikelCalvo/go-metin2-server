@@ -2,6 +2,7 @@ package migratecli
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -80,10 +81,14 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		"--dsn 'sqlite3'",
 		"--dsn sqlite",
 		"password=",
+		"--i-confirm-scoped-replace",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("import-export-drill must not expose %q, got %s", forbidden, body)
 		}
+	}
+	if !strings.Contains(body, "remains insert-only") {
+		t.Fatalf("expected insert-only comment in default drill stdout:\n%s", body)
 	}
 
 	idxRoster := strings.Index(body, `import-export --kind account-character-roster`)
@@ -133,6 +138,71 @@ func TestRunImportExportDrillHonorsCustomDSNEnv(t *testing.T) {
 	}
 	if strings.Contains(body, "METIN2_IMPORT_DSN") {
 		t.Fatalf("custom dsn-env must replace the default env name, got %s", body)
+	}
+}
+
+func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "/var/metin2/exports/20260903T120000Z-abcdef012345",
+			"--driver", "sqlite3",
+			"--i-confirm-print-sql-import-drill",
+			"--i-confirm-print-scoped-replace",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+
+	body := stdout.String()
+	for _, kind := range exportQuarantineKinds {
+		want := fmt.Sprintf(
+			`metin2-migrate import-export --kind %s --export "$EXPORT_TREE/%s/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import --i-confirm-scoped-replace > "$EXPORT_TREE/%s/import-result.json"`,
+			kind, kind, kind,
+		)
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected scoped-replace import line for %s:\nwant %q\nbody:\n%s", kind, want, body)
+		}
+	}
+	if !strings.Contains(body, "opt-in scoped replace") {
+		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", body)
+	}
+	if strings.Contains(body, "remains insert-only") {
+		t.Fatalf("opt-in drill must not claim insert-only default wording, got:\n%s", body)
+	}
+}
+
+func TestRunImportExportDrillScopedReplaceAloneRequiresPrintConfirmation(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", "/var/metin2/exports/tree",
+			"--driver", "sqlite3",
+			"--i-confirm-print-scoped-replace",
+		},
+		nil,
+		&stdout,
+		&stderr,
+	)
+	if code != 1 {
+		t.Fatalf("expected exit 1, got %d stderr=%q", code, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout without print confirmation, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--i-confirm-print-sql-import-drill") {
+		t.Fatalf("expected print confirmation error, got %q", stderr.String())
 	}
 }
 

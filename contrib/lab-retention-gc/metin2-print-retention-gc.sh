@@ -12,6 +12,7 @@ AUTHD_LOG="${METIN2_AUTHD_LOG_PATH:-/var/log/metin2/authd.log}"
 IMPORT_EXPORT_TREE="${METIN2_IMPORT_EXPORT_TREE:-}"
 IMPORT_DRIVER="${METIN2_IMPORT_DRIVER:-}"
 IMPORT_DSN_ENV="${METIN2_IMPORT_DSN_ENV:-METIN2_IMPORT_DSN}"
+IMPORT_PRINT_SCOPED_REPLACE="${METIN2_IMPORT_PRINT_SCOPED_REPLACE:-}"
 PRINT_ASIDE_PURGE="${METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE:-}"
 ASIDE_MIN_AGE_DAYS="${METIN2_GC_ASIDE_MIN_AGE_DAYS:-7}"
 ASIDE_NOW="${METIN2_GC_ASIDE_NOW:-}"
@@ -118,13 +119,28 @@ case "$IMPORT_EXPORT_TREE" in
               IMPORT_NOTE="import-export-drill=skipped (METIN2_IMPORT_DSN_ENV must be a non-empty environment variable name)"
               ;;
             *)
+              IMPORT_SCOPED_REPLACE_ARGS=""
+              case "$IMPORT_PRINT_SCOPED_REPLACE" in
+                [Yy][Ee][Ss])
+                  IMPORT_SCOPED_REPLACE_ARGS="--i-confirm-print-scoped-replace"
+                  ;;
+              esac
+              # shellcheck disable=SC2086
               "$BIN" import-export-drill \
                 --export-tree "$IMPORT_EXPORT_TREE" \
                 --driver "$IMPORT_DRIVER" \
                 --dsn-env "$IMPORT_DSN_ENV" \
                 --i-confirm-print-sql-import-drill \
+                $IMPORT_SCOPED_REPLACE_ARGS \
                 >"$OUT/import-export-drill.sh"
-              IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+              case "$IMPORT_PRINT_SCOPED_REPLACE" in
+                [Yy][Ee][Ss])
+                  IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE (scoped-replace opt-in)"
+                  ;;
+                *)
+                  IMPORT_NOTE="import-export-drill=printed from METIN2_IMPORT_EXPORT_TREE"
+                  ;;
+              esac
               ;;
           esac
         else
