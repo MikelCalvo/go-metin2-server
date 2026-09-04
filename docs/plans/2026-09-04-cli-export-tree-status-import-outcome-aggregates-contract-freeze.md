@@ -197,7 +197,8 @@ GREEN on `lane/persistence`.
 
 - Exact additive outcome field names + primary `row_count` mapping are frozen and implemented.
 - `export-tree-status` now projects per-kind `import_result_outcome` plus tree-level replaced/row-count aggregates from retained tip-kind `import-result.json` evidence.
-- Wipe-import outcomes and new require-gate flags remain deferred.
+- Wipe-import outcomes remain deferred.
+- Follow-up owned separately: opt-in import-outcome require-gate + drill after-status wiring — see [CLI export-tree-status import-outcome require-gate contract freeze](2026-09-04-cli-export-tree-status-import-outcome-require-gate-contract-freeze.md).
 
 ## Exit criteria for this freeze
 
