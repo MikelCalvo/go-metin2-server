@@ -29,7 +29,7 @@ runtime already gates proximity leave-radius release behind
    - delayed retaliation / selected-target ownership continue under the already
      owned hit-engagement rules until an explicit release boundary
      (`TARGET(0)`, death floor, disconnect/transfer, return recovery, operator
-     update, combat-range loss clear, etc.)
+     update, combat-range loss clear, AOI / visibility-loss clear, etc.)
 3. No new packets, aggro hysteresis, pack AI, absolute schedule rematerialize,
    or pathfinding.
 
@@ -53,5 +53,5 @@ See [hit-armed chase walkaway twin](2026-08-25-hit-armed-chase-walkaway-twin.md)
 - ~~multi-step homeward cadence twin~~ Done: see [multi-step homeward cadence twin](2026-08-25-multi-step-homeward-cadence-twin.md)
 - ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
 - ~~combat-range-loss chase/homeward twin after chase displace~~ Done: see [combat-range loss homeward after chase](2026-09-04-combat-range-loss-chase-homeward.md)
-- AOI / visibility-loss chase/homeward twin after chase displace (training-dummy visibility clear exists; prefer ordinary GREEN coverage, not dishonest RED)
+- ~~AOI / visibility-loss chase/homeward twin after chase displace~~ Done: see [visibility-loss homeward after chase](2026-09-04-visibility-loss-chase-homeward.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching

@@ -6,30 +6,26 @@ Close the remaining Track A engagement-release coverage gap where AOI /
 visibility loss already clears selected-target ownership through the same
 movement helper as combat-range loss (`clearInvalidActiveCombatTargetAfterMovement`
 → `clearActiveCombatTarget`), but only the training-dummy visibility clear twin
-owns related behavior — no spawn-backed chase / homeward proof after a
+owned related behavior — no spawn-backed chase / homeward proof after a
 within_radius chase displace.
+
+## Status
+
+Done for bootstrap scope as ordinary GREEN twin coverage:
+`TestGameRuntimeVisibilityLossClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`.
 
 ## Why now
 
-- Combat-range-loss chase/homeward is now GREEN
+- Combat-range-loss chase/homeward is GREEN
   (`TestGameRuntimeCombatRangeLossClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`).
 - Training-dummy visibility loss already proves `CHARACTER_DEL` + `TARGET(0, 0)`
   (`TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisibility`).
-- Spec / roadmap item 41 names this as the next evidence-backed seam after
+- Spec / roadmap item 41 named this as the next evidence-backed seam after
   combat-range loss.
-- Live path already clears through the same helper, so this is **ordinary GREEN
+- Live path already clears through the same helper, so this was **ordinary GREEN
   twin coverage**, not a missing-implementation RED.
 
-## Why RED is deferred
-
-Opening a failing RED against the already-live
-`clearInvalidActiveCombatTargetAfterMovement` path would be dishonest — the same
-posture as the hit-armed aggro walk-away twin and the combat-range-loss twin.
-After the contract note lands, the next implementation slice should add the twin
-as ordinary GREEN coverage (or stop only if a real missing-implementation gap
-appears while writing it).
-
-## Focused coverage (next GREEN)
+## Focused coverage
 
 - `TestGameRuntimeVisibilityLossClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace`
 
@@ -43,7 +39,7 @@ Neighbor stay-green:
 go test ./internal/minimal -run 'TestGameRuntime(CombatRangeLoss|VisibilityLoss|ProximityWalkAway)ClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace$' -count=1
 ```
 
-## Contract owned by the follow-on GREEN
+## Contract owned by this slice
 
 1. After a within_radius chase displace under hit-armed / still-selected
    engagement, walking outside visibility of the displaced actor queues

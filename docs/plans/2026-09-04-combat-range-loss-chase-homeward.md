@@ -58,4 +58,4 @@ go test ./internal/minimal -run 'TestGameRuntime(HitArmedSpawnGroupChaseSurvives
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching
 - inventing a new leave scheduler; this is coverage for already-live combat-
   range loss clear
-- AOI / visibility-loss chase/homeward twin (next evidence-backed seam)
+- ~~AOI / visibility-loss chase/homeward twin~~ Done: see [visibility-loss homeward after chase](2026-09-04-visibility-loss-chase-homeward.md)
