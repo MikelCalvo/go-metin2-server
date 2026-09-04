@@ -39,16 +39,21 @@ type exportTreeKindStatus struct {
 }
 
 type exportTreeStatus struct {
-	Format                        string                 `json:"format"`
-	Present                       bool                   `json:"present"`
-	ExportTree                    string                 `json:"export_tree,omitempty"`
-	KindCount                     int                    `json:"kind_count,omitempty"`
-	QuarantinePresentCount        int                    `json:"quarantine_present_count,omitempty"`
-	QuarantineComplete            bool                   `json:"quarantine_complete,omitempty"`
-	WipeQuarantinePresentCount    int                    `json:"wipe_quarantine_present_count,omitempty"`
-	TwoPhaseWipeArtifactsComplete bool                   `json:"two_phase_wipe_artifacts_complete,omitempty"`
-	ImportResultPresentCount      int                    `json:"import_result_present_count,omitempty"`
-	Kinds                         []exportTreeKindStatus `json:"kinds,omitempty"`
+	Format                             string                 `json:"format"`
+	Present                            bool                   `json:"present"`
+	ExportTree                         string                 `json:"export_tree,omitempty"`
+	KindCount                          int                    `json:"kind_count,omitempty"`
+	QuarantinePresentCount             int                    `json:"quarantine_present_count,omitempty"`
+	QuarantineComplete                 bool                   `json:"quarantine_complete,omitempty"`
+	WipeQuarantinePresentCount         int                    `json:"wipe_quarantine_present_count,omitempty"`
+	TwoPhaseWipeArtifactsComplete      bool                   `json:"two_phase_wipe_artifacts_complete,omitempty"`
+	ImportResultPresentCount           int                    `json:"import_result_present_count,omitempty"`
+	ImportResultStatusPresentCount     int                    `json:"import_result_status_present_count,omitempty"`
+	ImportResultArtifactsComplete      bool                   `json:"import_result_artifacts_complete,omitempty"`
+	WipeImportResultPresentCount       int                    `json:"wipe_import_result_present_count,omitempty"`
+	WipeImportResultStatusPresentCount int                    `json:"wipe_import_result_status_present_count,omitempty"`
+	WipeImportArtifactsComplete        bool                   `json:"wipe_import_artifacts_complete,omitempty"`
+	Kinds                              []exportTreeKindStatus `json:"kinds,omitempty"`
 }
 
 func runExportTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int {
@@ -119,6 +124,9 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	wipeQuarantinePresent := 0
 	wipeStatusPresent := 0
 	importResultPresent := 0
+	importResultStatusPresent := 0
+	wipeImportResultPresent := 0
+	wipeImportResultStatusPresent := 0
 
 	for _, kind := range exportQuarantineKinds {
 		_, isWipeKind := wipeKindSet[kind]
@@ -156,6 +164,9 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 			return exportTreeStatus{}, err
 		}
 		kindStatus.ImportResultStatus = importResultStatusArtifact
+		if importResultStatusArtifact.Present {
+			importResultStatusPresent++
+		}
 
 		if isWipeKind {
 			wipeQuarantineRel := filepath.ToSlash(filepath.Join(kind, "wipe-quarantine.json"))
@@ -191,6 +202,9 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeImportResult = &wipeImportArtifact
+			if wipeImportArtifact.Present {
+				wipeImportResultPresent++
+			}
 
 			wipeImportStatusRel := filepath.ToSlash(filepath.Join(kind, "wipe-import-result-status.json"))
 			wipeImportStatusAbs := filepath.Join(normalizedTree, kind, "wipe-import-result-status.json")
@@ -199,6 +213,9 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeImportResultStatus = &wipeImportStatusArtifact
+			if wipeImportStatusArtifact.Present {
+				wipeImportResultStatusPresent++
+			}
 		}
 
 		status.Kinds = append(status.Kinds, kindStatus)
@@ -210,6 +227,13 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	status.TwoPhaseWipeArtifactsComplete = wipeQuarantinePresent == len(importExportDrillWipeKinds) &&
 		wipeStatusPresent == len(importExportDrillWipeKinds)
 	status.ImportResultPresentCount = importResultPresent
+	status.ImportResultStatusPresentCount = importResultStatusPresent
+	status.ImportResultArtifactsComplete = importResultPresent == len(exportQuarantineKinds) &&
+		importResultStatusPresent == len(exportQuarantineKinds)
+	status.WipeImportResultPresentCount = wipeImportResultPresent
+	status.WipeImportResultStatusPresentCount = wipeImportResultStatusPresent
+	status.WipeImportArtifactsComplete = wipeImportResultPresent == len(importExportDrillWipeKinds) &&
+		wipeImportResultStatusPresent == len(importExportDrillWipeKinds)
 	return status, nil
 }
 

@@ -130,6 +130,10 @@ metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/e
 The printer remains confirmation-gated and still does not execute import, status,
 or tree inspection itself.
 
+Follow-up owned separately: additive import-result / wipe-import completeness
+aggregates on `export-tree-status` —
+see [CLI export-tree status import-result completeness](2026-09-04-cli-export-tree-status-import-result-completeness.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

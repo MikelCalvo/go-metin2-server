@@ -631,6 +631,12 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		if name == "export-tree-status-after.json" && !treeStatus.TwoPhaseWipeArtifactsComplete {
 			t.Fatalf("export-tree-status-after.json must report two_phase_wipe_artifacts_complete=true, got %#v", treeStatus)
 		}
+		if name == "export-tree-status-after.json" && !treeStatus.ImportResultArtifactsComplete {
+			t.Fatalf("export-tree-status-after.json must report import_result_artifacts_complete=true, got %#v", treeStatus)
+		}
+		if name == "export-tree-status-after.json" && !treeStatus.WipeImportArtifactsComplete {
+			t.Fatalf("export-tree-status-after.json must report wipe_import_artifacts_complete=true, got %#v", treeStatus)
+		}
 		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
 			if strings.Contains(string(statusRaw), forbidden) {
 				t.Fatalf("%s must not contain %q, got %s", name, forbidden, string(statusRaw))

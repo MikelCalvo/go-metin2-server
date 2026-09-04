@@ -59,7 +59,7 @@ func TestRunExportTreeStatusReportsEmptyPresentTree(t *testing.T) {
 	if got.KindCount != len(exportQuarantineKinds) || len(got.Kinds) != len(exportQuarantineKinds) {
 		t.Fatalf("unexpected kind count: %#v", got)
 	}
-	if got.QuarantineComplete || got.TwoPhaseWipeArtifactsComplete || got.QuarantinePresentCount != 0 || got.WipeQuarantinePresentCount != 0 || got.ImportResultPresentCount != 0 {
+	if got.QuarantineComplete || got.TwoPhaseWipeArtifactsComplete || got.ImportResultArtifactsComplete || got.WipeImportArtifactsComplete || got.QuarantinePresentCount != 0 || got.WipeQuarantinePresentCount != 0 || got.ImportResultPresentCount != 0 || got.ImportResultStatusPresentCount != 0 || got.WipeImportResultPresentCount != 0 || got.WipeImportResultStatusPresentCount != 0 {
 		t.Fatalf("unexpected empty-tree aggregates: %#v", got)
 	}
 	for i, kind := range exportQuarantineKinds {
@@ -141,6 +141,9 @@ func TestRunExportTreeStatusReportsCompleteQuarantineAndTwoPhaseArtifacts(t *tes
 	if !got.Present || !got.QuarantineComplete || !got.TwoPhaseWipeArtifactsComplete {
 		t.Fatalf("expected complete aggregates, got %#v", got)
 	}
+	if got.ImportResultArtifactsComplete || got.WipeImportArtifactsComplete || got.ImportResultPresentCount != 0 || got.ImportResultStatusPresentCount != 0 || got.WipeImportResultPresentCount != 0 || got.WipeImportResultStatusPresentCount != 0 {
+		t.Fatalf("expected absent import/wipe-import completeness before import artifacts, got %#v", got)
+	}
 	if got.QuarantinePresentCount != len(exportQuarantineKinds) || got.WipeQuarantinePresentCount != len(importExportDrillWipeKinds) {
 		t.Fatalf("unexpected present counts: %#v", got)
 	}
@@ -154,6 +157,71 @@ func TestRunExportTreeStatusReportsCompleteQuarantineAndTwoPhaseArtifacts(t *tes
 			}
 			if entry.WipeQuarantineStatus == nil || !entry.WipeQuarantineStatus.Present {
 				t.Fatalf("expected present wipe quarantine status for %s, got %#v", entry.Kind, entry.WipeQuarantineStatus)
+			}
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusReportsImportAndWipeImportArtifactCompleteness(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T150000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+
+	wipePayloads := map[string]string{
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_ids":[11],"inventory_items":[],"equipment_items":[],"quickslots":[]}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_ids":[11],"points":[]}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[11],"unit_prices":[]}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_ids":[11],"flags":[]}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[11],"passwords":[],"items":[]}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","vids":[117440556],"ground_items":[]}`,
+	}
+	for kind, payload := range wipePayloads {
+		wipePath := filepath.Join(tree, kind, "wipe-quarantine.json")
+		if err := os.WriteFile(wipePath, []byte(payload), 0o600); err != nil {
+			t.Fatalf("write wipe-quarantine for %s: %v", kind, err)
+		}
+		var wipeStdout bytes.Buffer
+		var wipeStderr bytes.Buffer
+		code := Run([]string{"synthesize-wipe-export-status", "--kind", kind, "--wipe-export", wipePath}, nil, &wipeStdout, &wipeStderr)
+		if code != exitOK {
+			t.Fatalf("synthesize-wipe-export-status for %s: exit=%d stderr=%q", kind, code, wipeStderr.String())
+		}
+		if err := os.WriteFile(filepath.Join(tree, kind, "wipe-quarantine-status.json"), wipeStdout.Bytes(), 0o600); err != nil {
+			t.Fatalf("write wipe-quarantine-status for %s: %v", kind, err)
+		}
+	}
+
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected import-complete export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode import-complete export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || !got.QuarantineComplete || !got.TwoPhaseWipeArtifactsComplete || !got.ImportResultArtifactsComplete || !got.WipeImportArtifactsComplete {
+		t.Fatalf("expected import/wipe-import complete aggregates, got %#v", got)
+	}
+	if got.ImportResultPresentCount != len(exportQuarantineKinds) || got.ImportResultStatusPresentCount != len(exportQuarantineKinds) {
+		t.Fatalf("unexpected import-result counts: %#v", got)
+	}
+	if got.WipeImportResultPresentCount != len(importExportDrillWipeKinds) || got.WipeImportResultStatusPresentCount != len(importExportDrillWipeKinds) {
+		t.Fatalf("unexpected wipe-import-result counts: %#v", got)
+	}
+	for _, entry := range got.Kinds {
+		if !entry.ImportResult.Present || !entry.ImportResultStatus.Present {
+			t.Fatalf("expected present import artifacts for %s, got %#v", entry.Kind, entry)
+		}
+		if entry.WipeKind {
+			if entry.WipeImportResult == nil || !entry.WipeImportResult.Present || entry.WipeImportResultStatus == nil || !entry.WipeImportResultStatus.Present {
+				t.Fatalf("expected present wipe-import artifacts for %s, got %#v", entry.Kind, entry)
 			}
 		}
 	}
@@ -287,5 +355,55 @@ func mustMaterializeEmptyExportTreeStatusFixtures(t *testing.T, exportTree strin
 		dir := filepath.Join(exportTree, kind)
 		mustMkdir(t, dir)
 		mustWriteFile(t, filepath.Join(dir, "quarantine.json"), []byte(payload+"\n"))
+	}
+}
+
+func mustMaterializeEmptyExportTreeImportResultFixtures(t *testing.T, exportTree string) {
+	t.Helper()
+	payloads := map[string]string{
+		"account-character-roster":     `{"migration_version":2,"migration_name":"account_character_roster","account_count":0,"character_count":0,"account_ids":[],"character_ids":[]}`,
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_count":0,"inventory_item_count":0,"equipment_item_count":0,"quickslot_count":0,"character_ids":[]}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":0,"point_row_count":0,"character_ids":[]}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":0,"price_row_count":0,"character_ids":[]}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":0,"flag_count":0,"character_ids":[]}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":0,"password_count":0,"item_count":0,"character_ids":[]}`,
+		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":0,"active_ticket_count":0,"login_keys":[]}`,
+		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":0,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[]}`,
+		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":0,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[],"interaction_kinds":[],"combat_profiles":[]}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":0,"item_shaped_count":0,"gold_shaped_count":0,"vids":[]}`,
+	}
+	wipeKindSet := make(map[string]struct{}, len(importExportDrillWipeKinds))
+	for _, kind := range importExportDrillWipeKinds {
+		wipeKindSet[kind] = struct{}{}
+	}
+	for _, kind := range exportQuarantineKinds {
+		payload, ok := payloads[kind]
+		if !ok {
+			t.Fatalf("missing empty import-result payload for kind %q", kind)
+		}
+		dir := filepath.Join(exportTree, kind)
+		mustMkdir(t, dir)
+		resultPath := filepath.Join(dir, "import-result.json")
+		mustWriteFile(t, resultPath, []byte(payload+"\n"))
+		var statusStdout bytes.Buffer
+		var statusStderr bytes.Buffer
+		code := Run([]string{"import-export-status", "--kind", kind, "--import-result", resultPath}, nil, &statusStdout, &statusStderr)
+		if code != exitOK {
+			t.Fatalf("import-export-status for %s: exit=%d stderr=%q", kind, code, statusStderr.String())
+		}
+		mustWriteFile(t, filepath.Join(dir, "import-result-status.json"), statusStdout.Bytes())
+
+		if _, isWipe := wipeKindSet[kind]; !isWipe {
+			continue
+		}
+		wipeResultPath := filepath.Join(dir, "wipe-import-result.json")
+		mustWriteFile(t, wipeResultPath, []byte(payload+"\n"))
+		var wipeStatusStdout bytes.Buffer
+		var wipeStatusStderr bytes.Buffer
+		code = Run([]string{"import-export-status", "--kind", kind, "--import-result", wipeResultPath}, nil, &wipeStatusStdout, &wipeStatusStderr)
+		if code != exitOK {
+			t.Fatalf("import-export-status wipe result for %s: exit=%d stderr=%q", kind, code, wipeStatusStderr.String())
+		}
+		mustWriteFile(t, filepath.Join(dir, "wipe-import-result-status.json"), wipeStatusStdout.Bytes())
 	}
 }
