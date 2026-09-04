@@ -11936,8 +11936,13 @@ func droppedInventoryItem(character loginticket.Character, slot inventory.SlotIn
 	if count == 0 || count > item.Count {
 		return inventory.ItemInstance{}, false
 	}
+	// Whole-stack / normalized-whole-stack drops keep the source identity and
+	// count while cloning presence-aware sockets/attributes so the pending
+	// ground handle cannot alias the pre-drop carried snapshot pointers.
 	dropped := item
 	dropped.Count = count
+	dropped.Sockets = item.CloneSockets()
+	dropped.Attributes = item.CloneAttributes()
 	if err := dropped.Validate(); err != nil {
 		return inventory.ItemInstance{}, false
 	}

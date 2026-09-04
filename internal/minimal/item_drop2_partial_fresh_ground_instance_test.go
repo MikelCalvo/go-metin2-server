@@ -270,6 +270,77 @@ func TestGameRuntimeItemDrop2PartialPickupPreservesClonedInstance(t *testing.T) 
 	}
 }
 
+func TestDroppedInventoryItemClonesPresenceIndependently(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted presence"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			source := inventory.ItemInstance{
+				ID:         2051,
+				Vnum:       27001,
+				Count:      3,
+				Slot:       5,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}
+			character := loginticket.Character{Inventory: []inventory.ItemInstance{source}}
+			dropped, ok := droppedInventoryItem(character, 5, 3)
+			if !ok {
+				t.Fatal("expected whole-stack droppedInventoryItem helper to succeed")
+			}
+			if dropped.ID != 2051 || dropped.Vnum != 27001 || dropped.Count != 3 || dropped.Slot != 5 {
+				t.Fatalf("unexpected whole-stack dropped identity: %+v", dropped)
+			}
+			if dropped.HasSockets() != source.HasSockets() {
+				t.Fatalf("dropped HasSockets=%v want %v", dropped.HasSockets(), source.HasSockets())
+			}
+			if dropped.HasAttributes() != source.HasAttributes() {
+				t.Fatalf("dropped HasAttributes=%v want %v", dropped.HasAttributes(), source.HasAttributes())
+			}
+			if source.HasSockets() {
+				if dropped.Sockets == source.Sockets {
+					t.Fatal("expected whole-stack dropped sockets pointer to be independent of source")
+				}
+				if *dropped.Sockets != *source.Sockets {
+					t.Fatalf("expected dropped sockets %+v, got %+v", *source.Sockets, *dropped.Sockets)
+				}
+				(*dropped.Sockets)[0] = 99
+				if (*source.Sockets)[0] == 99 {
+					t.Fatal("mutating dropped sockets aliased the source seed")
+				}
+			} else if dropped.Sockets != nil {
+				t.Fatalf("expected omitted dropped sockets, got %#v", dropped.Sockets)
+			}
+			if source.HasAttributes() {
+				if dropped.Attributes == source.Attributes {
+					t.Fatal("expected whole-stack dropped attributes pointer to be independent of source")
+				}
+				if *dropped.Attributes != *source.Attributes {
+					t.Fatalf("expected dropped attributes %+v, got %+v", *source.Attributes, *dropped.Attributes)
+				}
+				(*dropped.Attributes)[0].Value = 99
+				if (*source.Attributes)[0].Value == 99 {
+					t.Fatal("mutating dropped attributes aliased the source seed")
+				}
+			} else if dropped.Attributes != nil {
+				t.Fatalf("expected omitted dropped attributes, got %#v", dropped.Attributes)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeItemDrop2WholeStackKeepsSourceIdentity(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
@@ -312,5 +383,237 @@ func TestGameRuntimeItemDrop2WholeStackKeepsSourceIdentity(t *testing.T) {
 	}
 	if len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected empty inventory after whole-stack drop, got %#v", account.Characters[0].Inventory)
+	}
+}
+
+func TestGameRuntimeItemDropWholeStackPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted presence"},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("DropWholePreserve", 0x010308b0+uint32(i), 0x020408b0+uint32(i), 1250, 2250, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{
+				ID:         2061,
+				Vnum:       27001,
+				Count:      3,
+				Slot:       5,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}}
+			login := "drop-whole-preserve-" + string(rune('a'+i))
+			loginKey := uint32(0xb0b0b0b0 + i)
+			issuePeerTicket(t, ticketStore, login, loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed whole-stack preserve owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+			if err != nil {
+				t.Fatalf("unexpected whole-stack preserve runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5)})))
+			if err != nil {
+				t.Fatalf("unexpected whole-stack preserve drop error: %v", err)
+			}
+			if len(out) < 2 {
+				t.Fatalf("expected whole-stack drop frames including GROUND_ADD, got %d", len(out))
+			}
+			ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[len(out)-2]))
+			if err != nil {
+				t.Fatalf("decode whole-stack preserve ground add: %v", err)
+			}
+			ownerEntity, ok := runtime.sharedWorld.playerEntityByName(owner.Name)
+			if !ok {
+				t.Fatal("expected live owner entity after whole-stack preserve drop")
+			}
+			pickup, ok := runtime.sharedWorld.GroundItemPickupFor(ownerEntity.Entity.ID, owner, ground.VID)
+			if !ok {
+				t.Fatal("expected pending ground handle after whole-stack preserve drop")
+			}
+			if pickup.Item.ID != 2061 || pickup.Item.Count != 3 || pickup.Item.Vnum != 27001 {
+				t.Fatalf("expected whole-stack preserve identity move 2061x3, got %+v", pickup.Item)
+			}
+			assertWholeStackDroppedPresence(t, pickup.Item, tc.sockets, tc.attributes)
+
+			durable := runtime.sharedWorld.DurableGroundItemSnapshot()
+			if len(durable.GroundItems) != 1 {
+				t.Fatalf("expected one durable ground row after whole-stack preserve drop, got %#v", durable.GroundItems)
+			}
+			row := durable.GroundItems[0]
+			if row.ItemID != 2061 || row.ItemCount == nil || *row.ItemCount != 3 || row.Vnum != 27001 {
+				t.Fatalf("unexpected durable whole-stack preserve row identity: %+v", row)
+			}
+			if (tc.sockets != nil) != row.HasSockets {
+				t.Fatalf("durable HasSockets=%v want %v", row.HasSockets, tc.sockets != nil)
+			}
+			if tc.sockets != nil {
+				if row.Socket0 != (*tc.sockets)[0] || row.Socket1 != (*tc.sockets)[1] || row.Socket2 != (*tc.sockets)[2] {
+					t.Fatalf("unexpected durable sockets: %+v want %+v", row, *tc.sockets)
+				}
+			}
+			if (tc.attributes != nil) != row.HasAttributes {
+				t.Fatalf("durable HasAttributes=%v want %v", row.HasAttributes, tc.attributes != nil)
+			}
+			if tc.attributes != nil {
+				if row.Attributes == nil || *row.Attributes != *tc.attributes {
+					t.Fatalf("unexpected durable attributes: %+v want %+v", row.Attributes, *tc.attributes)
+				}
+			} else if row.Attributes != nil {
+				t.Fatalf("expected omitted durable attributes, got %#v", row.Attributes)
+			}
+
+			account, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load whole-stack preserve owner account: %v", err)
+			}
+			if len(account.Characters[0].Inventory) != 0 {
+				t.Fatalf("expected empty inventory after whole-stack preserve drop, got %#v", account.Characters[0].Inventory)
+			}
+		})
+	}
+}
+
+func TestGameRuntimeItemDrop2WholeStackPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{7, 0, 9}
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+		count      uint8
+	}{
+		{name: "exact whole-stack active presence", sockets: &activeSockets, attributes: &activeAttributes, count: 4},
+		{name: "zero-count normalized whole-stack explicit zero", sockets: &zeroSockets, attributes: &zeroAttributes, count: 0},
+		{name: "oversized normalized whole-stack omitted presence", count: 99},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("Drop2WholePreserve", 0x010308c0+uint32(i), 0x020408c0+uint32(i), 1250, 2250, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{
+				ID:         2071,
+				Vnum:       27001,
+				Count:      4,
+				Slot:       5,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}}
+			login := "drop2-whole-preserve-" + string(rune('a'+i))
+			loginKey := uint32(0xc0c0c0c0 + i)
+			issuePeerTicket(t, ticketStore, login, loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed drop2 whole-stack preserve owner account: %v", err)
+			}
+
+			runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+			if err != nil {
+				t.Fatalf("unexpected drop2 whole-stack preserve runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+			defer closeSessionFlow(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop2(itemproto.ClientDrop2Packet{
+				Position: itemproto.InventoryPosition(5),
+				Count:    tc.count,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected drop2 whole-stack preserve error: %v", err)
+			}
+			if len(out) < 2 {
+				t.Fatalf("expected drop2 whole-stack frames including GROUND_ADD, got %d", len(out))
+			}
+			ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[len(out)-2]))
+			if err != nil {
+				t.Fatalf("decode drop2 whole-stack preserve ground add: %v", err)
+			}
+			ownerEntity, ok := runtime.sharedWorld.playerEntityByName(owner.Name)
+			if !ok {
+				t.Fatal("expected live owner entity after drop2 whole-stack preserve")
+			}
+			pickup, ok := runtime.sharedWorld.GroundItemPickupFor(ownerEntity.Entity.ID, owner, ground.VID)
+			if !ok {
+				t.Fatal("expected pending ground handle after drop2 whole-stack preserve")
+			}
+			if pickup.Item.ID != 2071 || pickup.Item.Count != 4 || pickup.Item.Vnum != 27001 {
+				t.Fatalf("expected drop2 whole-stack identity move 2071x4, got %+v", pickup.Item)
+			}
+			assertWholeStackDroppedPresence(t, pickup.Item, tc.sockets, tc.attributes)
+
+			durable := runtime.sharedWorld.DurableGroundItemSnapshot()
+			if len(durable.GroundItems) != 1 {
+				t.Fatalf("expected one durable ground row after drop2 whole-stack preserve, got %#v", durable.GroundItems)
+			}
+			row := durable.GroundItems[0]
+			if row.ItemID != 2071 || row.ItemCount == nil || *row.ItemCount != 4 {
+				t.Fatalf("unexpected durable drop2 whole-stack row identity: %+v", row)
+			}
+			if (tc.sockets != nil) != row.HasSockets {
+				t.Fatalf("durable HasSockets=%v want %v", row.HasSockets, tc.sockets != nil)
+			}
+			if tc.sockets != nil && (row.Socket0 != (*tc.sockets)[0] || row.Socket1 != (*tc.sockets)[1] || row.Socket2 != (*tc.sockets)[2]) {
+				t.Fatalf("unexpected durable sockets: %+v want %+v", row, *tc.sockets)
+			}
+			if (tc.attributes != nil) != row.HasAttributes {
+				t.Fatalf("durable HasAttributes=%v want %v", row.HasAttributes, tc.attributes != nil)
+			}
+			if tc.attributes != nil {
+				if row.Attributes == nil || *row.Attributes != *tc.attributes {
+					t.Fatalf("unexpected durable attributes: %+v want %+v", row.Attributes, *tc.attributes)
+				}
+			} else if row.Attributes != nil {
+				t.Fatalf("expected omitted durable attributes, got %#v", row.Attributes)
+			}
+		})
+	}
+}
+
+func assertWholeStackDroppedPresence(t *testing.T, got inventory.ItemInstance, wantSockets *inventory.SocketValues, wantAttributes *inventory.AttributeValues) {
+	t.Helper()
+	if (wantSockets != nil) != got.HasSockets() {
+		t.Fatalf("HasSockets=%v want %v", got.HasSockets(), wantSockets != nil)
+	}
+	if (wantAttributes != nil) != got.HasAttributes() {
+		t.Fatalf("HasAttributes=%v want %v", got.HasAttributes(), wantAttributes != nil)
+	}
+	if wantSockets != nil {
+		if got.Sockets == nil || *got.Sockets != *wantSockets {
+			t.Fatalf("expected preserved sockets %+v, got %#v", *wantSockets, got.Sockets)
+		}
+		if got.Sockets == wantSockets {
+			t.Fatal("expected whole-stack ground sockets to be an independent clone")
+		}
+	} else if got.Sockets != nil {
+		t.Fatalf("expected omitted sockets, got %#v", got.Sockets)
+	}
+	if wantAttributes != nil {
+		if got.Attributes == nil || *got.Attributes != *wantAttributes {
+			t.Fatalf("expected preserved attributes %+v, got %#v", *wantAttributes, got.Attributes)
+		}
+		if got.Attributes == wantAttributes {
+			t.Fatal("expected whole-stack ground attributes to be an independent clone")
+		}
+	} else if got.Attributes != nil {
+		t.Fatalf("expected omitted attributes, got %#v", got.Attributes)
 	}
 }
