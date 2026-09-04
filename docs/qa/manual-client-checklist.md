@@ -422,7 +422,7 @@ Expected result:
 - adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior; non-zero `shop_sell_price` is the current explicit per-unit sell credit, appears in content-bundle summary item/catalog/reward rows when authored, and omitted/zero values preserve the older derived sell-credit fallback
 - authored interaction text/title fields reject embedded NUL bytes at operator decode / content-bundle validation / runtime startup, so they cannot reach client chat, merchant-window titles, or compact preview strings as truncated content
 - carried sell-back stacks whose live count already exceeds the resolved template-authored `max_count` fail with the same invalid-position companion before inventory, item quickslot, gold, or persisted account mutation
-- partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves the authored display socket/attribute arrays while changing only the count, credits gold, and keeps item quickslots for the still-occupied cell unchanged
+- partial-stack `SHOP SELL2` success refreshes the remaining stack with `ITEM_UPDATE`, preserves presence-aware instance sockets/attributes on that count-only remainder (including explicit zero; omitted keeps template-fallback encode; independent clone so later writes cannot alias the pre-sell live inventory), credits gold, and keeps item quickslots for the still-occupied cell unchanged
 - if operator/test fixtures can force account persistence failure during an otherwise-valid `SHOP BUY`, the buy fails closed: no inventory refresh or gold debit is visible, and reconnect shows the pre-buy inventory/gold unchanged
 
 ### 4.5.11 Unsupported item give guard (`ITEM_GIVE`)

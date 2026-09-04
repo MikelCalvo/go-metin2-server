@@ -2613,12 +2613,16 @@ func (r *Runtime) SellMerchantItemForCredit(slot inventory.SlotIndex, count uint
 		inventoryItems = removeInventoryIndex(inventoryItems, index)
 		result.ItemRemoved = true
 	} else {
-		item.Count -= soldCount
-		if err := item.Validate(); err != nil {
+		// Remainder must keep an independent presence clone: inventoryItems already
+		// cloned sockets/attributes, so mutate that cell rather than rewriting it
+		// with the pre-clone live inventory pointer.
+		remainder := inventoryItems[index]
+		remainder.Count -= soldCount
+		if err := remainder.Validate(); err != nil {
 			return MerchantSellResult{}, false
 		}
-		inventoryItems[index] = item
-		result.Item = item
+		inventoryItems[index] = remainder
+		result.Item = remainder
 	}
 	sortInventoryItems(inventoryItems)
 	r.liveGold = result.Gold

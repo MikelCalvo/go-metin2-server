@@ -462,7 +462,7 @@ The repository now owns that packet shape at the codec level:
 
 This packet shape is now reused by the first lighter-weight runtime refresh slice.
 The current bootstrap merchant buy path still emits `ITEM_SET` for changed non-empty stacks, and whole-stack merchant sells still emit `ITEM_DEL` for removed stacks.
-Partial-stack `SHOP SELL2` success now emits `ITEM_UPDATE` for the already-known carried cell instead of replaying a full `ITEM_SET` with `vnum`, flags, anti-flags, or highlight, and the runtime fills that count refresh from the loaded item-template display metadata so authored sockets/attributes are preserved while only the stack count changes.
+Partial-stack `SHOP SELL2` success now emits `ITEM_UPDATE` for the already-known carried cell instead of replaying a full `ITEM_SET` with `vnum`, flags, anti-flags, or highlight. That count-only refresh projects presence-aware instance sockets/attributes via ordinary `EffectiveSockets` / `EffectiveAttributes` (instance presence including explicit zero wins over template; omitted instance keeps template fallback) while only the stack count changes, and the remainder keeps an independent presence clone so later writes cannot alias the pre-sell live inventory pointer (`docs/plans/2026-09-05-merchant-sell-partial-remainder-preserve-instance-sockets-attributes.md`).
 
 ### Runtime-locked item sell guard
 
