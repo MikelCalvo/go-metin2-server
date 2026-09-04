@@ -82,11 +82,15 @@ func runExportTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 	var requireTwoPhaseWipeArtifactsComplete bool
 	var requireImportResultArtifactsComplete bool
 	var requireWipeImportArtifactsComplete bool
+	var requireImportResultOutcomesComplete bool
+	var requireImportResultAllReplaced bool
 	flags.StringVar(&exportTree, "export-tree", "", "absolute path to a retained export/quarantine tree")
 	flags.BoolVar(&requireQuarantineComplete, "require-quarantine-complete", false, "fail closed unless quarantine_complete is true")
 	flags.BoolVar(&requireTwoPhaseWipeArtifactsComplete, "require-two-phase-wipe-artifacts-complete", false, "fail closed unless two_phase_wipe_artifacts_complete is true")
 	flags.BoolVar(&requireImportResultArtifactsComplete, "require-import-result-artifacts-complete", false, "fail closed unless import_result_artifacts_complete is true")
 	flags.BoolVar(&requireWipeImportArtifactsComplete, "require-wipe-import-artifacts-complete", false, "fail closed unless wipe_import_artifacts_complete is true")
+	flags.BoolVar(&requireImportResultOutcomesComplete, "require-import-result-outcomes-complete", false, "fail closed unless import_result_outcomes_complete is true")
+	flags.BoolVar(&requireImportResultAllReplaced, "require-import-result-all-replaced", false, "fail closed unless import_result_all_replaced is true")
 	flags.Usage = func() { printExportTreeStatusUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -112,6 +116,8 @@ func runExportTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 		TwoPhaseWipeArtifactsComplete: requireTwoPhaseWipeArtifactsComplete,
 		ImportResultArtifactsComplete: requireImportResultArtifactsComplete,
 		WipeImportArtifactsComplete:   requireWipeImportArtifactsComplete,
+		ImportResultOutcomesComplete:  requireImportResultOutcomesComplete,
+		ImportResultAllReplaced:       requireImportResultAllReplaced,
 	}); err != nil {
 		fmt.Fprintf(stderr, "export-tree status: %v\n", err)
 		return exitError
@@ -124,10 +130,17 @@ type exportTreeStatusRequireGates struct {
 	TwoPhaseWipeArtifactsComplete bool
 	ImportResultArtifactsComplete bool
 	WipeImportArtifactsComplete   bool
+	ImportResultOutcomesComplete  bool
+	ImportResultAllReplaced       bool
 }
 
 func enforceExportTreeStatusRequireGates(status exportTreeStatus, gates exportTreeStatusRequireGates) error {
-	if !gates.QuarantineComplete && !gates.TwoPhaseWipeArtifactsComplete && !gates.ImportResultArtifactsComplete && !gates.WipeImportArtifactsComplete {
+	if !gates.QuarantineComplete &&
+		!gates.TwoPhaseWipeArtifactsComplete &&
+		!gates.ImportResultArtifactsComplete &&
+		!gates.WipeImportArtifactsComplete &&
+		!gates.ImportResultOutcomesComplete &&
+		!gates.ImportResultAllReplaced {
 		return nil
 	}
 	if !status.Present {
@@ -138,8 +151,12 @@ func enforceExportTreeStatusRequireGates(status exportTreeStatus, gates exportTr
 			return fmt.Errorf("%w: --require-two-phase-wipe-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
 		case gates.ImportResultArtifactsComplete:
 			return fmt.Errorf("%w: --require-import-result-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
-		default:
+		case gates.WipeImportArtifactsComplete:
 			return fmt.Errorf("%w: --require-wipe-import-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
+		case gates.ImportResultOutcomesComplete:
+			return fmt.Errorf("%w: --require-import-result-outcomes-complete failed: export-tree is absent", ErrExportTreeStatus)
+		default:
+			return fmt.Errorf("%w: --require-import-result-all-replaced failed: export-tree is absent", ErrExportTreeStatus)
 		}
 	}
 	if gates.QuarantineComplete && !status.QuarantineComplete {
@@ -153,6 +170,12 @@ func enforceExportTreeStatusRequireGates(status exportTreeStatus, gates exportTr
 	}
 	if gates.WipeImportArtifactsComplete && !status.WipeImportArtifactsComplete {
 		return fmt.Errorf("%w: --require-wipe-import-artifacts-complete failed: wipe_import_artifacts_complete=false", ErrExportTreeStatus)
+	}
+	if gates.ImportResultOutcomesComplete && !status.ImportResultOutcomesComplete {
+		return fmt.Errorf("%w: --require-import-result-outcomes-complete failed: import_result_outcomes_complete=false", ErrExportTreeStatus)
+	}
+	if gates.ImportResultAllReplaced && !status.ImportResultAllReplaced {
+		return fmt.Errorf("%w: --require-import-result-all-replaced failed: import_result_all_replaced=false", ErrExportTreeStatus)
 	}
 	return nil
 }
@@ -543,5 +566,5 @@ func decodeStrictExportTreeStatusJSON(raw []byte, dest any, label string) error 
 
 func printExportTreeStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "export-tree-status usage:")
-	fmt.Fprintln(w, "  metin2-migrate export-tree-status --export-tree <absolute-path> [--require-quarantine-complete] [--require-two-phase-wipe-artifacts-complete] [--require-import-result-artifacts-complete] [--require-wipe-import-artifacts-complete]")
+	fmt.Fprintln(w, "  metin2-migrate export-tree-status --export-tree <absolute-path> [--require-quarantine-complete] [--require-two-phase-wipe-artifacts-complete] [--require-import-result-artifacts-complete] [--require-wipe-import-artifacts-complete] [--require-import-result-outcomes-complete] [--require-import-result-all-replaced]")
 }

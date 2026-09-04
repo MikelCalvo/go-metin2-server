@@ -120,15 +120,17 @@ artifact-gated after-status `export-tree-status` snapshots. GREEN must upgrade
    Do **not** add `--require-import-result-all-replaced` here: insert-only
    imports keep `replaced=false`, so `import_result_all_replaced` stays false by
    contract.
-3. **After-status for scoped-replace printers** adds both outcome requires:
+3. **After-status for scoped-replace printers** also adds outcomes-complete only:
    ```sh
    metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" \
      --require-quarantine-complete \
      --require-import-result-artifacts-complete \
      --require-import-result-outcomes-complete \
-     --require-import-result-all-replaced \
      > "$EXPORT_TREE/export-tree-status-after.json"
    ```
+   Do **not** add `--require-import-result-all-replaced` here either: the owned
+   omit-roster / partial re-backfill path can leave one or more tip kinds
+   non-replaced while still producing complete outcome projection.
 4. **After-status for two-phase wipe→roster→reimport** adds both outcome
    requires beside the four existing artifact requires:
    ```sh
@@ -196,7 +198,8 @@ Focused coverage in `internal/migratecli`:
 - usage lists new flags; unknown flag → exit `2`
 - insert-only after-status prints quarantine + import-result artifact requires +
   outcomes-complete (not all-replaced)
-- scoped-replace after-status prints both outcome requires
+- scoped-replace after-status also prints outcomes-complete only (not
+  all-replaced), so omit-roster / partial re-backfill remains valid
 - two-phase after-status prints all four artifact requires + both outcome
   requires; before-status stays ungated
 - hermetic scoped-replace / two-phase after paths stay green under the gated
@@ -213,10 +216,14 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/persistence` (docs/spec only).
+GREEN on `lane/persistence`.
 
-- Exact outcome require flag names + failure semantics + drill after-status
-  wiring are frozen for the next GREEN.
+- Opt-in `--require-import-result-outcomes-complete` /
+  `--require-import-result-all-replaced` fail closed with exit `1` and no stdout
+  JSON when the matching aggregate is false or the tree is absent.
+- Insert-only and scoped-replace after-status add outcomes-complete only
+  (scoped-replace still supports omit-roster / partial re-backfill); two-phase
+  after-status adds both outcome requires; before-status stays ungated.
 - Wipe-import outcome projection and wipe outcome require flags remain deferred.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 

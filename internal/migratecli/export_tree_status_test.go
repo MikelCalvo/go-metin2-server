@@ -426,9 +426,24 @@ func TestRunExportTreeStatusRequireFlagsFailClosedOnIncompleteOrAbsentTree(t *te
 			want: "--require-wipe-import-artifacts-complete",
 		},
 		{
+			name: "empty-tree-require-import-result-outcomes",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-import-result-outcomes-complete"},
+			want: "--require-import-result-outcomes-complete",
+		},
+		{
+			name: "empty-tree-require-import-result-all-replaced",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-import-result-all-replaced"},
+			want: "--require-import-result-all-replaced",
+		},
+		{
 			name: "absent-tree-require-quarantine",
 			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-quarantine-complete"},
 			want: "--require-quarantine-complete",
+		},
+		{
+			name: "absent-tree-require-import-result-outcomes",
+			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-import-result-outcomes-complete"},
+			want: "--require-import-result-outcomes-complete",
 		},
 	}
 	for _, tc := range cases {
@@ -648,10 +663,91 @@ func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
 		"--require-two-phase-wipe-artifacts-complete",
 		"--require-import-result-artifacts-complete",
 		"--require-wipe-import-artifacts-complete",
+		"--require-import-result-outcomes-complete",
+		"--require-import-result-all-replaced",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected usage to list %q, got %q", want, body)
 		}
+	}
+}
+
+func TestRunExportTreeStatusOutcomeRequireFlagsGateInsertOnlyAndAllReplaced(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T174000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var outcomesStdout bytes.Buffer
+	var outcomesStderr bytes.Buffer
+	code := Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-import-result-outcomes-complete",
+	}, nil, &outcomesStdout, &outcomesStderr)
+	if code != exitOK {
+		t.Fatalf("expected insert-only outcomes-complete require to succeed, exit=%d stderr=%q", code, outcomesStderr.String())
+	}
+	if outcomesStderr.Len() != 0 {
+		t.Fatalf("expected no stderr on outcomes-complete success, got %q", outcomesStderr.String())
+	}
+
+	var allReplacedStdout bytes.Buffer
+	var allReplacedStderr bytes.Buffer
+	code = Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-import-result-all-replaced",
+	}, nil, &allReplacedStdout, &allReplacedStderr)
+	if code != exitError {
+		t.Fatalf("expected insert-only all-replaced require to fail closed, exit=%d stderr=%q stdout=%q", code, allReplacedStderr.String(), allReplacedStdout.String())
+	}
+	if allReplacedStdout.Len() != 0 {
+		t.Fatalf("expected no stdout on all-replaced require failure, got %q", allReplacedStdout.String())
+	}
+	if !strings.Contains(allReplacedStderr.String(), "--require-import-result-all-replaced") {
+		t.Fatalf("expected stderr to name --require-import-result-all-replaced, got %q", allReplacedStderr.String())
+	}
+
+	replacedPayloads := map[string]string{
+		"account-character-roster":     `{"migration_version":2,"migration_name":"account_character_roster","account_count":1,"character_count":2,"account_ids":[7],"character_ids":[11,12],"replaced":true}`,
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_count":1,"inventory_item_count":3,"equipment_item_count":1,"quickslot_count":2,"character_ids":[11],"replaced":true}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":8,"active_ticket_count":1,"login_keys":[16909060],"replaced":true}`,
+		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":9,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[19],"replaced":true}`,
+		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":10,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[101],"interaction_kinds":[],"combat_profiles":[],"replaced":true}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
+	}
+	for kind, payload := range replacedPayloads {
+		mustRewriteExportTreeImportResult(t, tree, kind, payload)
+	}
+
+	var bothStdout bytes.Buffer
+	var bothStderr bytes.Buffer
+	code = Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-import-result-outcomes-complete",
+		"--require-import-result-all-replaced",
+	}, nil, &bothStdout, &bothStderr)
+	if code != exitOK {
+		t.Fatalf("expected all-replaced outcome require flags to succeed, exit=%d stderr=%q", code, bothStderr.String())
+	}
+	if bothStderr.Len() != 0 {
+		t.Fatalf("expected no stderr on all-replaced require success, got %q", bothStderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(bothStdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode all-replaced gated export-tree status JSON: %v\nbody:\n%s", err, bothStdout.String())
+	}
+	if !got.ImportResultOutcomesComplete || !got.ImportResultAllReplaced {
+		t.Fatalf("expected true outcome aggregates under require success, got %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
 	}
 }
 

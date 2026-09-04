@@ -535,7 +535,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		"synthesize-wipe-export --kind character-item-state",
 		"wipe-quarantine.json",
 		"wipe-import-result.json",
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(twoPhaseScript, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, twoPhaseScript)
@@ -636,6 +636,12 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		}
 		if name == "export-tree-status-after.json" && !treeStatus.WipeImportArtifactsComplete {
 			t.Fatalf("export-tree-status-after.json must report wipe_import_artifacts_complete=true, got %#v", treeStatus)
+		}
+		if name == "export-tree-status-after.json" && !treeStatus.ImportResultOutcomesComplete {
+			t.Fatalf("export-tree-status-after.json must report import_result_outcomes_complete=true, got %#v", treeStatus)
+		}
+		if name == "export-tree-status-after.json" && !treeStatus.ImportResultAllReplaced {
+			t.Fatalf("export-tree-status-after.json must report import_result_all_replaced=true, got %#v", treeStatus)
 		}
 		for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
 			if strings.Contains(string(statusRaw), forbidden) {
