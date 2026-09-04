@@ -1,0 +1,28 @@
+{
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "shop_preview",
+      "ref": "npc:qa_merchant_foreign_reward_item_vnum",
+      "title": "QA Merchant Foreign Reward Item Vnum",
+      "catalog": [
+        {
+          "slot": 0,
+          "item_vnum": 27001,
+          "price": 50,
+          "count": 1
+        }
+      ],
+      "reward_item_vnum": 27001,
+      "reward_item_count": 1
+    }
+  ]
+}

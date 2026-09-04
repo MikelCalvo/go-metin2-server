@@ -106,6 +106,7 @@ Frozen target behavior:
 - the live session receives the current bootstrap merchant-window open response (`GC::SHOP START`) built from that structured catalog
 - later `SHOP BUY` / `SHOP END` requests reuse the same active merchant context and the same authored catalog identity frozen by the merchant docs
 - the same catalog still owns a deterministic compact preview render for QA/debug and lower-level resolution surfaces
+- foreign turn-in fields such as scalar `reward_item_vnum` / `reward_item_count` shorthand fail closed at store / content-bundle validation before runtime mutation; the checked-in negative dry-run is `docs/examples/bootstrap-invalid-shop-preview-foreign-reward-item-vnum-bundle.json`
 
 Current owned shop operator-summary semantics:
 - `GET /local/content-bundle/summary` and dry-run `POST /local/content-bundle/summary` now report deterministic `shop_catalogs` entries for every authored `shop_preview` definition

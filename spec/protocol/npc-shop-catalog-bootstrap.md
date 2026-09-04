@@ -71,6 +71,7 @@ The structured merchant contract must validate all of the following:
 - `catalog` must contain at least one entry
 - legacy location fields `map_index`, `x`, and `y` remain zero for this kind
 - freeform `text` is no longer the contract-bearing merchant payload once the structured shape is wired
+- foreign turn-in fields such as scalar `reward_item_vnum` / `reward_item_count` shorthand fail closed at store / content-bundle validation; the checked-in negative fixture `docs/examples/bootstrap-invalid-shop-preview-foreign-reward-item-vnum-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for a merchant catalog that illegally authors that shorthand beside an otherwise valid `title` + `catalog` + matching `item_templates`
 - each `slot` must be unique inside the catalog
 - slots must form a dense zero-based sequence after sorting (`0..n-1`) so later transaction addressing stays deterministic
 - each `item_vnum` must be non-zero and must resolve to a valid template in the loaded `internal/itemstore` catalog

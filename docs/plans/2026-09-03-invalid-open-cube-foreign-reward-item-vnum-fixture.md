@@ -67,8 +67,11 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. With warehouse + craftsman scalar `reward_item_vnum`
-   shorthand twins landed, Track D foreign-field dry-run coverage for owned
-   NPC service kinds is otherwise closed unless a new reject still forces
-   improvised JSON.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `shop_preview` scalar `reward_item_vnum` /
+   `reward_item_count` shorthand:
+   `docs/examples/bootstrap-invalid-shop-preview-foreign-reward-item-vnum-bundle.json`
+   (`docs/plans/2026-09-04-invalid-shop-preview-foreign-reward-item-vnum-fixture.md`).
+   With warehouse + craftsman + merchant scalar shorthand twins landed, Track D
+   foreign-field dry-run coverage for the highest-confusion turn-in shorthand is
+   otherwise closed unless a new reject still forces improvised JSON.
