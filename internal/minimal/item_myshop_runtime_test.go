@@ -2890,9 +2890,14 @@ func TestGameRuntimeMyShopClosedBeforePeerViewEntryOmitsLiveShopSign(t *testing.
 func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
+	hostSockets := inventory.SocketValues{7, 0, 9}
+	hostAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
 	owner := peerVisibilityCharacter("MyShopBrowseHost", 0x01030851, 0x02040851, 1100, 2100, 0, 101, 201)
 	owner.Gold = 5000
-	owner.Inventory = []inventory.ItemInstance{{ID: 851, Vnum: 27001, Count: 3, Slot: 5}, {ID: 901, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4}}
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 851, Vnum: 27001, Count: 3, Slot: 5, Sockets: &hostSockets, Attributes: &hostAttributes},
+		{ID: 901, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+	}
 	peer := peerVisibilityCharacter("MyShopBrowseGuest", 0x01030852, 0x02040852, 1120, 2120, 0, 101, 201)
 	peer.Gold = 22222
 	ownerLogin := "myshop-browse-host"
@@ -2959,8 +2964,8 @@ func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(
 		Price:      1500,
 		Count:      3,
 		DisplayPos: 7,
-		Sockets:    [itemproto.ItemSocketCount]int32{11, -22, 33},
-		Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+		Sockets:    [itemproto.ItemSocketCount]int32{7, 0, 9},
+		Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 7, Value: -3}},
 	}
 	if start.Items[7] != want {
 		t.Fatalf("unexpected guest browse display slot 7: %+v want %+v", start.Items[7], want)
@@ -2978,6 +2983,118 @@ func TestGameRuntimeMyShopGuestBrowseOpenEmitsShopStartWithoutInventoryMutation(
 	}
 	assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse host")
 	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse guest")
+}
+
+func TestGameRuntimeMyShopGuestBrowsePrefersInstancePresenceOverTemplate(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+		want       shopproto.ItemEntry
+	}{
+		{
+			name:       "active instance presence",
+			sockets:    &inventory.SocketValues{7, 0, 9},
+			attributes: &inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}},
+			want: shopproto.ItemEntry{
+				Vnum: 27001, Price: 1500, Count: 3, DisplayPos: 7,
+				Sockets:    [itemproto.ItemSocketCount]int32{7, 0, 9},
+				Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 1, Value: 25}, {Type: 7, Value: -3}},
+			},
+		},
+		{
+			name:       "explicit zero instance presence",
+			sockets:    &zeroSockets,
+			attributes: &zeroAttributes,
+			want: shopproto.ItemEntry{
+				Vnum: 27001, Price: 1500, Count: 3, DisplayPos: 7,
+			},
+		},
+		{
+			name: "omitted instance keeps template fallback",
+			want: shopproto.ItemEntry{
+				Vnum: 27001, Price: 1500, Count: 3, DisplayPos: 7,
+				Sockets:    [itemproto.ItemSocketCount]int32{11, -22, 33},
+				Attributes: [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+			},
+		},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := peerVisibilityCharacter("MyShopBrowsePresenceHost", 0x010308d1+uint32(i), 0x020408d1+uint32(i), 1100, 2100, 0, 101, 201)
+			owner.Gold = 5000
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 861, Vnum: 27001, Count: 3, Slot: 5, Sockets: tc.sockets, Attributes: tc.attributes},
+				{ID: 911, Vnum: myShopOpenShopBagVnum, Count: 1, Slot: 4},
+			}
+			peer := peerVisibilityCharacter("MyShopBrowsePresenceGuest", 0x010308e1+uint32(i), 0x020408e1+uint32(i), 1120, 2120, 0, 101, 201)
+			peer.Gold = 22222
+			ownerLogin := "myshop-browse-presence-host-" + string(rune('a'+i))
+			peerLogin := "myshop-browse-presence-guest-" + string(rune('a'+i))
+			issuePeerTicket(t, ticketStore, ownerLogin, 0x70707251+uint32(i), owner)
+			issuePeerTicket(t, ticketStore, peerLogin, 0x70707261+uint32(i), peer)
+			if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed myshop browse presence host account: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed myshop browse presence guest account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+				Vnum:       27001,
+				Name:       "Shop Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    itemcatalog.SocketValues{11, -22, 33},
+				Attributes: itemcatalog.AttributeValues{{Type: 3, Value: 30}, {Type: 4, Value: -5}},
+			}})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected myshop browse presence runtime error: %v", err)
+			}
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707251+uint32(i))
+			defer closeSessionFlow(t, ownerFlow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707261+uint32(i))
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			_ = flushServerFrames(t, peerFlow)
+
+			openOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientMyShop(shopproto.ClientMyShopPacket{
+				Sign: "Presence Shop",
+				Items: []shopproto.ClientMyShopItem{{
+					Vnum:       27001,
+					Count:      3,
+					Position:   itemproto.InventoryPosition(5),
+					Price:      1500,
+					DisplayPos: 7,
+				}},
+			})))
+			if err != nil {
+				t.Fatalf("unexpected accepted MYSHOP before browse presence: %v", err)
+			}
+			assertMyShopOpenSuccessBagAndSignWithText(t, openOut, owner.VID, "Presence Shop", 4, "accepted MYSHOP before browse presence")
+			_ = flushServerFrames(t, peerFlow)
+
+			browseOut, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: owner.VID})))
+			if err != nil || len(browseOut) != 1 {
+				t.Fatalf("unexpected guest browse presence ON_CLICK: out=%d err=%v", len(browseOut), err)
+			}
+			start, err := shopproto.DecodeServerStart(decodeSingleFrame(t, browseOut[0]))
+			if err != nil {
+				t.Fatalf("decode guest browse presence SHOP START: %v", err)
+			}
+			if start.Items[7] != tc.want {
+				t.Fatalf("unexpected guest browse presence display slot 7: %+v want %+v", start.Items[7], tc.want)
+			}
+			assertExchangeAccountUnchanged(t, accounts, ownerLogin, characterAfterMyShopBagConsume(owner), "myshop guest browse presence host")
+			assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "myshop guest browse presence guest")
+		})
+	}
 }
 
 func TestGameRuntimeMyShopGuestBrowseRejectsBusyGuestAndSilentMisses(t *testing.T) {

@@ -63,4 +63,4 @@ Own the first guest browse open path on top of already-owned MYSHOP open + peer 
 
 ## Status
 
-Implemented on `lane/items`: guest `CG::ON_CLICK` against a visible already-open MYSHOP host emits one guest-only `GC::SHOP START` stock table from the remembered listing + live matching carried cell sockets/attrs; busy guest/host shells reuse owned exchange busy info-chat strings; guest own open MYSHOP / closed host stay silent. Buy/sell, guest leave/`END`, and cube busy rejects stay deferred.
+Implemented on `lane/items`: guest `CG::ON_CLICK` against a visible already-open MYSHOP host emits one guest-only `GC::SHOP START` stock table from the remembered listing + live matching carried cell presence-aware sockets/attrs (instance presence including explicit zero wins over template; omitted keeps template fallback; `TestGameRuntimeMyShopGuestBrowsePrefersInstancePresenceOverTemplate`). Busy guest/host shells reuse owned exchange busy info-chat strings; guest own open MYSHOP / closed host stay silent. Buy/sell, guest leave/`END`, and cube busy rejects stay deferred.

@@ -641,7 +641,7 @@ Expected result:
 - [ ] Close player A's shop with `/close_myshop`, then repeat the click from player B
 
 Expected result:
-- successful guest browse emits exactly one guest-only `GC::SHOP START` whose `OwnerVID` is player A's VID and whose display table fills the listed `display_pos` with remembered `vnum` / `count` / `price` plus template sockets/attributes when the live carried cell still matches; inventory/gold stay unchanged on both sides and no extra `SHOP_SIGN` is re-emitted by the browse
+- successful guest browse emits exactly one guest-only `GC::SHOP START` whose `OwnerVID` is player A's VID and whose display table fills the listed `display_pos` with remembered `vnum` / `count` / `price` plus presence-aware sockets/attributes from the live matching carried cell (instance presence including explicit zero wins over template; omitted keeps template fallback); inventory/gold stay unchanged on both sides and no extra `SHOP_SIGN` is re-emitted by the browse
 - guest `CG::SHOP END` while browsing emits exactly one guest-only `GC::SHOP END` and clears browse; a second END is silent
 - host `/close_myshop` while a guest is browsing queues one guest `GC::SHOP END` beside the owned empty-sign path; later guest END stays silent
 - guest open merchant/safebox/refine/exchange returns one self-only busy info-chat `You cannot trade while another trade window is open.` with no START

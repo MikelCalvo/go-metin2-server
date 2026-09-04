@@ -108,5 +108,9 @@ independently from the pre-equip live inventory pointer (including explicit
 zero; omit→omit)
 (`TestRuntimeEquipItemWithTemplatePreservesInstancePresenceIndependently`,
 `TestRuntimeReplaceOccupiedEquipItemPreservesEquippedInstancePresenceIndependently`).
+Session twins now also freeze slash empty-slot equip and packet occupied-replace
+equipment `ITEM_SET` + account snapshot presence
+(`TestGameRuntimeEquipPreservesInstanceSocketsAndAttributes`,
+`TestGameRuntimeOccupiedReplaceEquipPreservesInstanceSocketsAndAttributes`).
 Unequip/`WithInventorySlot` clone stays already owned. Refine catalysts / mall /
 party ownership remain deferred.
