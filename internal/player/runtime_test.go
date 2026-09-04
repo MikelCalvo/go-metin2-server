@@ -3279,6 +3279,92 @@ func TestRuntimeSafeboxCheckinItemRemovesWholeStackWithoutAntiSafebox(t *testing
 	}
 }
 
+func TestRuntimeSafeboxCheckinItemPreservesInstancePresenceIndependently(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted sockets and attributes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			seedSockets := tc.sockets
+			seedAttributes := tc.attributes
+			persisted := loginticket.Character{
+				ID:    0x01030913,
+				VID:   0x02040913,
+				Name:  "CheckinPreserve",
+				Level: 1,
+				Inventory: []inventory.ItemInstance{
+					{ID: 210, Vnum: 27001, Count: 3, Slot: 5, Sockets: seedSockets, Attributes: seedAttributes},
+					{ID: 211, Vnum: 27002, Count: 1, Slot: 6},
+				},
+				Gold: 4242,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "checkin-preserve", CharacterIndex: 1})
+
+			result, ok := runtime.SafeboxCheckinItem(5, template)
+			if !ok {
+				t.Fatal("expected safebox check-in item removal to succeed")
+			}
+			if result.Slot != 5 || result.Item.ID != 210 || result.Item.Vnum != 27001 || result.Item.Count != 3 || result.Item.Slot != 5 {
+				t.Fatalf("unexpected safebox check-in removal result: %+v", result)
+			}
+			if (tc.sockets != nil) != result.Item.HasSockets() {
+				t.Fatalf("HasSockets=%v want %v", result.Item.HasSockets(), tc.sockets != nil)
+			}
+			if (tc.attributes != nil) != result.Item.HasAttributes() {
+				t.Fatalf("HasAttributes=%v want %v", result.Item.HasAttributes(), tc.attributes != nil)
+			}
+			if tc.sockets != nil {
+				if result.Item.Sockets == nil || *result.Item.Sockets != *tc.sockets {
+					t.Fatalf("expected preserved sockets %+v, got %#v", *tc.sockets, result.Item.Sockets)
+				}
+				if result.Item.Sockets == seedSockets {
+					t.Fatal("expected check-in to clone sockets independently from the seed pointer")
+				}
+				result.Item.Sockets[0] = 99
+				if *seedSockets != *tc.sockets {
+					t.Fatalf("mutating check-in sockets aliased the seed: got %+v want %+v", *seedSockets, *tc.sockets)
+				}
+			} else if result.Item.Sockets != nil {
+				t.Fatalf("expected omitted sockets, got %#v", result.Item.Sockets)
+			}
+			if tc.attributes != nil {
+				if result.Item.Attributes == nil || *result.Item.Attributes != *tc.attributes {
+					t.Fatalf("expected preserved attributes %+v, got %#v", *tc.attributes, result.Item.Attributes)
+				}
+				if result.Item.Attributes == seedAttributes {
+					t.Fatal("expected check-in to clone attributes independently from the seed pointer")
+				}
+				result.Item.Attributes[0].Value = 99
+				if *seedAttributes != *tc.attributes {
+					t.Fatalf("mutating check-in attributes aliased the seed: got %+v want %+v", *seedAttributes, *tc.attributes)
+				}
+			} else if result.Item.Attributes != nil {
+				t.Fatalf("expected omitted attributes, got %#v", result.Item.Attributes)
+			}
+
+			live := runtime.LiveCharacter()
+			if !reflect.DeepEqual(live.Inventory, []inventory.ItemInstance{{ID: 211, Vnum: 27002, Count: 1, Slot: 6}}) {
+				t.Fatalf("unexpected live inventory after presence check-in: %#v", live.Inventory)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+				t.Fatalf("safebox presence check-in mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeSafeboxCheckinItemRejectsAntiSafeboxAndMalformedWithoutMutation(t *testing.T) {
 	cases := []struct {
 		name      string

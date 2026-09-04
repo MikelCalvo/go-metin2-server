@@ -1460,7 +1460,10 @@ func (r *Runtime) SafeboxCheckinItem(slot inventory.SlotIndex, template itemcata
 	updatedInventory = removeInventoryIndex(updatedInventory, index)
 	sortInventoryItems(updatedInventory)
 	r.liveInventory = updatedInventory
-	return SafeboxCheckinItemResult{Slot: slot, Item: item}, true
+	stored := item
+	stored.Sockets = item.CloneSockets()
+	stored.Attributes = item.CloneAttributes()
+	return SafeboxCheckinItemResult{Slot: slot, Item: stored}, true
 }
 
 // SafeboxCheckoutItem places one whole same-session safebox stack into a named
