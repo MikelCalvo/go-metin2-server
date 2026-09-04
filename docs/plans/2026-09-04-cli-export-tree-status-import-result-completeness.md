@@ -89,6 +89,8 @@ status artifacts.
 
 Follow-up owned separately: opt-in cutover-artifact require-gate on `export-tree-status` — see [CLI export-tree-status cutover-artifact gate contract freeze](2026-09-04-cli-export-tree-status-cutover-artifact-gate-contract-freeze.md).
 
+Follow-up owned separately: additive import-outcome / replace-mode aggregates on `export-tree-status` — see [CLI export-tree-status import-outcome aggregates contract freeze](2026-09-04-cli-export-tree-status-import-outcome-aggregates-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

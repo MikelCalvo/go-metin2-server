@@ -176,6 +176,9 @@ gofmt -l internal/migratecli/*.go
 git diff --check
 ```
 
+
+Follow-up owned separately: additive import-outcome / replace-mode aggregates on `export-tree-status` — see [CLI export-tree-status import-outcome aggregates contract freeze](2026-09-04-cli-export-tree-status-import-outcome-aggregates-contract-freeze.md).
+
 ## Status
 
 GREEN on `lane/persistence`.
