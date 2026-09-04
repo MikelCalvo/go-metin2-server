@@ -230,6 +230,64 @@ func TestRunExportTreeStatusReportsImportAndWipeImportArtifactCompleteness(t *te
 	}
 }
 
+func TestRunExportTreeStatusRequireFlagsSucceedOnCompleteTree(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T160000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+
+	wipePayloads := map[string]string{
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_ids":[11],"inventory_items":[],"equipment_items":[],"quickslots":[]}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_ids":[11],"points":[]}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[11],"unit_prices":[]}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_ids":[11],"flags":[]}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[11],"passwords":[],"items":[]}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","vids":[117440556],"ground_items":[]}`,
+	}
+	for kind, payload := range wipePayloads {
+		wipePath := filepath.Join(tree, kind, "wipe-quarantine.json")
+		if err := os.WriteFile(wipePath, []byte(payload), 0o600); err != nil {
+			t.Fatalf("write wipe-quarantine for %s: %v", kind, err)
+		}
+		var wipeStdout bytes.Buffer
+		var wipeStderr bytes.Buffer
+		code := Run([]string{"synthesize-wipe-export-status", "--kind", kind, "--wipe-export", wipePath}, nil, &wipeStdout, &wipeStderr)
+		if code != exitOK {
+			t.Fatalf("synthesize-wipe-export-status for %s: exit=%d stderr=%q", kind, code, wipeStderr.String())
+		}
+		if err := os.WriteFile(filepath.Join(tree, kind, "wipe-quarantine-status.json"), wipeStdout.Bytes(), 0o600); err != nil {
+			t.Fatalf("write wipe-quarantine-status for %s: %v", kind, err)
+		}
+	}
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-quarantine-complete",
+		"--require-two-phase-wipe-artifacts-complete",
+		"--require-import-result-artifacts-complete",
+		"--require-wipe-import-artifacts-complete",
+	}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected gated complete export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on gated success, got %q", stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode gated complete export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || !got.QuarantineComplete || !got.TwoPhaseWipeArtifactsComplete || !got.ImportResultArtifactsComplete || !got.WipeImportArtifactsComplete {
+		t.Fatalf("expected complete gated aggregates, got %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunExportTreeStatusRejectsInvalidContracts(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	tree := filepath.Join(t.TempDir(), "exports", "20260904T140000Z-abcdef012345")
@@ -330,6 +388,87 @@ func TestRunRejectsUnknownCommandMentionsExportTreeStatus(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "export-tree-status") {
 		t.Fatalf("expected usage to mention export-tree-status, got %q", stderr.String())
+	}
+}
+
+func TestRunExportTreeStatusRequireFlagsFailClosedOnIncompleteOrAbsentTree(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+
+	emptyTree := filepath.Join(t.TempDir(), "exports", "20260904T140000Z-abcdef012345")
+	if err := os.MkdirAll(emptyTree, 0o755); err != nil {
+		t.Fatalf("mkdir empty export-tree: %v", err)
+	}
+	missingTree := filepath.Join(t.TempDir(), "missing-export-tree")
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "empty-tree-require-quarantine",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-quarantine-complete"},
+			want: "--require-quarantine-complete",
+		},
+		{
+			name: "empty-tree-require-two-phase-wipe",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-two-phase-wipe-artifacts-complete"},
+			want: "--require-two-phase-wipe-artifacts-complete",
+		},
+		{
+			name: "empty-tree-require-import-result",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-import-result-artifacts-complete"},
+			want: "--require-import-result-artifacts-complete",
+		},
+		{
+			name: "empty-tree-require-wipe-import",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-wipe-import-artifacts-complete"},
+			want: "--require-wipe-import-artifacts-complete",
+		},
+		{
+			name: "absent-tree-require-quarantine",
+			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-quarantine-complete"},
+			want: "--require-quarantine-complete",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(tc.args, nil, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("expected require-gate exit %d, got %d stderr=%q stdout=%q", exitError, code, stderr.String(), stdout.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout on require failure, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("expected stderr to name %q, got %q", tc.want, stderr.String())
+			}
+			if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+				t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+			}
+		})
+	}
+}
+
+func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status"}, nil, &stdout, &stderr)
+	if code != exitUsage {
+		t.Fatalf("expected usage exit %d, got %d stderr=%q", exitUsage, code, stderr.String())
+	}
+	body := stderr.String()
+	for _, want := range []string{
+		"--require-quarantine-complete",
+		"--require-two-phase-wipe-artifacts-complete",
+		"--require-import-result-artifacts-complete",
+		"--require-wipe-import-artifacts-complete",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected usage to list %q, got %q", want, body)
+		}
 	}
 }
 

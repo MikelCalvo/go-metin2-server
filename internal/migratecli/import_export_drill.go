@@ -204,7 +204,7 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 		}
 		b.WriteString("\n")
 		b.WriteString("echo '== retain export-tree-status after mutation =='\n")
-		b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
+		b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
 		return b.String()
 	}
 
@@ -230,7 +230,7 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	}
 	b.WriteString("\n")
 	b.WriteString("echo '== retain export-tree-status after mutation =='\n")
-	b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
+	b.WriteString("metin2-migrate export-tree-status --export-tree \"$EXPORT_TREE\" --require-quarantine-complete --require-import-result-artifacts-complete > \"$EXPORT_TREE/export-tree-status-after.json\"\n")
 	return b.String()
 }
 

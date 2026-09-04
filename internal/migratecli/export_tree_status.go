@@ -60,7 +60,15 @@ func runExportTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 	flags := flag.NewFlagSet("export-tree-status", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var exportTree string
+	var requireQuarantineComplete bool
+	var requireTwoPhaseWipeArtifactsComplete bool
+	var requireImportResultArtifactsComplete bool
+	var requireWipeImportArtifactsComplete bool
 	flags.StringVar(&exportTree, "export-tree", "", "absolute path to a retained export/quarantine tree")
+	flags.BoolVar(&requireQuarantineComplete, "require-quarantine-complete", false, "fail closed unless quarantine_complete is true")
+	flags.BoolVar(&requireTwoPhaseWipeArtifactsComplete, "require-two-phase-wipe-artifacts-complete", false, "fail closed unless two_phase_wipe_artifacts_complete is true")
+	flags.BoolVar(&requireImportResultArtifactsComplete, "require-import-result-artifacts-complete", false, "fail closed unless import_result_artifacts_complete is true")
+	flags.BoolVar(&requireWipeImportArtifactsComplete, "require-wipe-import-artifacts-complete", false, "fail closed unless wipe_import_artifacts_complete is true")
 	flags.Usage = func() { printExportTreeStatusUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -81,7 +89,54 @@ func runExportTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "export-tree status: %v\n", err)
 		return exitError
 	}
+	if err := enforceExportTreeStatusRequireGates(status, exportTreeStatusRequireGates{
+		QuarantineComplete:            requireQuarantineComplete,
+		TwoPhaseWipeArtifactsComplete: requireTwoPhaseWipeArtifactsComplete,
+		ImportResultArtifactsComplete: requireImportResultArtifactsComplete,
+		WipeImportArtifactsComplete:   requireWipeImportArtifactsComplete,
+	}); err != nil {
+		fmt.Fprintf(stderr, "export-tree status: %v\n", err)
+		return exitError
+	}
 	return writeJSON(stdout, stderr, status)
+}
+
+type exportTreeStatusRequireGates struct {
+	QuarantineComplete            bool
+	TwoPhaseWipeArtifactsComplete bool
+	ImportResultArtifactsComplete bool
+	WipeImportArtifactsComplete   bool
+}
+
+func enforceExportTreeStatusRequireGates(status exportTreeStatus, gates exportTreeStatusRequireGates) error {
+	if !gates.QuarantineComplete && !gates.TwoPhaseWipeArtifactsComplete && !gates.ImportResultArtifactsComplete && !gates.WipeImportArtifactsComplete {
+		return nil
+	}
+	if !status.Present {
+		switch {
+		case gates.QuarantineComplete:
+			return fmt.Errorf("%w: --require-quarantine-complete failed: export-tree is absent", ErrExportTreeStatus)
+		case gates.TwoPhaseWipeArtifactsComplete:
+			return fmt.Errorf("%w: --require-two-phase-wipe-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
+		case gates.ImportResultArtifactsComplete:
+			return fmt.Errorf("%w: --require-import-result-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
+		default:
+			return fmt.Errorf("%w: --require-wipe-import-artifacts-complete failed: export-tree is absent", ErrExportTreeStatus)
+		}
+	}
+	if gates.QuarantineComplete && !status.QuarantineComplete {
+		return fmt.Errorf("%w: --require-quarantine-complete failed: quarantine_complete=false", ErrExportTreeStatus)
+	}
+	if gates.TwoPhaseWipeArtifactsComplete && !status.TwoPhaseWipeArtifactsComplete {
+		return fmt.Errorf("%w: --require-two-phase-wipe-artifacts-complete failed: two_phase_wipe_artifacts_complete=false", ErrExportTreeStatus)
+	}
+	if gates.ImportResultArtifactsComplete && !status.ImportResultArtifactsComplete {
+		return fmt.Errorf("%w: --require-import-result-artifacts-complete failed: import_result_artifacts_complete=false", ErrExportTreeStatus)
+	}
+	if gates.WipeImportArtifactsComplete && !status.WipeImportArtifactsComplete {
+		return fmt.Errorf("%w: --require-wipe-import-artifacts-complete failed: wipe_import_artifacts_complete=false", ErrExportTreeStatus)
+	}
+	return nil
 }
 
 func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
@@ -419,5 +474,5 @@ func decodeStrictExportTreeStatusJSON(raw []byte, dest any, label string) error 
 
 func printExportTreeStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "export-tree-status usage:")
-	fmt.Fprintln(w, "  metin2-migrate export-tree-status --export-tree <absolute-path>")
+	fmt.Fprintln(w, "  metin2-migrate export-tree-status --export-tree <absolute-path> [--require-quarantine-complete] [--require-two-phase-wipe-artifacts-complete] [--require-import-result-artifacts-complete] [--require-wipe-import-artifacts-complete]")
 }

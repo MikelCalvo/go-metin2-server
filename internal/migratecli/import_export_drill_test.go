@@ -68,7 +68,7 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		`test -f "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json"`,
 		`metin2-migrate import-export --kind bootstrap-ground-item-state --export "$EXPORT_TREE/bootstrap-ground-item-state/quarantine.json" --driver "$DRIVER" --dsn "$DSN" --i-confirm-sql-import > "$EXPORT_TREE/bootstrap-ground-item-state/import-result.json"`,
 		`metin2-migrate import-export-status --kind bootstrap-ground-item-state --import-result "$EXPORT_TREE/bootstrap-ground-item-state/import-result.json" > "$EXPORT_TREE/bootstrap-ground-item-state/import-result-status.json"`,
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-import-result-artifacts-complete > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -177,7 +177,7 @@ func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 	}
 	for _, want := range []string{
 		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-import-result-artifacts-complete > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in scoped-replace drill stdout:\n%s", want, body)
@@ -267,7 +267,7 @@ func TestRunImportExportDrillPrintsTwoPhaseWipeRosterReimport(t *testing.T) {
 		"phase 2: wipe character-FK tip kinds",
 		"phase 3: scoped-replace tip-0002 account-character-roster",
 		"phase 4: scoped-replace reimport non-roster tip kinds",
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, body)

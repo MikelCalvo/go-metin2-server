@@ -178,12 +178,13 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze only on `lane/persistence`.
+GREEN on `lane/persistence`.
 
-- Contract for opt-in `export-tree-status` cutover-artifact require flags is
-  frozen above.
-- GREEN implementation / printer wiring / hermetic after-gate proof remain
-  follow-on.
+- Opt-in `export-tree-status` require flags fail closed on absent/incomplete
+  trees and succeed on complete trees without changing default ungated
+  inspection.
+- `import-export-drill` after-status redirects gate quarantine+import-result
+  (and all four bits for two-phase); before-status stays ungated.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze
