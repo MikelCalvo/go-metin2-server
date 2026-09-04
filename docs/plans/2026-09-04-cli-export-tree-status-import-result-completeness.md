@@ -87,6 +87,8 @@ No printer flag changes. Hermetic two-phase SQLite proof should assert that
 when the printed two-phase script retained the matching import / wipe-import
 status artifacts.
 
+Follow-up owned separately: opt-in cutover-artifact require-gate on `export-tree-status` — see [CLI export-tree-status cutover-artifact gate contract freeze](2026-09-04-cli-export-tree-status-cutover-artifact-gate-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace
