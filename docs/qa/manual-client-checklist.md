@@ -1510,14 +1510,14 @@ Expected result:
 - [ ] Reset to two compatible carried stacks, then send `ITEM_MOVE` from `A` into occupied compatible stack slot `C` with `count = 0`
 - [ ] Confirm the selected session receives self-only count refreshes: `ITEM_UPDATE(A)` if a source remainder survives or `ITEM_DEL(A)` if the source is fully consumed, followed by `ITEM_UPDATE(C)` capped at the authored template `max_count`
 - [ ] Reset to a stack count greater than one, then send `ITEM_MOVE` from `A` to empty slot `B` with a partial count lower than the current stack count
-- [ ] Confirm the selected session receives self-only refreshes for both slots: source stack remains in `A` with the reduced count and the split stack appears in `B`
+- [ ] Confirm the selected session receives self-only refreshes for both slots: source stack remains in `A` with the reduced count and the split stack appears in `B`; when the source stack carries presence-aware instance sockets/attributes, confirm both `ITEM_SET` frames keep that presence (including explicit zero) and the destination identity is fresh/independent rather than aliasing the remainder
 - [ ] Reset to two compatible carried stacks, then send a partial-count `ITEM_MOVE` from `A` into occupied compatible stack slot `C`
 - [ ] Confirm the selected session receives self-only `ITEM_SET` refreshes for both slots: source stack remains in `A` with the reduced count and destination stack `C` grows by the moved count
 - [ ] Repeat the same partial-count request with an incompatible occupied destination and confirm it fails closed without changing live or persisted inventory
 
 Expected result:
 - packet `ITEM_MOVE` reuses the same authoritative full-stack empty-destination move semantics as `/inventory_move`
-- empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted; full-stack incompatible occupied destinations swap and persist instead of failing closed
+- empty-destination partial splits plus compatible occupied-destination partial, exact, and zero-count merges are accepted and persisted; partial empty-destination splits mint a fresh destination identity and clone presence-aware instance sockets/attributes independently of the source remainder; full-stack incompatible occupied destinations swap and persist instead of failing closed
 - the response stays self-only and uses the existing `ITEM_DEL` / `ITEM_SET` / `ITEM_UPDATE` refresh family; quickslot sync retargets source item quickslots only for full-stack moves/swaps where the source item lands in the destination cell, deletes stale destination-cell item quickslots first, preserves source item quickslots for partial splits/merges, and deletes source item quickslots when the source stack is fully consumed by a compatible merge; the bootstrap `/inventory_move` compatibility seam follows the same authored-template incompatible-swap guard boundary and quickslot retarget/delete rule for accepted full-stack carried-cell moves
 - non-carried windows and out-of-range cells fail closed without mutation
 
