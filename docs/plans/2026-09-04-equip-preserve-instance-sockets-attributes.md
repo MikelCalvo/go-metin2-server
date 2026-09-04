@@ -102,7 +102,11 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze landed on `lane/items`. RED/GREEN for empty wear-slot equip and
-occupied-replace equip-side independent presence clone remain follow-on.
+GREEN on `lane/items`: empty wear-slot `EquipItem` / `EquipItemWithTemplate`
+and occupied-replace equip-side clone presence-aware sockets/attributes
+independently from the pre-equip live inventory pointer (including explicit
+zero; omit→omit)
+(`TestRuntimeEquipItemWithTemplatePreservesInstancePresenceIndependently`,
+`TestRuntimeReplaceOccupiedEquipItemPreservesEquippedInstancePresenceIndependently`).
 Unequip/`WithInventorySlot` clone stays already owned. Refine catalysts / mall /
 party ownership remain deferred.

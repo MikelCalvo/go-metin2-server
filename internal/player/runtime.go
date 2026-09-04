@@ -1106,10 +1106,13 @@ func (r *Runtime) equipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 	if fromIndex < 0 || r.liveInventory[fromIndex].Locked {
 		return inventory.ItemInstance{}, false
 	}
-	item := r.liveInventory[fromIndex]
+	sourceItem := r.liveInventory[fromIndex]
+	item := sourceItem
 	item.Slot = 0
 	item.Equipped = true
 	item.EquipSlot = equipSlot
+	item.Sockets = sourceItem.CloneSockets()
+	item.Attributes = sourceItem.CloneAttributes()
 	if err := item.Validate(); err != nil {
 		return inventory.ItemInstance{}, false
 	}
@@ -1145,6 +1148,8 @@ func (r *Runtime) replaceOccupiedEquipItem(from inventory.SlotIndex, equipSlot i
 	equippedItem.Slot = 0
 	equippedItem.Equipped = true
 	equippedItem.EquipSlot = equipSlot
+	equippedItem.Sockets = sourceItem.CloneSockets()
+	equippedItem.Attributes = sourceItem.CloneAttributes()
 	if err := equippedItem.Validate(); err != nil {
 		return EquipReplaceResult{}, false
 	}
