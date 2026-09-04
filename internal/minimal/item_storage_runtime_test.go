@@ -1502,6 +1502,146 @@ func TestGameRuntimeSafeboxItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeSafeboxItemMoveWholeStackEmptyDestinationPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+		wantWireS  [itemproto.ItemSocketCount]int32
+		wantWireA0 itemproto.Attribute
+		wantWireA1 itemproto.Attribute
+	}{
+		{
+			name:       "active sockets and attributes",
+			sockets:    &activeSockets,
+			attributes: &activeAttributes,
+			wantWireS:  [itemproto.ItemSocketCount]int32{11, 0, -3},
+			wantWireA0: itemproto.Attribute{Type: 4, Value: 55},
+			wantWireA1: itemproto.Attribute{Type: 9, Value: -7},
+		},
+		{
+			name:       "explicit zero sockets and attributes",
+			sockets:    &zeroSockets,
+			attributes: &zeroAttributes,
+			wantWireS:  [itemproto.ItemSocketCount]int32{},
+		},
+		{
+			name:       "omitted sockets and attributes use template fallback",
+			wantWireS:  [itemproto.ItemSocketCount]int32{21, 22, 23},
+			wantWireA0: itemproto.Attribute{Type: 2, Value: 8},
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("SafeboxMovePreserve", 0x010307f2+uint32(i), 0x020407f2+uint32(i), 1100, 2100, 0, 101, 201)
+			owner.Gold = 8282
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 890, Vnum: 27001, Count: 2, Slot: 5, Sockets: tc.sockets, Attributes: tc.attributes},
+			}
+			login := "safebox-move-preserve-" + string(rune('a'+i))
+			loginKey := uint32(0x707070f2 + i)
+			issuePeerTicket(t, ticketStore, login, loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed safebox item-move preserve owner account: %v", err)
+			}
+			template := itemcatalog.Template{
+				Vnum:       27001,
+				Name:       "Small Red Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    itemcatalog.SocketValues{21, 22, 23},
+				Attributes: itemcatalog.AttributeValues{{Type: 2, Value: 8}},
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected safebox item-move preserve runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+			defer closeSessionFlow(t, flow)
+			_ = flushServerFrames(t, flow)
+
+			if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+				Type:    chatproto.ChatTypeTalking,
+				Message: "/open_safebox",
+			}))); err != nil {
+				t.Fatalf("unexpected /open_safebox before preserve item-move error: %v", err)
+			}
+			if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+				SafeSlot: 0,
+				Position: itemproto.InventoryPosition(5),
+			}))); err != nil {
+				t.Fatalf("unexpected safebox check-in before preserve item-move error: %v", err)
+			}
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+				Source:      itemproto.InventoryPosition(0),
+				Destination: itemproto.InventoryPosition(3),
+				Count:       0,
+			})))
+			if err != nil {
+				t.Fatalf("unexpected preserve safebox item-move error: %v", err)
+			}
+			if len(out) != 2 {
+				t.Fatalf("expected preserve safebox item-move to emit SAFEBOX_DEL and SAFEBOX_SET, got %d", len(out))
+			}
+			del, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, out[0]))
+			if err != nil {
+				t.Fatalf("decode preserve safebox item-move SAFEBOX_DEL: %v", err)
+			}
+			if del.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+				t.Fatalf("unexpected preserve safebox item-move SAFEBOX_DEL: %+v", del.Position)
+			}
+			set, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, out[1]))
+			if err != nil {
+				t.Fatalf("decode preserve safebox item-move SAFEBOX_SET: %v", err)
+			}
+			if set.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 3}) || set.Vnum != 27001 || set.Count != 2 {
+				t.Fatalf("unexpected preserve safebox item-move SAFEBOX_SET: %+v", set)
+			}
+			if set.Sockets != tc.wantWireS {
+				t.Fatalf("unexpected preserve item-move SAFEBOX_SET sockets %+v want %+v", set.Sockets, tc.wantWireS)
+			}
+			if set.Attributes[0] != tc.wantWireA0 || set.Attributes[1] != tc.wantWireA1 {
+				t.Fatalf("unexpected preserve item-move SAFEBOX_SET attributes %+v want [%+v %+v]", set.Attributes, tc.wantWireA0, tc.wantWireA1)
+			}
+
+			assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "close-safebox after preserve item-move")
+
+			reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+				Type:    chatproto.ChatTypeTalking,
+				Message: "/open_safebox",
+			})))
+			if err != nil {
+				t.Fatalf("unexpected /open_safebox reopen after preserve item-move error: %v", err)
+			}
+			if len(reopenOut) < 2 {
+				t.Fatalf("expected reopen SAFEBOX_SIZE + SAFEBOX_SET after preserve item-move, got %d", len(reopenOut))
+			}
+			reopenSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, reopenOut[1]))
+			if err != nil {
+				t.Fatalf("decode reopen SAFEBOX_SET after preserve item-move: %v", err)
+			}
+			if reopenSet.Position != set.Position || reopenSet.Vnum != set.Vnum || reopenSet.Count != set.Count {
+				t.Fatalf("unexpected reopen SAFEBOX_SET after preserve item-move: %+v want %+v", reopenSet, set)
+			}
+			if reopenSet.Sockets != tc.wantWireS {
+				t.Fatalf("unexpected reopen SAFEBOX_SET sockets %+v want %+v", reopenSet.Sockets, tc.wantWireS)
+			}
+			if reopenSet.Attributes[0] != tc.wantWireA0 || reopenSet.Attributes[1] != tc.wantWireA1 {
+				t.Fatalf("unexpected reopen SAFEBOX_SET attributes %+v want [%+v %+v]", reopenSet.Attributes, tc.wantWireA0, tc.wantWireA1)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeSafeboxItemMoveAcceptsExplicitSafeboxAndMixedWindows(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

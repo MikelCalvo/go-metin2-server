@@ -7996,9 +7996,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if wholeStack {
 						var resultItem inventory.ItemInstance
 						if !destinationOccupied {
-							resultItem = sourceItem
-							resultItem.Slot = inventory.SlotIndex(destinationSlot)
-							if err := resultItem.Validate(); err != nil {
+							var ok bool
+							resultItem, ok = safeboxWholeStackRelocateItem(sourceItem, inventory.SlotIndex(destinationSlot))
+							if !ok {
 								return gameflow.SafeboxItemMoveResult{Accepted: false}
 							}
 						} else {
@@ -12233,6 +12233,25 @@ func nextSafeboxSplitItemID(selectedPlayer *player.Runtime, safeboxItems map[uin
 		return 0
 	}
 	return maxID + 1
+}
+
+// safeboxWholeStackRelocateItem builds the identity-preserving destination cell for a
+// whole-stack empty-destination SAFEBOX_ITEM_MOVE. Presence-aware sockets/attributes
+// are cloned so the relocated cell cannot alias the pre-move source snapshot pointers.
+func safeboxWholeStackRelocateItem(source inventory.ItemInstance, slot inventory.SlotIndex) (inventory.ItemInstance, bool) {
+	if source.Count == 0 {
+		return inventory.ItemInstance{}, false
+	}
+	destination := source
+	destination.Slot = slot
+	destination.Equipped = false
+	destination.EquipSlot = inventory.EquipmentSlotNone
+	destination.Sockets = source.CloneSockets()
+	destination.Attributes = source.CloneAttributes()
+	if err := destination.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return destination, true
 }
 
 // safeboxPartialSplitDestinationItem builds the new-identity destination cell for a
