@@ -52,4 +52,6 @@ See [hit-armed chase walkaway twin](2026-08-25-hit-armed-chase-walkaway-twin.md)
 - ~~absolute chase / return / homeward deadline rematerialize across restart~~ Cancelled for Track A bootstrap as re-arm-from-now: see [absolute deadline rematerialize contract freeze](2026-08-25-absolute-chase-return-homeward-deadline-rematerialize-contract-freeze.md)
 - ~~multi-step homeward cadence twin~~ Done: see [multi-step homeward cadence twin](2026-08-25-multi-step-homeward-cadence-twin.md)
 - ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
+- ~~combat-range-loss chase/homeward twin after chase displace~~ Done: see [combat-range loss homeward after chase](2026-09-04-combat-range-loss-chase-homeward.md)
+- AOI / visibility-loss chase/homeward twin after chase displace (training-dummy visibility clear exists; prefer ordinary GREEN coverage, not dishonest RED)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching
