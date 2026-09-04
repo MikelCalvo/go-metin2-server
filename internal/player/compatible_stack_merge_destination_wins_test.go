@@ -295,6 +295,102 @@ func TestRuntimeSafeboxCheckoutItemCompatibleMergeKeepsDestinationInstancePresen
 	}
 }
 
+func TestRuntimeSafeboxCheckoutItemFreeCellPreservesSourceInstancePresence(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted sockets and attributes"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			persisted := loginticket.Character{
+				ID:    0x01030912,
+				VID:   0x02040912,
+				Name:  "CheckoutFreeCellPreserve",
+				Level: 1,
+				Inventory: []inventory.ItemInstance{
+					{ID: 120, Vnum: 27002, Count: 1, Slot: 6},
+				},
+				Gold: 4242,
+			}
+			runtime := NewRuntime(persisted, SessionLink{Login: "checkout-free-cell-preserve", CharacterIndex: 1})
+			item := inventory.ItemInstance{
+				ID:         119,
+				Vnum:       27001,
+				Count:      3,
+				Slot:       0,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}
+
+			result, ok := runtime.SafeboxCheckoutItem(5, item, template)
+			if !ok {
+				t.Fatal("expected safebox check-out into empty destination to succeed")
+			}
+			if result.Merged || result.Destination != 5 || result.Item.ID != 119 || result.Item.Vnum != 27001 || result.Item.Count != 3 || result.Item.Slot != 5 {
+				t.Fatalf("unexpected safebox check-out empty placement: %+v", result)
+			}
+			if (tc.sockets != nil) != result.Item.HasSockets() {
+				t.Fatalf("HasSockets=%v want %v", result.Item.HasSockets(), tc.sockets != nil)
+			}
+			if (tc.attributes != nil) != result.Item.HasAttributes() {
+				t.Fatalf("HasAttributes=%v want %v", result.Item.HasAttributes(), tc.attributes != nil)
+			}
+			if tc.sockets != nil {
+				if result.Item.Sockets == nil || *result.Item.Sockets != *tc.sockets {
+					t.Fatalf("expected preserved sockets %+v, got %#v", *tc.sockets, result.Item.Sockets)
+				}
+				if result.Item.Sockets == item.Sockets {
+					t.Fatal("expected free-cell checkout to clone sockets independently from the seed pointer")
+				}
+			} else if result.Item.Sockets != nil {
+				t.Fatalf("expected omitted sockets, got %#v", result.Item.Sockets)
+			}
+			if tc.attributes != nil {
+				if result.Item.Attributes == nil || *result.Item.Attributes != *tc.attributes {
+					t.Fatalf("expected preserved attributes %+v, got %#v", *tc.attributes, result.Item.Attributes)
+				}
+				if result.Item.Attributes == item.Attributes {
+					t.Fatal("expected free-cell checkout to clone attributes independently from the seed pointer")
+				}
+			} else if result.Item.Attributes != nil {
+				t.Fatalf("expected omitted attributes, got %#v", result.Item.Attributes)
+			}
+
+			live := runtime.LiveCharacter()
+			if len(live.Inventory) != 2 || live.Inventory[0].ID != 119 || live.Inventory[0].Slot != 5 {
+				t.Fatalf("unexpected live inventory after free-cell checkout: %#v", live.Inventory)
+			}
+			got := live.Inventory[0]
+			if (tc.sockets != nil) != got.HasSockets() {
+				t.Fatalf("live HasSockets=%v want %v", got.HasSockets(), tc.sockets != nil)
+			}
+			if (tc.attributes != nil) != got.HasAttributes() {
+				t.Fatalf("live HasAttributes=%v want %v", got.HasAttributes(), tc.attributes != nil)
+			}
+			if tc.sockets != nil && (got.Sockets == nil || *got.Sockets != *tc.sockets) {
+				t.Fatalf("live sockets drifted: %#v", got.Sockets)
+			}
+			if tc.attributes != nil && (got.Attributes == nil || *got.Attributes != *tc.attributes) {
+				t.Fatalf("live attributes drifted: %#v", got.Attributes)
+			}
+			if got := runtime.PersistedSnapshot(); !reflect.DeepEqual(got.Inventory, persisted.Inventory) {
+				t.Fatalf("safebox free-cell check-out mutated persisted inventory early: got %#v want %#v", got.Inventory, persisted.Inventory)
+			}
+		})
+	}
+}
+
 func TestRuntimeUseItemOnItemCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {
 	destSockets := inventory.SocketValues{7, 0, 9}
 	destAttributes := inventory.AttributeValues{{Type: 1, Value: 25}}

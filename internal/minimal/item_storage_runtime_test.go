@@ -860,6 +860,141 @@ func TestGameRuntimeSafeboxCheckoutWhileOpenMovesItemToCarriedInventory(t *testi
 	}
 }
 
+func TestGameRuntimeSafeboxCheckoutFreeCellPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+		wantWireS  [itemproto.ItemSocketCount]int32
+		wantWireA0 itemproto.Attribute
+		wantWireA1 itemproto.Attribute
+	}{
+		{
+			name:       "active sockets and attributes",
+			sockets:    &activeSockets,
+			attributes: &activeAttributes,
+			wantWireS:  [itemproto.ItemSocketCount]int32{11, 0, -3},
+			wantWireA0: itemproto.Attribute{Type: 4, Value: 55},
+			wantWireA1: itemproto.Attribute{Type: 9, Value: -7},
+		},
+		{
+			name:       "explicit zero sockets and attributes",
+			sockets:    &zeroSockets,
+			attributes: &zeroAttributes,
+			wantWireS:  [itemproto.ItemSocketCount]int32{},
+		},
+		{
+			name:       "omitted sockets and attributes use template fallback",
+			wantWireS:  [itemproto.ItemSocketCount]int32{21, 22, 23},
+			wantWireA0: itemproto.Attribute{Type: 2, Value: 8},
+		},
+	}
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("SafeboxCheckoutPreserve", 0x010307e0+uint32(i), 0x020407e0+uint32(i), 1100, 2100, 0, 101, 201)
+			owner.Gold = 5353
+			owner.Inventory = []inventory.ItemInstance{
+				{ID: 790, Vnum: 27001, Count: 2, Slot: 5, Sockets: tc.sockets, Attributes: tc.attributes},
+			}
+			login := "safebox-checkout-preserve-" + string(rune('a'+i))
+			loginKey := uint32(0x707070e0 + i)
+			issuePeerTicket(t, ticketStore, login, loginKey, owner)
+			if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed safebox check-out preserve owner account: %v", err)
+			}
+			template := itemcatalog.Template{
+				Vnum:       27001,
+				Name:       "Small Red Potion",
+				Stackable:  true,
+				MaxCount:   200,
+				Sockets:    itemcatalog.SocketValues{21, 22, 23},
+				Attributes: itemcatalog.AttributeValues{{Type: 2, Value: 8}},
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected safebox check-out preserve runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+			defer closeSessionFlow(t, flow)
+			_ = flushServerFrames(t, flow)
+
+			if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+				Type:    chatproto.ChatTypeTalking,
+				Message: "/open_safebox",
+			}))); err != nil {
+				t.Fatalf("unexpected /open_safebox before preserve check-out error: %v", err)
+			}
+			if _, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+				SafeSlot: 0,
+				Position: itemproto.InventoryPosition(5),
+			}))); err != nil {
+				t.Fatalf("unexpected safebox check-in before preserve check-out error: %v", err)
+			}
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+				SafeSlot: 0,
+				Position: itemproto.InventoryPosition(7),
+			})))
+			if err != nil {
+				t.Fatalf("unexpected preserve safebox check-out error: %v", err)
+			}
+			if len(out) != 2 {
+				t.Fatalf("expected preserve safebox check-out to emit SAFEBOX_DEL and ITEM_SET, got %d", len(out))
+			}
+			set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+			if err != nil {
+				t.Fatalf("decode preserve safebox check-out ITEM_SET: %v", err)
+			}
+			if set.Position != itemproto.InventoryPosition(7) || set.Vnum != 27001 || set.Count != 2 {
+				t.Fatalf("unexpected preserve safebox check-out ITEM_SET: %+v", set)
+			}
+			if set.Sockets != tc.wantWireS {
+				t.Fatalf("unexpected preserve checkout ITEM_SET sockets %+v want %+v", set.Sockets, tc.wantWireS)
+			}
+			if set.Attributes[0] != tc.wantWireA0 || set.Attributes[1] != tc.wantWireA1 {
+				t.Fatalf("unexpected preserve checkout ITEM_SET attributes %+v want [%+v %+v]", set.Attributes, tc.wantWireA0, tc.wantWireA1)
+			}
+
+			persisted, err := accounts.Load(login)
+			if err != nil {
+				t.Fatalf("load preserve checkout account: %v", err)
+			}
+			got := persisted.Characters[0].Inventory[0]
+			if got.ID != 790 || got.Vnum != 27001 || got.Count != 2 || got.Slot != 7 {
+				t.Fatalf("unexpected persisted free-cell checkout cell: %#v", got)
+			}
+			if (tc.sockets != nil) != got.HasSockets() {
+				t.Fatalf("persisted HasSockets=%v want %v", got.HasSockets(), tc.sockets != nil)
+			}
+			if (tc.attributes != nil) != got.HasAttributes() {
+				t.Fatalf("persisted HasAttributes=%v want %v", got.HasAttributes(), tc.attributes != nil)
+			}
+			if tc.sockets != nil {
+				if got.Sockets == nil || *got.Sockets != *tc.sockets {
+					t.Fatalf("expected persisted sockets %+v, got %#v", *tc.sockets, got.Sockets)
+				}
+			} else if got.Sockets != nil {
+				t.Fatalf("expected omitted persisted sockets, got %#v", got.Sockets)
+			}
+			if tc.attributes != nil {
+				if got.Attributes == nil || *got.Attributes != *tc.attributes {
+					t.Fatalf("expected persisted attributes %+v, got %#v", *tc.attributes, got.Attributes)
+				}
+			} else if got.Attributes != nil {
+				t.Fatalf("expected omitted persisted attributes, got %#v", got.Attributes)
+			}
+		})
+	}
+}
+
 func TestGameRuntimeSafeboxCheckoutMergesCompatibleDestination(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
