@@ -18,7 +18,7 @@ Owned by the first runtime drop slice:
 
 - `CG::ITEM_DROP` and `CG::ITEM_DROP2` are accepted in `GAME` only for carried inventory slots;
 - whole-stack drops remove the carried item, clear all item quickslots pointing at that slot in deterministic quickslot-position order, persist the selected character snapshot, and return self-only `GC::ITEM_DEL` plus `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP`;
-- counted drops decrement the carried stack, persist the selected character snapshot, and return self-only `GC::ITEM_UPDATE` plus `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP`; when template metadata is loaded for the dropped stack, the source-slot `GC::ITEM_UPDATE` preserves the authored display `sockets` and `attributes` while updating only the count;
+- counted drops decrement the carried stack, persist the selected character snapshot, and return self-only `GC::ITEM_UPDATE` plus `GC::ITEM_GROUND_ADD` and `GC::ITEM_OWNERSHIP`; when template metadata is loaded for the dropped stack, the source-slot `GC::ITEM_UPDATE` projects presence-aware instance sockets/attributes via ordinary `EffectiveSockets` / `EffectiveAttributes` (instance presence including explicit zero wins over template; omitted instance keeps template fallback) while updating only the count (`docs/plans/2026-09-05-item-drop2-partial-source-remainder-preserve-instance-sockets-attributes.md`);
 - the bootstrap ground item `vid` is deterministic and non-zero, derived from the selected character `VID` and source slot; it is a visible handle for the self echo / visible peer rebuilds and is not yet a durable shared-world entity; if that deterministic handle already exists, the drop fails closed before inventory, quickslots, ground visibility, or persistence are mutated.
 
 Not owned yet:
