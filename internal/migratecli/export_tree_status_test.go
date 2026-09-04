@@ -452,6 +452,189 @@ func TestRunExportTreeStatusRequireFlagsFailClosedOnIncompleteOrAbsentTree(t *te
 	}
 }
 
+func TestRunExportTreeStatusReportsInsertOnlyImportResultOutcomes(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T170000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected insert-only outcome export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode insert-only outcome export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || !got.ImportResultArtifactsComplete || !got.ImportResultOutcomesComplete {
+		t.Fatalf("expected complete import-result outcomes, got %#v", got)
+	}
+	if got.ImportResultReplacedCount != 0 || got.ImportResultAllReplaced || got.ImportResultRowCountTotal != 0 {
+		t.Fatalf("unexpected insert-only outcome aggregates: %#v", got)
+	}
+	if len(got.Kinds) != len(exportQuarantineKinds) {
+		t.Fatalf("unexpected kind count: %#v", got)
+	}
+	for _, entry := range got.Kinds {
+		if entry.ImportResultOutcome == nil {
+			t.Fatalf("expected import_result_outcome for %s", entry.Kind)
+		}
+		if entry.ImportResultOutcome.Replaced || entry.ImportResultOutcome.RowCount != 0 {
+			t.Fatalf("unexpected insert-only outcome for %s: %#v", entry.Kind, entry.ImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusReportsMixedAndAllReplacedImportResultOutcomes(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T171000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	replacedPayloads := map[string]string{
+		"account-character-roster":     `{"migration_version":2,"migration_name":"account_character_roster","account_count":1,"character_count":2,"account_ids":[7],"character_ids":[11,12],"replaced":true}`,
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_count":1,"inventory_item_count":3,"equipment_item_count":1,"quickslot_count":2,"character_ids":[11],"replaced":true}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":8,"active_ticket_count":1,"login_keys":[16909060],"replaced":true}`,
+		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":9,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[19],"replaced":true}`,
+		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":10,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[101],"interaction_kinds":[],"combat_profiles":[],"replaced":true}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
+	}
+	wantRows := map[string]int{
+		"account-character-roster":     2,
+		"character-item-state":         6,
+		"character-point-state":        4,
+		"character-myshop-unit-prices": 5,
+		"character-quest-state":        6,
+		"character-safebox-state":      7,
+		"auth-login-ticket-handoff":    8,
+		"item-template-state":          9,
+		"static-actor-content-state":   10,
+		"bootstrap-ground-item-state":  11,
+	}
+
+	// Mixed: only character-item-state replaced with non-zero primary counts.
+	mustRewriteExportTreeImportResult(t, tree, "character-item-state", replacedPayloads["character-item-state"])
+
+	var mixedStdout bytes.Buffer
+	var mixedStderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &mixedStdout, &mixedStderr)
+	if code != exitOK {
+		t.Fatalf("expected mixed outcome export-tree-status to succeed, exit=%d stderr=%q", code, mixedStderr.String())
+	}
+	var mixed exportTreeStatus
+	if err := json.Unmarshal(mixedStdout.Bytes(), &mixed); err != nil {
+		t.Fatalf("decode mixed outcome export-tree status JSON: %v\nbody:\n%s", err, mixedStdout.String())
+	}
+	if !mixed.ImportResultOutcomesComplete || mixed.ImportResultReplacedCount != 1 || mixed.ImportResultAllReplaced || mixed.ImportResultRowCountTotal != wantRows["character-item-state"] {
+		t.Fatalf("unexpected mixed outcome aggregates: %#v", mixed)
+	}
+	for _, entry := range mixed.Kinds {
+		if entry.ImportResultOutcome == nil {
+			t.Fatalf("expected import_result_outcome for %s", entry.Kind)
+		}
+		if entry.Kind == "character-item-state" {
+			if !entry.ImportResultOutcome.Replaced || entry.ImportResultOutcome.RowCount != wantRows[entry.Kind] {
+				t.Fatalf("unexpected replaced outcome for %s: %#v", entry.Kind, entry.ImportResultOutcome)
+			}
+			continue
+		}
+		if entry.ImportResultOutcome.Replaced || entry.ImportResultOutcome.RowCount != 0 {
+			t.Fatalf("unexpected insert-only outcome for %s: %#v", entry.Kind, entry.ImportResultOutcome)
+		}
+	}
+
+	// All tip kinds replaced.
+	for kind, payload := range replacedPayloads {
+		mustRewriteExportTreeImportResult(t, tree, kind, payload)
+	}
+	var allStdout bytes.Buffer
+	var allStderr bytes.Buffer
+	code = Run([]string{"export-tree-status", "--export-tree", tree}, nil, &allStdout, &allStderr)
+	if code != exitOK {
+		t.Fatalf("expected all-replaced outcome export-tree-status to succeed, exit=%d stderr=%q", code, allStderr.String())
+	}
+	var all exportTreeStatus
+	if err := json.Unmarshal(allStdout.Bytes(), &all); err != nil {
+		t.Fatalf("decode all-replaced outcome export-tree status JSON: %v\nbody:\n%s", err, allStdout.String())
+	}
+	wantTotal := 0
+	for _, rows := range wantRows {
+		wantTotal += rows
+	}
+	if !all.ImportResultOutcomesComplete || all.ImportResultReplacedCount != len(exportQuarantineKinds) || !all.ImportResultAllReplaced || all.ImportResultRowCountTotal != wantTotal {
+		t.Fatalf("unexpected all-replaced outcome aggregates: %#v", all)
+	}
+	for _, entry := range all.Kinds {
+		if entry.ImportResultOutcome == nil || !entry.ImportResultOutcome.Replaced || entry.ImportResultOutcome.RowCount != wantRows[entry.Kind] {
+			t.Fatalf("unexpected all-replaced outcome for %s: %#v", entry.Kind, entry.ImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusOmitsImportResultOutcomeWhenImportResultAbsent(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T172000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected quarantine-only export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode quarantine-only export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.ImportResultOutcomesComplete || got.ImportResultAllReplaced || got.ImportResultReplacedCount != 0 || got.ImportResultRowCountTotal != 0 {
+		t.Fatalf("unexpected absent-outcome aggregates: %#v", got)
+	}
+	for _, entry := range got.Kinds {
+		if entry.ImportResultOutcome != nil {
+			t.Fatalf("expected omitted import_result_outcome for %s, got %#v", entry.Kind, entry.ImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusRejectsInvalidImportResultBeforeOutcomeAggregation(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260904T173000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+	mustWriteFile(t, filepath.Join(tree, "character-item-state", "import-result.json"), []byte(`{"migration_version":3,"migration_name":"character_item_state","character_count":0,"inventory_item_count":0,"equipment_item_count":0,"quickslot_count":0,"character_ids":[],"extra":true}`+"\n"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected invalid import-result to fail closed, exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on invalid import-result, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "character-item-state/import-result.json") {
+		t.Fatalf("expected stderr to name invalid import-result path, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -545,4 +728,19 @@ func mustMaterializeEmptyExportTreeImportResultFixtures(t *testing.T, exportTree
 		}
 		mustWriteFile(t, filepath.Join(dir, "wipe-import-result-status.json"), wipeStatusStdout.Bytes())
 	}
+}
+
+func mustRewriteExportTreeImportResult(t *testing.T, exportTree, kind, payload string) {
+	t.Helper()
+	dir := filepath.Join(exportTree, kind)
+	mustMkdir(t, dir)
+	resultPath := filepath.Join(dir, "import-result.json")
+	mustWriteFile(t, resultPath, []byte(payload+"\n"))
+	var statusStdout bytes.Buffer
+	var statusStderr bytes.Buffer
+	code := Run([]string{"import-export-status", "--kind", kind, "--import-result", resultPath}, nil, &statusStdout, &statusStderr)
+	if code != exitOK {
+		t.Fatalf("import-export-status rewrite for %s: exit=%d stderr=%q", kind, code, statusStderr.String())
+	}
+	mustWriteFile(t, filepath.Join(dir, "import-result-status.json"), statusStdout.Bytes())
 }

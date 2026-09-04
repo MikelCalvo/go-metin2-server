@@ -193,11 +193,11 @@ git diff --check
 
 ## Status
 
-Contract freeze only on `lane/persistence`.
+GREEN on `lane/persistence`.
 
-- Exact additive outcome field names + primary `row_count` mapping are frozen.
+- Exact additive outcome field names + primary `row_count` mapping are frozen and implemented.
+- `export-tree-status` now projects per-kind `import_result_outcome` plus tree-level replaced/row-count aggregates from retained tip-kind `import-result.json` evidence.
 - Wipe-import outcomes and new require-gate flags remain deferred.
-- GREEN implementation is the next persistence slice after this freeze lands.
 
 ## Exit criteria for this freeze
 

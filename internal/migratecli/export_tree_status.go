@@ -11,6 +11,14 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 const exportTreeStatusFormat = "go-metin2-export-tree-status-v1"
@@ -26,16 +34,22 @@ type exportTreeArtifactStatus struct {
 	ScopeCount int    `json:"scope_count,omitempty"`
 }
 
+type exportTreeImportResultOutcome struct {
+	Replaced bool `json:"replaced"`
+	RowCount int  `json:"row_count"`
+}
+
 type exportTreeKindStatus struct {
-	Kind                   string                    `json:"kind"`
-	WipeKind               bool                      `json:"wipe_kind"`
-	Quarantine             exportTreeArtifactStatus  `json:"quarantine"`
-	WipeQuarantine         *exportTreeArtifactStatus `json:"wipe_quarantine,omitempty"`
-	WipeQuarantineStatus   *exportTreeArtifactStatus `json:"wipe_quarantine_status,omitempty"`
-	ImportResult           exportTreeArtifactStatus  `json:"import_result"`
-	ImportResultStatus     exportTreeArtifactStatus  `json:"import_result_status"`
-	WipeImportResult       *exportTreeArtifactStatus `json:"wipe_import_result,omitempty"`
-	WipeImportResultStatus *exportTreeArtifactStatus `json:"wipe_import_result_status,omitempty"`
+	Kind                   string                         `json:"kind"`
+	WipeKind               bool                           `json:"wipe_kind"`
+	Quarantine             exportTreeArtifactStatus       `json:"quarantine"`
+	WipeQuarantine         *exportTreeArtifactStatus      `json:"wipe_quarantine,omitempty"`
+	WipeQuarantineStatus   *exportTreeArtifactStatus      `json:"wipe_quarantine_status,omitempty"`
+	ImportResult           exportTreeArtifactStatus       `json:"import_result"`
+	ImportResultStatus     exportTreeArtifactStatus       `json:"import_result_status"`
+	ImportResultOutcome    *exportTreeImportResultOutcome `json:"import_result_outcome,omitempty"`
+	WipeImportResult       *exportTreeArtifactStatus      `json:"wipe_import_result,omitempty"`
+	WipeImportResultStatus *exportTreeArtifactStatus      `json:"wipe_import_result_status,omitempty"`
 }
 
 type exportTreeStatus struct {
@@ -50,6 +64,10 @@ type exportTreeStatus struct {
 	ImportResultPresentCount           int                    `json:"import_result_present_count,omitempty"`
 	ImportResultStatusPresentCount     int                    `json:"import_result_status_present_count,omitempty"`
 	ImportResultArtifactsComplete      bool                   `json:"import_result_artifacts_complete,omitempty"`
+	ImportResultReplacedCount          int                    `json:"import_result_replaced_count,omitempty"`
+	ImportResultRowCountTotal          int                    `json:"import_result_row_count_total,omitempty"`
+	ImportResultOutcomesComplete       bool                   `json:"import_result_outcomes_complete,omitempty"`
+	ImportResultAllReplaced            bool                   `json:"import_result_all_replaced,omitempty"`
 	WipeImportResultPresentCount       int                    `json:"wipe_import_result_present_count,omitempty"`
 	WipeImportResultStatusPresentCount int                    `json:"wipe_import_result_status_present_count,omitempty"`
 	WipeImportArtifactsComplete        bool                   `json:"wipe_import_artifacts_complete,omitempty"`
@@ -203,13 +221,14 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 
 		importResultRel := filepath.ToSlash(filepath.Join(kind, "import-result.json"))
 		importResultAbs := filepath.Join(normalizedTree, kind, "import-result.json")
-		importResultArtifact, importResultSHA, err := inspectExportTreeImportResultArtifact(kind, importResultAbs, importResultRel)
+		importResultArtifact, importResultSHA, importResultOutcome, err := inspectExportTreeImportResultArtifact(kind, importResultAbs, importResultRel)
 		if err != nil {
 			return exportTreeStatus{}, err
 		}
 		kindStatus.ImportResult = importResultArtifact
 		if importResultArtifact.Present {
 			importResultPresent++
+			kindStatus.ImportResultOutcome = importResultOutcome
 		}
 
 		importResultStatusRel := filepath.ToSlash(filepath.Join(kind, "import-result-status.json"))
@@ -252,7 +271,7 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 
 			wipeImportRel := filepath.ToSlash(filepath.Join(kind, "wipe-import-result.json"))
 			wipeImportAbs := filepath.Join(normalizedTree, kind, "wipe-import-result.json")
-			wipeImportArtifact, wipeImportSHA, err := inspectExportTreeImportResultArtifact(kind, wipeImportAbs, wipeImportRel)
+			wipeImportArtifact, wipeImportSHA, _, err := inspectExportTreeImportResultArtifact(kind, wipeImportAbs, wipeImportRel)
 			if err != nil {
 				return exportTreeStatus{}, err
 			}
@@ -285,6 +304,23 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	status.ImportResultStatusPresentCount = importResultStatusPresent
 	status.ImportResultArtifactsComplete = importResultPresent == len(exportQuarantineKinds) &&
 		importResultStatusPresent == len(exportQuarantineKinds)
+	replacedCount := 0
+	rowCountTotal := 0
+	outcomeCount := 0
+	for _, entry := range status.Kinds {
+		if entry.ImportResultOutcome == nil {
+			continue
+		}
+		outcomeCount++
+		rowCountTotal += entry.ImportResultOutcome.RowCount
+		if entry.ImportResultOutcome.Replaced {
+			replacedCount++
+		}
+	}
+	status.ImportResultReplacedCount = replacedCount
+	status.ImportResultRowCountTotal = rowCountTotal
+	status.ImportResultOutcomesComplete = outcomeCount == len(exportQuarantineKinds)
+	status.ImportResultAllReplaced = status.ImportResultOutcomesComplete && replacedCount == len(exportQuarantineKinds)
 	status.WipeImportResultPresentCount = wipeImportResultPresent
 	status.WipeImportResultStatusPresentCount = wipeImportResultStatusPresent
 	status.WipeImportArtifactsComplete = wipeImportResultPresent == len(importExportDrillWipeKinds) &&
@@ -366,21 +402,54 @@ func inspectExportTreeWipeQuarantineStatusArtifact(kind, absPath, relPath, wipeS
 	}, nil
 }
 
-func inspectExportTreeImportResultArtifact(kind, absPath, relPath string) (exportTreeArtifactStatus, string, error) {
+func inspectExportTreeImportResultArtifact(kind, absPath, relPath string) (exportTreeArtifactStatus, string, *exportTreeImportResultOutcome, error) {
 	result, present, raw, err := readImportExportStatusFile(kind, absPath)
 	if err != nil {
-		return exportTreeArtifactStatus{}, "", fmt.Errorf("%w: %s: %v", ErrExportTreeStatus, relPath, err)
+		return exportTreeArtifactStatus{}, "", nil, fmt.Errorf("%w: %s: %v", ErrExportTreeStatus, relPath, err)
 	}
 	if !present {
-		return exportTreeArtifactStatus{Present: false}, "", nil
+		return exportTreeArtifactStatus{Present: false}, "", nil, nil
 	}
-	_ = result
+	outcome, err := importResultOutcomeFromDecoded(kind, result)
+	if err != nil {
+		return exportTreeArtifactStatus{}, "", nil, fmt.Errorf("%w: %s: %v", ErrExportTreeStatus, relPath, err)
+	}
 	sum := sha256Hex(raw)
 	return exportTreeArtifactStatus{
 		Present: true,
 		Path:    relPath,
 		SHA256:  sum,
-	}, sum, nil
+	}, sum, &outcome, nil
+}
+
+func importResultOutcomeFromDecoded(kind string, result any) (exportTreeImportResultOutcome, error) {
+	switch typed := result.(type) {
+	case accountstore.AccountCharacterRosterImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.CharacterCount}, nil
+	case accountstore.CharacterItemStateImportResult:
+		return exportTreeImportResultOutcome{
+			Replaced: typed.Replaced,
+			RowCount: typed.InventoryItemCount + typed.EquipmentItemCount + typed.QuickslotCount,
+		}, nil
+	case accountstore.CharacterPointStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.PointRowCount}, nil
+	case accountstore.CharacterMyShopUnitPricesImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.PriceRowCount}, nil
+	case queststate.CharacterQuestStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.FlagCount}, nil
+	case safeboxstore.CharacterSafeboxStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.ItemCount}, nil
+	case loginticket.AuthLoginTicketHandoffImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.TicketCount}, nil
+	case itemstore.ItemTemplateStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.TemplateCount}, nil
+	case staticstore.StaticActorContentStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.StaticActorCount}, nil
+	case worldruntime.BootstrapGroundItemStateImportResult:
+		return exportTreeImportResultOutcome{Replaced: typed.Replaced, RowCount: typed.GroundItemCount}, nil
+	default:
+		return exportTreeImportResultOutcome{}, fmt.Errorf("unsupported import-result outcome kind %q (%T)", kind, result)
+	}
 }
 
 func inspectExportTreeImportResultStatusArtifact(kind, absPath, relPath, importResultSHA string) (exportTreeArtifactStatus, error) {

@@ -177,7 +177,7 @@ git diff --check
 ```
 
 
-Follow-up owned separately: additive import-outcome / replace-mode aggregates on `export-tree-status` — see [CLI export-tree-status import-outcome aggregates contract freeze](2026-09-04-cli-export-tree-status-import-outcome-aggregates-contract-freeze.md).
+Follow-up owned separately and now GREEN: additive import-outcome / replace-mode aggregates on `export-tree-status` — see [CLI export-tree-status import-outcome aggregates contract freeze](2026-09-04-cli-export-tree-status-import-outcome-aggregates-contract-freeze.md).
 
 ## Status
 
