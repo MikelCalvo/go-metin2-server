@@ -89,8 +89,10 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/items`: partial-drop source-slot `ITEM_UPDATE` is named
-as presence-aware / count-only remainder honesty beside the already-owned
-fresh ground identity + independent clone. Focused remainder proofs and any
-production hardening stay the next GREEN twin. Refine catalysts / mall / party
-ownership remain deferred.
+GREEN on `lane/items`: counted partial `ITEM_DROP` / `ITEM_DROP2` source remainder
+keeps identity/slot and an independent presence-aware sockets/attributes clone
+(including explicit zero; omit→omit) through source-slot `ITEM_UPDATE` + account
+snapshot (`TestRuntimeDropInventoryItemPreservesInstancePresenceIndependently`,
+`TestGameRuntimeItemDrop2PartialPreservesInstanceSocketsAndAttributes`). Fresh
+ground identity + independent clone stays already owned. Refine catalysts / mall
+/ party ownership remain deferred.

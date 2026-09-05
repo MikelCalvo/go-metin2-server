@@ -650,6 +650,9 @@ func (r *Runtime) dropInventoryItem(slot inventory.SlotIndex, count uint16, temp
 		result.Changed = true
 		return result, true
 	}
+	// Remainder must keep an independent presence clone: updatedInventory already
+	// cloned sockets/attributes, so mutate that cell rather than rewriting it
+	// with the pre-drop live inventory pointer.
 	updatedInventory := cloneItemInstances(r.liveInventory)
 	item = updatedInventory[index]
 	item.Count -= count
