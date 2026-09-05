@@ -103,7 +103,10 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/items`: partial-use `ITEM_UPDATE` is named as
-presence-aware / count-only remainder honesty with an independent clone.
-Focused remainder proofs and `UseItem` clone hardening stay the next GREEN
-twin. Refine catalysts / mall / party ownership remain deferred.
+GREEN on `lane/items`: partial-stack `ITEM_USE` / `/use_item` remainder keeps
+identity/slot and an independent presence-aware sockets/attributes clone
+(including explicit zero; omit→omit) through `ITEM_UPDATE` + account snapshot
+(`TestRuntimeUseItemPreservesInstancePresenceIndependently`,
+`TestGameRuntimeItemUsePartialPreservesInstanceSocketsAndAttributes`).
+Last-stack remove / reject paths stay already owned. Refine catalysts / mall /
+party ownership remain deferred.

@@ -1339,18 +1339,26 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	}
 	r.livePoints[effect.PointIndex] = updatedPointValue
 	if item.Count == consumeCount {
-		r.liveInventory = removeInventoryIndex(r.liveInventory, index)
-		sortInventoryItems(r.liveInventory)
+		updatedInventory := cloneItemInstances(r.liveInventory)
+		updatedInventory = removeInventoryIndex(updatedInventory, index)
+		sortInventoryItems(updatedInventory)
+		r.liveInventory = updatedInventory
 		result.ItemRemoved = true
 		return result, true
 	}
+	// Remainder must keep an independent presence clone: updatedInventory already
+	// cloned sockets/attributes, so mutate that cell rather than rewriting it
+	// with the pre-use live inventory pointer.
+	updatedInventory := cloneItemInstances(r.liveInventory)
+	item = updatedInventory[index]
 	item.Count -= consumeCount
 	if err := item.Validate(); err != nil {
 		r.livePoints[effect.PointIndex] = currentPointValue
 		return ItemUseResult{}, false
 	}
-	r.liveInventory[index] = item
-	sortInventoryItems(r.liveInventory)
+	updatedInventory[index] = item
+	sortInventoryItems(updatedInventory)
+	r.liveInventory = updatedInventory
 	result.Item = item
 	return result, true
 }
