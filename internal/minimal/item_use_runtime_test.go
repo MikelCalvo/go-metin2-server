@@ -2530,7 +2530,7 @@ func TestGameSessionFlowItemUseToItemFullMergeDeletesOnlySourceItemQuickslotAndS
 	}
 }
 
-func TestGameSessionFlowItemUseToItemFullMergeRefreshesTargetWithTemplateUpdateMetadata(t *testing.T) {
+func TestGameSessionFlowItemUseToItemFullMergeRefreshesOmittedDestinationWithTemplateFallback(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("UseToItemFullUpdate", 0x0103056d, 0x0204056d, 1100, 2100, 0, 101, 201)
@@ -2589,11 +2589,11 @@ func TestGameSessionFlowItemUseToItemFullMergeRefreshesTargetWithTemplateUpdateM
 	}
 	wantSockets := [itemproto.ItemSocketCount]int32{17, -29, 41}
 	if targetUpdate.Sockets != wantSockets {
-		t.Fatalf("expected template-authored full merge target update sockets %+v, got %+v", wantSockets, targetUpdate.Sockets)
+		t.Fatalf("expected omitted-destination full merge ITEM_UPDATE sockets to keep template fallback %+v, got %+v", wantSockets, targetUpdate.Sockets)
 	}
 	wantAttributes := [itemproto.ItemAttributeCount]itemproto.Attribute{{Type: 6, Value: 77}, {Type: 12, Value: -13}}
 	if targetUpdate.Attributes != wantAttributes {
-		t.Fatalf("expected template-authored full merge target update attributes %+v, got %+v", wantAttributes, targetUpdate.Attributes)
+		t.Fatalf("expected omitted-destination full merge ITEM_UPDATE attributes to keep template fallback %+v, got %+v", wantAttributes, targetUpdate.Attributes)
 	}
 	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[2]))
 	if err != nil {

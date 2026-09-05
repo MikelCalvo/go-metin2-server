@@ -265,7 +265,7 @@ Expected result:
 - compatible stacks consolidate up to the template-authored `max_count`
 - authored stack `max_count` values above the current bootstrap client count range (`255`) are rejected at item-template load time, not accepted as runtime use-to-item behavior
 - the consumed source cell disappears only on a full merge
-- if the target has only partial room, both source and target counts refresh, and item/non-item quickslots bound to either still-occupied cell remain unchanged
+- if the target has only partial room, both source and target counts refresh with presence-aware instance sockets/attributes on those count-only remainders (destination presence including explicit zero wins over template and discarded source presence; omitted destination keeps template-fallback encode; source remainder keeps an independent clone of source presence), and item/non-item quickslots bound to either still-occupied cell remain unchanged
 - all item quickslots for a removed source cell are cleared in deterministic quickslot-position order on full merge, target item quickslots remain stable on full merge even when both source and target cells were quickslotted before the drag, and unrelated skill/command quickslots remain
 - if the stack consolidation succeeds while an exchange shell is open, the requester receives one self-only `GC::EXCHANGE END` before the item/quickslot merge refresh frames, the paired peer receives one queued `GC::EXCHANGE END`, and no exchange finalization/result frames appear
 - restricted or invalid states (`anti_stack`, transfer anti-flags, missing/non-stackable/malformed/mismatched templates, source/target `vnum` mismatches, locked source/target stacks, selected-character job/sex/empire/min-level restrictions, duplicate source/target item instance IDs, duplicate live occupancy of the source or target carried cell, already-full targets, source/target counts already above template `max_count`, or selected characters at the bootstrap zero-HP floor) fail closed with no visible mutation; for `anti_stack`, both carried stacks and item quickslots should remain unchanged
@@ -1530,10 +1530,10 @@ Expected result:
 
 - [ ] Enter `GAME` with a QA character that has two compatible carried stacks for a template-backed stackable item such as `27001`
 - [ ] Send one real client `ITEM_USE_TO_ITEM` request from the source carried slot onto the target carried slot
-- [ ] Confirm the selected session receives `ITEM_DEL(source)` then count-only `ITEM_UPDATE(target)` when the source fits completely into the target; if the QA template authors display sockets/attributes for that stackable item, confirm the target update preserves those arrays while changing only the count
+- [ ] Confirm the selected session receives `ITEM_DEL(source)` then count-only `ITEM_UPDATE(target)` when the source fits completely into the target; if the destination instance carries presence-aware sockets/attributes that differ from the loaded template, confirm the target update keeps destination presence (including explicit zero) rather than copying template display arrays, while omitted destination presence keeps template-fallback encode
 - [ ] If one or more item quickslots point at the removed source slot, confirm each receives `QUICKSLOT_DEL` after the item refresh frames; skill/command quickslots with the same byte slot value must stay unchanged and persist across reconnect
 - [ ] Repeat with a target stack that has only partial room under the authored `max_count`
-- [ ] Confirm the selected session receives count-only refreshes for both carried cells and the source item quickslot remains
+- [ ] Confirm the selected session receives count-only refreshes for both carried cells, the source remainder keeps source presence (not destination/template arrays), the target keeps destination presence, and the source item quickslot remains
 - [ ] Repeat with incompatible `vnum`, missing/invalid template metadata, `anti_stack`, non-stackable, locked, empty, same-cell, already-full, and over-template-max setups where available
 - [ ] For the same-cell case specifically, send `ITEM_USE_TO_ITEM` with identical source and target carried cells and confirm no item, quickslot, point, or persisted-state change occurs
 
