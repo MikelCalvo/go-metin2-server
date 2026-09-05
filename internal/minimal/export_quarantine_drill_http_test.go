@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -181,10 +183,12 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"authd-build-info.json",
 		"runtime-config.json",
 		"migration-catalog.json",
+		"migration-catalog-status.json",
 		"notes.md",
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
+	assertCatalogStatusMatchesRetainedCatalog(t, retentionTree)
 
 	kinds := []string{
 		"account-character-roster",
@@ -282,6 +286,29 @@ func runPrintedShellScriptWithEnv(t *testing.T, script string, env []string) (st
 		t.Fatalf("expected ExitError from printed script, got %v", err)
 	}
 	return outBuf.String(), errBuf.String(), exitErr.ExitCode()
+}
+
+func assertCatalogStatusMatchesRetainedCatalog(t *testing.T, tree string) {
+	t.Helper()
+	catalogRaw := mustReadFile(t, filepath.Join(tree, "migration-catalog.json"))
+	statusRaw := mustReadFile(t, filepath.Join(tree, "migration-catalog-status.json"))
+	var got struct {
+		Format          string `json:"format"`
+		Present         bool   `json:"present"`
+		CatalogSHA256   string `json:"catalog_sha256"`
+		MatchesEmbedded bool   `json:"matches_embedded"`
+	}
+	if err := json.Unmarshal([]byte(statusRaw), &got); err != nil {
+		t.Fatalf("decode retained catalog-status: %v\nbody:\n%s", err, statusRaw)
+	}
+	if got.Format != "go-metin2-migration-catalog-status-v1" || !got.Present || !got.MatchesEmbedded {
+		t.Fatalf("unexpected retained catalog-status: %#v", got)
+	}
+	sum := sha256.Sum256([]byte(catalogRaw))
+	want := hex.EncodeToString(sum[:])
+	if got.CatalogSHA256 != want {
+		t.Fatalf("catalog-status checksum mismatch: got %s want %s", got.CatalogSHA256, want)
+	}
 }
 
 func mustReadFile(t *testing.T, path string) string {

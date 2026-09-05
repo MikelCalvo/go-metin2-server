@@ -376,6 +376,10 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 
 	b.WriteString(offlineEcho)
 	b.WriteString(`metin2-migrate catalog > "$RUN/migration-catalog.json"` + "\n")
+	b.WriteString(`metin2-migrate catalog-status \` + "\n")
+	b.WriteString(`  --catalog "$RUN/migration-catalog.json" \` + "\n")
+	b.WriteString(`  --require-matches-embedded \` + "\n")
+	b.WriteString(`  > "$RUN/migration-catalog-status.json"` + "\n")
 	b.WriteString(`: "${DRIVER:?export DRIVER to the database/sql driver name}"` + "\n")
 	b.WriteString(`: "${DSN:?export DSN to the operator-managed database/sql DSN}"` + "\n")
 	b.WriteString(`metin2-migrate ledger-snapshot \` + "\n")

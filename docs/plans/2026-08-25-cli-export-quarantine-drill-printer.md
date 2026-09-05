@@ -138,4 +138,4 @@ Validation for this slice:
 
 ## Follow-up
 
-Read-only `catalog-status` for retained `migration-catalog.json` is frozen next — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). GREEN should add the matching `--require-matches-embedded` redirect beside the existing catalog retain line.
+Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). Printed `export-quarantine-drill` scripts now emit `catalog-status --require-matches-embedded` beside the catalog retain line.

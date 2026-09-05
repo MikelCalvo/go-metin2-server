@@ -146,6 +146,8 @@ Follow-up owned separately and now GREEN: opt-in wipe-import outcome require-gat
 
 Follow-up owned separately and now GREEN: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
 
+Follow-up owned separately and now GREEN: read-only `catalog-status` for retained `migration-catalog.json` — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

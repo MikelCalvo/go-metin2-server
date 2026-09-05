@@ -254,7 +254,19 @@ git diff --check
 
 ## Status
 
-Freeze on `lane/persistence`. GREEN is the next slice.
+GREEN on `lane/persistence`.
+
+- Read-only `metin2-migrate catalog-status --catalog <path> [--require-matches-embedded]`
+  re-validates retained `migration-catalog.json` without opening a database or
+  walking `db/migrations/*.sql`.
+- Outer envelope is `go-metin2-migration-catalog-status-v1`; missing path is
+  ungated `present: false`; present files re-check inner contiguous versions /
+  paths / lowercase SHA-256 and set `matches_embedded` against
+  `BuiltInCatalogSummary()`.
+- `migration-run-retention` (forward + rollback) and `export-quarantine-drill`
+  printers emit matching `catalog-status --require-matches-embedded` redirects
+  to `migration-catalog-status.json`.
+- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze
 

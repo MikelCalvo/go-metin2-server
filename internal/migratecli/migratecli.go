@@ -36,7 +36,7 @@ const (
 )
 
 // Run executes the small migration preflight CLI and returns a process-style exit
-// code. The catalog, status, empty-ledger-snapshot, ledger-snapshot,
+// code. The catalog, catalog-status, status, empty-ledger-snapshot, ledger-snapshot,
 // ledger-snapshot-status, plan, plan-artifact, plan-artifact-status,
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
 // import-export-status, export-tree-status, export-tree-status-status, quarantine-export, synthesize-wipe-export,
@@ -87,6 +87,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 	switch args[0] {
 	case "catalog":
 		return runCatalog(args[1:], stdout, stderr)
+	case "catalog-status":
+		return runCatalogStatus(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
 	case "plan":
@@ -2139,6 +2141,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  catalog                print metadata-only embedded migration catalog summary")
+	fmt.Fprintln(w, "  catalog-status         inspect a retained migration catalog summary without mutating it")
 	fmt.Fprintln(w, "  status                 read database schema_migrations metadata and print a dry-run plan")
 	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
@@ -2168,6 +2171,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  version                print metadata-only binary build identity")
 	fmt.Fprintln(w, "")
 	printVersionUsage(w)
+	fmt.Fprintln(w, "")
+	printCatalogStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
 	fmt.Fprintln(w, "")

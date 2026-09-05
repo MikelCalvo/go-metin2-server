@@ -93,6 +93,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 		"daemon-migrations-status.json",
 		"notes.md",
 		"migration-catalog.json",
+		"migration-catalog-status.json",
 		"ledger-snapshot.json",
 		"ledger-snapshot-status.json",
 		"migration-plan-artifact.json",
@@ -115,6 +116,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 
 	assertSQLiteLedgerAtCatalogTip(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), catalogTipVersion(t))
+	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *testing.T) {
@@ -193,6 +195,8 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 
 	runDir := mustFindSingleRetentionTree(t, runsBase, "rollback0123")
 	for _, name := range []string{
+		"migration-catalog.json",
+		"migration-catalog-status.json",
 		"rollback-plan-artifact.json",
 		"rollback-plan-artifact-status.json",
 		"rollback-apply-preflight.json",
@@ -210,6 +214,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 
 	assertSQLiteLedgerEmpty(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 0)
+	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTarget(t *testing.T) {
@@ -291,6 +296,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 	runDir := mustFindSingleRetentionTree(t, runsBase, "interfwd0123")
 	for _, name := range []string{
 		"migration-catalog.json",
+		"migration-catalog-status.json",
 		"ledger-snapshot.json",
 		"ledger-snapshot-status.json",
 		"migration-plan-artifact.json",
@@ -310,6 +316,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 
 	assertSQLiteLedgerAtVersion(t, dsn, 7, "auth_login_ticket_handoff")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), 7)
+	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediateTarget(t *testing.T) {
@@ -388,6 +395,8 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 
 	runDir := mustFindSingleRetentionTree(t, runsBase, "interrollb01")
 	for _, name := range []string{
+		"migration-catalog.json",
+		"migration-catalog-status.json",
 		"rollback-plan-artifact.json",
 		"rollback-plan-artifact-status.json",
 		"rollback-apply-preflight.json",
@@ -405,6 +414,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 
 	assertSQLiteLedgerAtVersion(t, dsn, 8, "static_actor_content_state")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 8)
+	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
 func mustInstallMigrationRunRetentionCurlStub(t *testing.T, binDir string) {
@@ -583,6 +593,28 @@ func mustFindSingleRetentionTree(t *testing.T, base, commit12 string) string {
 		t.Fatalf("expected exactly one retention tree ending in -%s under %s, got %#v", commit12, base, matches)
 	}
 	return matches[0]
+}
+
+func assertCatalogStatusMatchesRetainedCatalog(t *testing.T, runDir string) {
+	t.Helper()
+	catalogRaw, err := os.ReadFile(filepath.Join(runDir, "migration-catalog.json"))
+	if err != nil {
+		t.Fatalf("read retained catalog: %v", err)
+	}
+	statusRaw, err := os.ReadFile(filepath.Join(runDir, "migration-catalog-status.json"))
+	if err != nil {
+		t.Fatalf("read retained catalog-status: %v", err)
+	}
+	var got catalogStatusGot
+	if err := json.Unmarshal(statusRaw, &got); err != nil {
+		t.Fatalf("decode retained catalog-status: %v\nbody:\n%s", err, statusRaw)
+	}
+	if got.Format != catalogStatusFormat || !got.Present || got.Catalog == nil || !got.MatchesEmbedded {
+		t.Fatalf("unexpected retained catalog-status: %#v", got)
+	}
+	if got.CatalogSHA256 != sha256Hex(catalogRaw) {
+		t.Fatalf("catalog-status checksum mismatch: got %s want %s", got.CatalogSHA256, sha256Hex(catalogRaw))
+	}
 }
 
 func assertRegularFileExists(t *testing.T, path string) {

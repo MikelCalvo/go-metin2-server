@@ -146,7 +146,7 @@ git diff --check
 
 ## Follow-up
 
-Read-only `catalog-status` for retained `migration-catalog.json` is frozen next — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). GREEN should retain `migration-catalog-status.json` beside the existing catalog file in the printed-script SQLite proofs.
+Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). Printed-script SQLite proofs retain `migration-catalog-status.json` beside the catalog file.
 
 ## Anti-goals / ordering constraints
 

@@ -88,6 +88,7 @@ Keep operator evidence outside live data trees:
     daemon-migrations-status.json
     notes.md
     migration-catalog.json
+    migration-catalog-status.json
     ledger-snapshot.json
     ledger-snapshot-status.json
     migration-plan-artifact.json
@@ -110,6 +111,7 @@ Keep operator evidence outside live data trees:
     authd.log
     runtime-config.json
     migration-catalog.json
+    migration-catalog-status.json
     notes.md
     account-character-roster/
       export.json
