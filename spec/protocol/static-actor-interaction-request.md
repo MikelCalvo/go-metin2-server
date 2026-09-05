@@ -72,8 +72,10 @@ At this stage the repository owns a narrow but real first response vertical:
 - when that definition resolves to `interaction_kind = "info"`, the interacting player now receives one self-only `GC_CHAT` delivery using `CHAT_TYPE_INFO` and the authored definition text, unless an optional non-mutating quest gate mismatches and returns `Quest requirements are not met.` instead
 - when that definition resolves to `interaction_kind = "talk"`, the interacting player now receives one self-only chat-backed delivery using a deterministic speaker-prefixed multi-line payload, unless an optional non-mutating quest gate mismatches and returns `Quest requirements are not met.` instead
 - when that definition resolves to `interaction_kind = "shop_preview"`, the live session flow now opens the current bootstrap merchant window with one self-only `GC::SHOP START` response built from the authored structured catalog, while lower-level resolution and QA/debug surfaces still keep a deterministic compact preview render of that same catalog
+- when that definition resolves to `interaction_kind = "open_safebox"`, the live session flow now starts the current bootstrap warehouse password challenge (`ShowMeSafeboxPassword`) rather than inventing a second storage packet family
+- when that definition resolves to `interaction_kind = "open_cube"`, the live session flow now opens the current bootstrap cube presentation (`cube open <npcVnum>`) rather than inventing a second craft packet family
 - known bootstrap interaction failures now also resolve to one deterministic self-only `GC_CHAT` delivery instead of silently disappearing on the socket
-- the current service-style NPC gameplay families on top of this same ingress now include `warp` and `shop_preview`
+- the current service-style NPC gameplay families on top of this same ingress now include `warp`, `shop_preview`, `open_safebox`, and `open_cube`
 - malformed payloads are rejected at the codec/flow boundary
 - future interaction result paths outside the currently known bootstrap rejection reasons may still resolve to no outgoing frames yet
 
@@ -93,6 +95,8 @@ The current contract is intentionally narrow:
 - `info` / `talk` use authored `text`
 - `shop_preview` uses authored `title + catalog[]`
 - `warp` uses authored `map_index`, `x`, `y`, with optional `text`
+- `open_safebox` uses optional authored `text` plus optional bootstrap page `size`
+- `open_cube` uses optional authored `text`
 - `PATCH` / `PUT` are full-identity upserts, not partial nested edits
 - the body `kind` + `ref` must match the path exactly on update
 - delete fails closed while a bootstrap static actor still references that definition
@@ -128,9 +132,11 @@ The current owned failure boundary is now explicit and split in two layers:
 - accepted `info` interaction currently produces exactly one self-only `GC_CHAT` delivery with `CHAT_TYPE_INFO`
 - accepted `talk` interaction currently produces exactly one self-only chat-backed delivery whose payload is speaker-prefixed and multi-line
 - accepted `shop_preview` interaction currently produces exactly one self-only `GC::SHOP START` open response on the live game socket, built from the authored structured merchant catalog; that same catalog also keeps a deterministic compact preview render for loopback QA/debug and lower-level resolution surfaces
+- accepted `open_safebox` interaction currently starts the bootstrap warehouse password challenge (`ShowMeSafeboxPassword`); if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before that command chat
+- accepted `open_cube` interaction currently opens the bootstrap cube presentation (`cube open <npcVnum>`); if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before that command chat
 - accepted `warp` interaction currently reuses the existing self-session transfer rebootstrap path; if authored `text` is present, one self-only `CHAT_TYPE_INFO` delivery is emitted before those transfer frames
 - repeated requests against the same target `VID` inside the current fixed `1s` per-session cooldown are consumed as a deliberate no-op with no outgoing frames
-- visible actors that are still in the runtime-owned dead interval now fail closed with `target_dead` before resolving authored `info` / `talk` / `warp` / `shop_preview` behavior; the self-only failure message is `That target is unavailable right now.`
+- visible actors that are still in the runtime-owned dead interval now fail closed with `target_dead` before resolving authored `info` / `talk` / `warp` / `shop_preview` / `open_safebox` / `open_cube` behavior; the self-only failure message is `That target is unavailable right now.`
 
 Future slices should freeze richer reporting only when dialog UI or later interaction families exist.
 
@@ -143,4 +149,4 @@ After this slice, the repository should be able to say:
 - `internal/worldruntime` can resolve a visible bootstrap static actor by that `VID` under the active topology/AOI rules
 - `internal/minimal/shared_world` can now turn that subject/target pair into a structured validated interaction attempt before later content resolution exists, including the fail-closed `target_dead` branch for otherwise visible/interactable actors still in their runtime-owned dead interval
 - `gamed` can now resolve authored `info`, `talk`, and structured `shop_preview` definitions behind visible static actors, answer `info` / `talk` with one self-only chat-backed delivery carrying the authored text, and open the current bootstrap merchant window for `shop_preview`
-- the same ingress and target-lookup contract now also powers the current service-style NPC families (`warp` and merchant `shop_preview`) without inventing a new client request packet first
+- the same ingress and target-lookup contract now also powers the current service-style NPC families (`warp`, merchant `shop_preview`, warehouse `open_safebox`, and craftsman `open_cube`) without inventing a new client request packet first

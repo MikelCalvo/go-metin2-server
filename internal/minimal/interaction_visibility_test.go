@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -93,6 +94,7 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{
 		defaultMerchantCatalogDefinition(),
 		{Kind: interactionstore.KindOpenSafebox, Ref: "npc:warehouse", Text: "Store your goods safely.", Size: 2},
+		{Kind: interactionstore.KindOpenCube, Ref: "npc:qa_cube", Text: "The craftsman lights the forge."},
 		{Kind: interactionstore.KindWarp, Ref: "npc:teleporter", MapIndex: 42, X: 1700, Y: 2800, Text: "Step through the gate."},
 	})
 	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
@@ -110,6 +112,9 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	if _, ok := runtime.RegisterStaticActorWithInteraction("Warehouse", bootstrapMapIndex, 1300, 2300, 20302, interactionstore.KindOpenSafebox, "npc:warehouse"); !ok {
 		t.Fatal("expected open_safebox static actor registration to succeed")
 	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("CubeMaster", bootstrapMapIndex, 1350, 2350, cubestore.BootstrapDefaultNPCVnum, interactionstore.KindOpenCube, "npc:qa_cube"); !ok {
+		t.Fatal("expected open_cube static actor registration to succeed")
+	}
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
 	defer closeSessionFlow(t, flow)
 
@@ -118,8 +123,8 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 		t.Fatalf("expected 1 interaction visibility snapshot, got %+v", snapshots)
 	}
 	entries := snapshots[0].VisibleInteractableStaticActors
-	if len(entries) != 3 {
-		t.Fatalf("expected 3 visible service interactables, got %+v", entries)
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 visible service interactables, got %+v", entries)
 	}
 	byName := make(map[string]InteractableStaticActorVisibilitySnapshot, len(entries))
 	for _, entry := range entries {
@@ -145,6 +150,13 @@ func TestGameRuntimeInteractionVisibilityReturnsServicePreviewsForVisibleWarpAnd
 	}
 	if warehouse.Preview != "Store your goods safely. [open_safebox size 2]" || warehouse.ResolutionFailure != "" {
 		t.Fatalf("unexpected open_safebox interaction visibility entry: %+v", warehouse)
+	}
+	cube, ok := byName["CubeMaster"]
+	if !ok {
+		t.Fatalf("expected CubeMaster interaction visibility entry, got %+v", entries)
+	}
+	if cube.Preview != "The craftsman lights the forge. [open_cube]" || cube.ResolutionFailure != "" {
+		t.Fatalf("unexpected open_cube interaction visibility entry: %+v", cube)
 	}
 }
 
@@ -311,6 +323,60 @@ func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenSafeboxMismatchPre
 	}
 	if !reflect.DeepEqual(loaded, before) {
 		t.Fatalf("gated open_safebox interaction visibility preview mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
+	}
+}
+
+func TestGameRuntimeInteractionVisibilityReturnsQuestGatedOpenCubeMismatchPreviewWithoutMutatingQuestState(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	before := queststate.Snapshot{Flags: []queststate.Flag{{Character: "PeerOne", QuestRef: "quest:first_steps", Name: "met_guide", Value: 1}}}
+	questStore := queststate.NewMemoryStore()
+	if err := questStore.Save(before); err != nil {
+		t.Fatalf("seed quest state: %v", err)
+	}
+	interactionStore := newMemoryInteractionDefinitionStore(t, []interactionstore.Definition{{
+		Kind:      interactionstore.KindOpenCube,
+		Ref:       "npc:gated_cube",
+		Text:      "The craftsman lights the forge.",
+		QuestRef:  "quest:first_steps",
+		QuestFlag: "met_guide",
+		QuestFrom: 0,
+	}})
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		nil,
+		staticstore.NewMemoryStore(),
+		interactionStore,
+		nil,
+		questStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	if _, ok := runtime.RegisterStaticActorWithInteraction("CubeMaster", bootstrapMapIndex, 1350, 2350, cubestore.BootstrapDefaultNPCVnum, interactionstore.KindOpenCube, "npc:gated_cube"); !ok {
+		t.Fatal("expected gated open_cube static actor registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+
+	snapshots := runtime.InteractionVisibility()
+	if len(snapshots) != 1 || len(snapshots[0].VisibleInteractableStaticActors) != 1 {
+		t.Fatalf("expected one visible gated open_cube interactable, got %+v", snapshots)
+	}
+	entry := snapshots[0].VisibleInteractableStaticActors[0]
+	if entry.Name != "CubeMaster" || entry.Preview != "Quest requirements are not met." || entry.ResolutionFailure != "" {
+		t.Fatalf("unexpected gated open_cube mismatch interaction visibility entry: %+v", entry)
+	}
+	loaded, err := questStore.Load()
+	if err != nil {
+		t.Fatalf("load quest state after gated open_cube visibility preview: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, before) {
+		t.Fatalf("gated open_cube interaction visibility preview mutated quest-state:\n got: %#v\nwant: %#v", loaded, before)
 	}
 }
 

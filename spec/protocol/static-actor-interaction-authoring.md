@@ -11,7 +11,7 @@ It sits on top of:
 
 This contract currently applies only to:
 - loopback-only operator HTTP endpoints on `gamed`
-- deterministic authoring of minimal `info`, `talk`, `quest_flag`, and `warp` definitions plus the structured `shop_preview` merchant catalog
+- deterministic authoring of minimal `info`, `talk`, `quest_flag`, and `warp` definitions plus the structured `shop_preview` merchant catalog, warehouse `open_safebox`, and craftsman `open_cube`
 - deterministic export/import of bootstrap static actors together with their interaction definitions and portable quest-state seed rows
 
 It does **not** yet claim:
@@ -39,6 +39,8 @@ Current rules:
 - `shop_preview` currently uses authored `title + catalog[]`, and may optionally carry the same non-mutating quest gate before the merchant window opens
 - `quest_flag` currently uses authored `text`, `quest_ref`, `quest_flag`, optional `quest_from`, and `quest_to`, plus the optional turn-in economy fields already frozen in `quest-state-bootstrap.md` (`reward_experience`, `reward_gold`, scalar or table `reward_items`, `consume_items`, `consume_gold`, `consume_experience`); it applies exactly one selected-character compare-and-set transition through the quest-state store when a visible actor resolves it, including `quest_to = 0` clears when the current value matches `quest_from`, and grants/debits the authored turn-in payload only after that transition applies
 - `warp` currently uses authored `map_index`, `x`, `y`, with optional `text`, and may optionally carry the same non-mutating quest gate before transfer/rebootstrap runs
+- `open_safebox` currently uses optional authored `text` plus optional bootstrap page `size` (`1..3`, omitted / `0` defaults to `1`), and may optionally carry the same non-mutating quest gate before the warehouse password challenge starts
+- `open_cube` currently uses optional authored `text` and may optionally carry the same non-mutating quest gate before the cube presentation opens
 - create/update bodies must be valid UTF-8 before JSON decoding; malformed raw bytes are rejected before runtime mutation callbacks can see lossy replacement-character strings
 - exact lookup is read-only and loopback-only; it returns the authored definition JSON for one `kind + ref`, returns `404` when absent, and rejects blank or decoded slash-containing identities as path-ambiguous `400` requests
 - updates are full-identity upserts, not partial nested edits
@@ -46,7 +48,7 @@ Current rules:
 - delete fails closed while any bootstrap static actor still references that definition
 - the backing catalog remains deterministic and file-backed under `internal/interactionstore`
 - the file-backed interaction-definition loader rejects JSON `null` document roots, `null` `definitions` collections, unknown top-level JSON fields, and trailing JSON instead of accepting a lossy or partial object silently
-- the static-actor store accepts interaction metadata only for currently owned definition kinds (`info`, `talk`, `quest_flag`, `warp`, `shop_preview`); future content kinds must be added to the interaction definition catalog before static actors can reference them durably
+- the static-actor store accepts interaction metadata only for currently owned definition kinds (`info`, `talk`, `quest_flag`, `warp`, `shop_preview`, `open_safebox`, `open_cube`); future content kinds must be added to the interaction definition catalog before static actors can reference them durably
 - loopback `POST` / `PUT` / `PATCH` `/local/interactions` decode the full owned `quest_flag` turn-in payload through the same `NormalizeDefinition` / `ValidDefinition` seam used by content-bundle import, so operator HTTP authoring can create the same reward/consume definitions that bundles already import; non-`quest_flag` kinds still reject those fields with `400`
 
 ## Interaction-focused QA visibility
@@ -61,7 +63,7 @@ The collection endpoint returns, per connected bootstrap player:
 - each actor's `interaction_kind`
 - each actor's `interaction_ref`
 - each actor's current runtime `dead` flag when the target actor is at the bootstrap combat `0`-HP floor
-- a compact resolved preview when the referenced definition currently resolves to a currently previewable kind (`info`, `talk`, `quest_flag`, `shop_preview`, `warp`); compact previews trim surrounding whitespace and cap by Unicode rune boundaries so operator JSON never receives truncated invalid UTF-8
+- a compact resolved preview when the referenced definition currently resolves to a currently previewable kind (`info`, `talk`, `quest_flag`, `shop_preview`, `warp`, `open_safebox`, `open_cube`); compact previews trim surrounding whitespace and cap by Unicode rune boundaries so operator JSON never receives truncated invalid UTF-8
 - a fail-closed `resolution_failure` marker when it does not
 
 For `quest_flag`, interaction-visibility previews are selected-character state-aware and use the same read-only compare-and-set evaluator as `/local/quest-state/transition-preview`: a transition that would apply previews the authored acknowledgement text, while a `current_value_mismatch` previews the same self-only mismatch text the live `INTERACT` path would emit (`Quest requirements are not met.`). Preview generation must not mutate the quest-state store.
@@ -109,7 +111,7 @@ Current rules:
 - import is full-replace for the authored bootstrap content currently loaded by `gamed`
 - import validates that every referenced interaction definition exists before mutating runtime state
 - import rejects non-canonical interaction refs before mutating runtime state, using the same `<namespace>:<name>` rule as the interaction-definition store and static-actor store
-- import also rejects static-actor interaction metadata whose `interaction_kind` is not one of the currently owned kinds (`info`, `talk`, `quest_flag`, `warp`, `shop_preview`, `open_safebox`), even when the referenced key is otherwise canonical; this keeps future seams such as branching dialog kinds closed until their store/runtime contracts are actually frozen. The checked-in negative fixture `docs/examples/bootstrap-invalid-unsupported-interaction-kind-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that unsupported-kind reject without improvising JSON
+- import also rejects static-actor interaction metadata whose `interaction_kind` is not one of the currently owned kinds (`info`, `talk`, `quest_flag`, `warp`, `shop_preview`, `open_safebox`, `open_cube`), even when the referenced key is otherwise canonical; this keeps future seams such as branching dialog kinds closed until their store/runtime contracts are actually frozen. The checked-in negative fixture `docs/examples/bootstrap-invalid-unsupported-interaction-kind-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that unsupported-kind reject without improvising JSON
 - import also rejects dangling `interaction_ref` values whose owned kind+ref is absent from the bundle `interaction_definitions`; the checked-in negative fixture `docs/examples/bootstrap-invalid-dangling-interaction-ref-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
 - import also rejects duplicate portable static-actor rows after canonical trimming, so a bundle cannot silently materialize the same authored actor twice; the checked-in negative fixture `docs/examples/bootstrap-invalid-duplicate-static-actor-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
 - import also rejects malformed per-kind definition payloads, including invalid `warp` destinations, invalid item templates, invalid `shop_preview` catalogs, non-canonical portable combat-profile identities, and portable combat-profile snapshots that conflict with already-registered process-local profile defaults
@@ -144,7 +146,7 @@ Current rules:
 ## Success definition
 
 After this slice, the repository should be able to say:
-- minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog are authorable and exactly readable through loopback HTTP today
+- minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog, warehouse `open_safebox`, and craftsman `open_cube` are authorable and exactly readable through loopback HTTP today
 - `quest_flag` definitions are also authorable through the same loopback HTTP surface, including the owned optional turn-in reward/consume payload, so operators are not forced through content-bundle import just to seed a kill -> pickup -> turn-in NPC
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
 - bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface

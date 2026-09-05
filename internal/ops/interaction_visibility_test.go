@@ -50,6 +50,14 @@ func TestLocalInteractionVisibilityEndpointReturnsPreviewJSONForLoopbackGet(t *t
 				"preview":            "Quest requirements are not met.",
 				"resolution_failure": "",
 			},
+			{
+				"entity_id":          uint64(11),
+				"name":               "CubeMaster",
+				"interaction_kind":   "open_cube",
+				"interaction_ref":    "npc:qa_cube",
+				"preview":            "The craftsman lights the forge. [open_cube]",
+				"resolution_failure": "",
+			},
 		},
 	}}}
 	mux := RegisterLocalInteractionVisibilityEndpoint(NewPprofMux("gamed"), snapshotter.InteractionVisibility)
@@ -70,7 +78,7 @@ func TestLocalInteractionVisibilityEndpointReturnsPreviewJSONForLoopbackGet(t *t
 	if err != nil {
 		t.Fatalf("read response body: %v", err)
 	}
-	if !strings.Contains(string(body), `"visible_interactable_static_actors"`) || !strings.Contains(string(body), `"interaction_kind":"talk"`) || !strings.Contains(string(body), `"preview":"VillageGuard:\nKeep your blade sharp."`) || !strings.Contains(string(body), `"interaction_kind":"shop_preview"`) || !strings.Contains(string(body), `"preview":"Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"`) || !strings.Contains(string(body), `"interaction_kind":"warp"`) || !strings.Contains(string(body), `"preview":"Step through the gate. [warp -\u003e map 42 @ 1700,2800]"`) || !strings.Contains(string(body), `"interaction_kind":"quest_flag"`) || !strings.Contains(string(body), `"preview":"Quest requirements are not met."`) {
+	if !strings.Contains(string(body), `"visible_interactable_static_actors"`) || !strings.Contains(string(body), `"interaction_kind":"talk"`) || !strings.Contains(string(body), `"preview":"VillageGuard:\nKeep your blade sharp."`) || !strings.Contains(string(body), `"interaction_kind":"shop_preview"`) || !strings.Contains(string(body), `"preview":"Village Merchant: [0] Small Red Potion x1 @ 50g; [1] Wooden Sword x1 @ 500g"`) || !strings.Contains(string(body), `"interaction_kind":"warp"`) || !strings.Contains(string(body), `"preview":"Step through the gate. [warp -\u003e map 42 @ 1700,2800]"`) || !strings.Contains(string(body), `"interaction_kind":"quest_flag"`) || !strings.Contains(string(body), `"preview":"Quest requirements are not met."`) || !strings.Contains(string(body), `"interaction_kind":"open_cube"`) || !strings.Contains(string(body), `"preview":"The craftsman lights the forge. [open_cube]"`) {
 		t.Fatalf("unexpected JSON response body %q", string(body))
 	}
 }

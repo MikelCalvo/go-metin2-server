@@ -46,7 +46,7 @@ The first owned validation rule is:
 - both fields empty = no interaction
 - both fields non-empty = interaction metadata present
 - exactly one field present = invalid
-- when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `quest_flag`, `warp`, or `shop_preview`
+- when present, `interaction_kind` must be one of the currently owned interaction-definition kinds: `info`, `talk`, `quest_flag`, `warp`, `shop_preview`, `open_safebox`, or `open_cube`
 - when present, `interaction_ref` must satisfy the canonical `<namespace>:<name>` rule above
 - low-level runtime entities in `internal/worldruntime` must already carry canonical, unpadded metadata; whitespace-padded `interaction_kind` or `interaction_ref` values are rejected fail-closed at that boundary rather than normalized into a different live actor
 
@@ -75,7 +75,9 @@ At this stage, the repository owns metadata plus the first narrow interaction-re
 - visible static actors whose metadata resolves to `interaction_kind = "info"` now answer with a self-only informational chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "talk"` now answer with a self-only speaker-prefixed multi-line chat-backed delivery
 - visible static actors whose metadata resolves to `interaction_kind = "shop_preview"` now carry the structured merchant catalog authoring seam that powers the current bootstrap merchant window open / buy / close flow
-- authored interaction definition text/title fields reject embedded NUL bytes at every owned authoring/load boundary before they can reach client-visible chat, merchant titles, or compact operator previews. The current fail-closed fields are `info.text`, `talk.text`, optional `warp.text`, and `shop_preview.title`.
+- visible static actors whose metadata resolves to `interaction_kind = "open_safebox"` now start the current bootstrap warehouse password challenge rather than inventing a second storage packet family
+- visible static actors whose metadata resolves to `interaction_kind = "open_cube"` now open the current bootstrap cube presentation (`cube open <npcVnum>`) rather than inventing a second craft packet family
+- authored interaction definition text/title fields reject embedded NUL bytes at every owned authoring/load boundary before they can reach client-visible chat, merchant titles, or compact operator previews. The current fail-closed fields are `info.text`, `talk.text`, optional `warp.text`, `shop_preview.title`, optional `open_safebox.text`, and optional `open_cube.text`.
 
 ## Owned interaction families
 
@@ -84,6 +86,8 @@ The first owned interaction families stay intentionally narrow:
 - quest-state `quest_flag`
 - service-style `warp`
 - merchant-style `shop_preview`
+- warehouse-style `open_safebox`
+- craftsman-style `open_cube`
 
 The currently implemented bootstrap interaction families remain conservative:
 - the actor must already be visible to the player
@@ -94,6 +98,8 @@ The currently implemented bootstrap interaction families remain conservative:
 - `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags, including authored clear transitions with `quest_to = 0`, returns one self-facing info-chat acknowledgement when the transition applies, and now returns a deterministic self-facing requirement-mismatch info chat when the persisted current value does not match the authored `quest_from` value
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
+- `open_safebox` reuses the current bootstrap safebox password-challenge / open presentation contract instead of inventing a second warehouse packet family
+- `open_cube` reuses the current bootstrap cube open presentation (`cube open <npcVnum>`) instead of inventing a second craft packet family
 - no broader quest scripting, barter, reward, or combat side effects are required; the standalone quest-state primitive and loopback transition harness remain documented in `quest-state-bootstrap.md`
 
 The current out-of-range failure is intentionally bootstrap-scoped. It is owned only as a fail-closed guard around already-visible static actors, not as the final NPC interaction distance policy.
@@ -109,6 +115,10 @@ Current owned meanings:
   - resolve a teleporter-style service interaction using the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime rather than a dedicated dialog or warp packet family
 - `interaction_kind = "shop_preview"`
   - resolve a merchant-style interaction using the same structured catalog authoring seam now frozen by the merchant preview / open-close / transaction docs
+- `interaction_kind = "open_safebox"`
+  - resolve a warehouse-style interaction using the existing `INTERACT` ingress and the current bootstrap safebox password-challenge / open presentation path
+- `interaction_kind = "open_cube"`
+  - resolve a craftsman-style interaction using the existing `INTERACT` ingress and the current bootstrap cube open presentation (`cube open <npcVnum>`)
 
 ## Explicit non-goals
 
@@ -127,7 +137,7 @@ After this slice, the repository should be able to say:
 - bootstrap static actors can carry `interaction_kind` / `interaction_ref`
 - that metadata survives create/update/list/persist/boot paths
 - invalid partial metadata is rejected consistently
-- a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` / `quest_flag` / `shop_preview` content plus the first `warp` destination payload keyed by `kind + ref`
+- a deterministic file-backed interaction-definition store now exists for minimal `info` / `talk` / `quest_flag` / `shop_preview` / `open_safebox` / `open_cube` content plus the first `warp` destination payload keyed by `kind + ref`
 - interaction definition validation rejects embedded NUL bytes in the owned client-visible text/title fields, so local operator writes, content-bundle validation/import, and runtime startup cannot persist or load truncated authored strings
 - `gamed` now loads that catalog before boot-restoring persisted static actors and before accepting new interaction metadata on static-actor create/update paths
 - loopback-only CRUD endpoints now author that catalog while preserving stable `kind + ref` identity on update and rejecting deletes for referenced definitions
@@ -135,5 +145,5 @@ After this slice, the repository should be able to say:
 - content-bundle canonicalization likewise rejects dangling interaction refs before import; the checked-in negative fixture `docs/examples/bootstrap-invalid-dangling-interaction-ref-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
 - content-bundle canonicalization likewise rejects unsupported future static-actor interaction kinds such as unfrozen `quest` metadata before import; the checked-in negative fixture `docs/examples/bootstrap-invalid-unsupported-interaction-kind-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
 - content-bundle canonicalization likewise rejects duplicate portable static-actor rows after canonical trimming before import; the checked-in negative fixture `docs/examples/bootstrap-invalid-duplicate-static-actor-bundle.json` is the preferred `/local/content-bundle/validate` dry-run for that reject without improvising JSON
-- visible actors can now answer the interacting player with self-only `info` / `talk`, can apply one persisted selected-character `quest_flag`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, and can still power QA/debug preview rendering without redesigning the actor model first
+- visible actors can now answer the interacting player with self-only `info` / `talk`, can apply one persisted selected-character `quest_flag`, can reuse the same metadata seam for the current merchant-window `shop_preview` flow, warehouse `open_safebox` password challenge, and craftsman `open_cube` open presentation, and can still power QA/debug preview rendering without redesigning the actor model first
 - the same metadata seam now also powers the current service-style NPC `warp` interaction family

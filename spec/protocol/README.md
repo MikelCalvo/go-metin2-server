@@ -38,7 +38,7 @@ The repository targets TMP4-era client compatibility, but the protocol contract 
 - `transfer-rebootstrap-burst.md` — first owned self-session rebootstrap burst for bootstrap map transfer on the game socket
 - `runtime-reconnect-cleanup.md` — first owned close/disconnect/reconnect cleanup contract for bootstrap shared-world runtime ownership
 - `non-player-entity-bootstrap.md` — first owned non-player runtime contract for identity and map presence before packet/content behavior exists
-- `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors, now powering self-only `info` / `talk`, `warp`, and merchant-facing `shop_preview`
+- `static-actor-interaction-bootstrap.md` — first interaction-ready metadata seam for bootstrap static actors, now powering self-only `info` / `talk`, `warp`, merchant-facing `shop_preview`, warehouse `open_safebox`, and craftsman `open_cube`
 - `static-actor-interaction-request.md` — first owned client-originated `GAME`-phase interaction request for a visible bootstrap static actor target by `VID`
 - `npc-service-interactions-bootstrap.md` — first frozen service-style NPC gameplay contract built on top of bootstrap static actors and the existing `INTERACT` ingress
 - `combat-training-dummy-bootstrap.md` — first frozen combat-preparation target contract around one visible `training_dummy` actor

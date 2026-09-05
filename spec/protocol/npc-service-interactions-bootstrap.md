@@ -27,9 +27,11 @@ This contract applies only to:
 - self-facing or transfer-triggered outcomes that reuse already-owned packet/runtime contracts
 - deterministic authored interaction definitions loaded and validated by `gamed`
 
-This document now freezes the contract and also records the two landed service-style verticals:
+This document now freezes the contract and also records the landed service-style verticals:
 - `warp` is now implemented on top of the existing `INTERACT` ingress and the existing transfer / rebootstrap runtime
 - `shop_preview` now opens the bootstrap merchant window and buy-only merchant flow on top of the same ingress and the same structured merchant catalog seam
+- `open_safebox` now starts the bootstrap warehouse password challenge on top of the same ingress
+- `open_cube` now opens the bootstrap cube presentation on top of the same ingress
 - authored content bundles may carry process-local combat profile snapshots only when the same bundle references them from a static actor or spawn group
 
 ## Why service-style NPCs first
@@ -45,7 +47,7 @@ At the same time, several larger systems are still intentionally missing:
 - branching quest scripts, rewards, and client quest UI
 - broader client-owned dialog-window or option-selection contracts beyond the current merchant window family
 
-The first standalone quest-state primitive, loopback transition harness, and a narrow static-actor `quest_flag` trigger are now documented in `quest-state-bootstrap.md`. They are deliberately separate from this service-style NPC execution path: `warp` and `shop_preview` continue to focus on one-request service outcomes rather than branching quest/dialog state.
+The first standalone quest-state primitive, loopback transition harness, and a narrow static-actor `quest_flag` trigger are now documented in `quest-state-bootstrap.md`. They are deliberately separate from this service-style NPC execution path: `warp`, `shop_preview`, `open_safebox`, and `open_cube` continue to focus on one-request service outcomes rather than branching quest/dialog state.
 
 Because of those constraints, the next honest NPC gameplay vertical here remains **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
 
@@ -81,7 +83,7 @@ Current owned warp operator-summary semantics:
 - `GET /local/content-bundle/maps/{map_index}/static-actors` and `/interactable-static-actors` now return map-local authored static-actor rows and clickable/service-preview rows, so operators can audit one map's NPC content before narrowing to route-specific projections
 - the same summary `maps[]` audit reports `warp_actor_count` for each authored map, counting visible static actors on that map that resolve to a `warp` definition
 - `POST /local/content-bundle/import-preview` compares a candidate replacement bundle against the live exported bundle and returns no-mutation `current` / `candidate` summaries plus count/amount `deltas`, including exact portable static-actor `added` / `removed` rows, exact interactable static-actor `added` / `removed` / `changed` rows with compact resolved previews, per-interaction-kind reference deltas, per-definition `added` / `removed` / `changed` deltas with compact current/candidate previews, exact `warp_destinations` `added` / `removed` / `changed` deltas keyed by interaction `kind` + `ref`, exact `warp_routes` `added` / `removed` / `changed` deltas keyed by actor/source/ref route, exact `spawn_groups` `added` / `removed` / `changed` deltas keyed by authored spawn-group `ref`, exact portable `combat_profiles` `added` / `removed` / `changed` deltas keyed by profile name, reward EXP/gold totals when authored spawn rewards would change, and grouped `reward_drops` `added` / `removed` / `changed` deltas keyed by item vnum
-- `POST /local/content-bundle/import-preview/interaction-kinds/{kind}` returns one exact interaction-kind delta for a candidate replacement bundle, so local QA can inspect whether a family such as `info`, `talk`, `quest_flag`, `shop_preview`, or `warp` changes total, referenced, or unreferenced counts without fetching and filtering the broad preview
+- `POST /local/content-bundle/import-preview/interaction-kinds/{kind}` returns one exact interaction-kind delta for a candidate replacement bundle, so local QA can inspect whether a family such as `info`, `talk`, `quest_flag`, `shop_preview`, `warp`, `open_safebox`, or `open_cube` changes total, referenced, or unreferenced counts without fetching and filtering the broad preview
 - `POST /local/content-bundle/import-preview/interactable-static-actors/{name}` returns exact clickable actor preview deltas for one authored actor name, so local QA can inspect whether a visible NPC's resolved interaction preview would be added, removed, or changed without filtering the broad preview
 - `POST /local/content-bundle/import-preview/warp-destinations/{kind}/{ref}` returns one exact authored warp-destination delta for a candidate replacement bundle, so local QA can inspect one teleporter destination impact without fetching and filtering the broad preview
 - `POST /local/content-bundle/import-preview/warp-routes/{actor_name}` returns every exact warp-route delta for one authored teleporter actor name, so local QA can inspect one teleporter placement impact without fetching and filtering the broad preview
@@ -225,10 +227,11 @@ No new client-originated packet family is frozen in this stage.
 ## Response rule
 
 The current owned response families stay intentionally conservative:
-- `info` and `talk` remain self-only chat-backed authored responses; they may optionally carry the same non-mutating selected-character quest gate as `warp` / `shop_preview` / `open_safebox`, returning `Quest requirements are not met.` instead of the authored text when the gate mismatches
+- `info` and `talk` remain self-only chat-backed authored responses; they may optionally carry the same non-mutating selected-character quest gate as `warp` / `shop_preview` / `open_safebox` / `open_cube`, returning `Quest requirements are not met.` instead of the authored text when the gate mismatches
 - `warp` now reuses the already-owned transfer / rebootstrap contract rather than inventing a separate NPC warp packet; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the transfer rebootstrap frames
 - `shop_preview` now reuses the current bootstrap merchant window open / buy / close contract, while preserving the deterministic preview render for QA/debug and lower-level resolution surfaces
 - `open_safebox` now starts the current bootstrap safebox password challenge (`ShowMeSafeboxPassword`) rather than inventing a separate warehouse packet family; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the password-prompt command chat, while matching `/safebox_password` later opens with `SAFEBOX_SIZE` + durable rematerialized `SAFEBOX_SET` / money frames
+- `open_cube` now opens the current bootstrap cube presentation (`cube open <npcVnum>`) rather than inventing a separate craft packet family; if authored `text` is present, the interacting player first receives one self-only informational chat delivery and then the cube-open command chat
 
 ## Ordered implementation status
 
