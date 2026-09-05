@@ -321,6 +321,7 @@ GREEN on `lane/persistence`.
   `*-after-status.json`) with the same require flags as the live after-status
   line.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
+- Follow-up owned separately: read-only `catalog-status` for retained `migration-catalog.json` — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

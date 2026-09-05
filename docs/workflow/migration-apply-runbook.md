@@ -18,6 +18,8 @@ The current boundary is deliberately narrow:
 
 Keep these files together for each migration run:
 
+- `migration-catalog.json` — metadata-only `go-metin2-migration-catalog-summary-v1` inventory retained from `metin2-migrate catalog` or loopback `GET /local/db/migrations/catalog`;
+- `migration-catalog-status.json` — optional `go-metin2-migration-catalog-status-v1` output from re-validating a retained catalog; the inspector is frozen next — see [CLI catalog-status](../plans/2026-09-05-cli-catalog-status-contract-freeze.md);
 - `ledger-snapshot.json` — strict `go-metin2-schema-migrations-ledger-v1` input exported from the target before mutation;
 - `ledger-snapshot-status.json` — optional `go-metin2-schema-migrations-ledger-snapshot-status-v1` output from re-validating a retained ledger snapshot before planning, preflight, or apply;
 - `migration-plan-artifact.json` — strict `go-metin2-migration-plan-artifact-v1` output reviewed before mutation;
@@ -200,6 +202,7 @@ Do not use this runbook to justify:
 - treating `apply-lock-status` or `manual_clear_candidate=true` as authorization to delete an existing lock; status is inspection-only, and lab recovery uses confirmation-gated `apply-lock-aside` (aside-rename, never `rm`) after operator judgment.
 - treating `apply-audit-status` as proof that a database is currently migrated; it validates a retained metadata artifact only.
 - treating `ledger-snapshot-status` as proof that a live database still matches the retained snapshot; it validates a retained offline artifact against the embedded catalog only.
+- treating `catalog-status` as proof that a live database is migrated; once GREEN it validates a retained catalog JSON against the inspecting binary only.
 - treating `apply --apply-preflight` as a substitute for deployment-specific DB/file-store backup validation or transaction-local ledger verification.
 
 ## Related: quarantined export SQL import

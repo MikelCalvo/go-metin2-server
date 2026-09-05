@@ -144,6 +144,10 @@ git diff --check
 - stock binaries remain free of a registered production driver
 - upsert / auto-run remain explicitly deferred
 
+## Follow-up
+
+Read-only `catalog-status` for retained `migration-catalog.json` is frozen next — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). GREEN should retain `migration-catalog-status.json` beside the existing catalog file in the printed-script SQLite proofs.
+
 ## Anti-goals / ordering constraints
 
 - Do not auto-run printed apply/rollback from CLI / contrib / cron.

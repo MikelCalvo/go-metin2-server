@@ -135,3 +135,7 @@ Validation for this slice:
 - Do not widen registration helpers or change endpoint paths/bodies.
 - Do not add SQL import/backfill.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
+
+## Follow-up
+
+Read-only `catalog-status` for retained `migration-catalog.json` is frozen next — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). GREEN should add the matching `--require-matches-embedded` redirect beside the existing catalog retain line.

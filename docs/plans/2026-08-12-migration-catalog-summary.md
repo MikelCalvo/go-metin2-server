@@ -65,3 +65,7 @@ Primary focused coverage:
 - `go test ./internal/ops -run TestLocalMigrationCatalog -count=1`.
 
 Full validation remains `go test ./...`, `go vet ./...`, `gofmt -l`, and `git diff --check` before commit/push.
+
+## Follow-up
+
+Read-only `catalog-status` for retained `migration-catalog.json` is frozen next — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md).
