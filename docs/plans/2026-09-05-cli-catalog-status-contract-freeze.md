@@ -267,6 +267,7 @@ GREEN on `lane/persistence`.
   printers emit matching `catalog-status --require-matches-embedded` redirects
   to `migration-catalog-status.json`.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
+- Follow-up owned separately: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

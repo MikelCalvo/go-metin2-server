@@ -92,3 +92,4 @@ Do **not**:
 - multi-host unlock coordination
 - a claim that leftover locks prove a migration succeeded or failed
 - treating `manual_clear_candidate=true` alone as permission to mutate without confirmation / operator judgment
+- treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; re-inspection is frozen next as read-only `apply-lock-aside-status` — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md)
