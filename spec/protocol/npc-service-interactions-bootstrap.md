@@ -64,7 +64,7 @@ Frozen target behavior:
 - that authored store-level definition is now expected to carry `map_index`, `x`, `y`, and optional informational text
 - the same definition may optionally carry a selected-character quest gate (`quest_ref` + `quest_flag` + optional `quest_from`) that must match before transfer; gated warps never mutate quest state (`quest_to` stays `0`)
 - the runtime may deliver one small self-facing informational message if the authored definition carries text
-- the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract
+- the runtime then reuses the existing gameplay transfer / self-session rebootstrap contract, including same-map destinations such as the composed PvE fixture `npc:qa_teleporter` (`470200,964200` on map `1`): authored text first, then the self rebootstrap burst, even though visibility scope does not change
 - no dialog state, option selection, or persistent conversation session is created
 
 Current owned warp failure semantics:

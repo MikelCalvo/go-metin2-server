@@ -20,9 +20,11 @@ import (
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
 
@@ -104,7 +106,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
 
-	var guideVID, hunterVID, merchantVID, warehouseVID, cubeVID, mobVID uint32
+	var guideVID, hunterVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
 	var foundPackMembers int
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
@@ -118,14 +120,20 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			warehouseVID = uint32(actor.EntityID)
 		case "CubeMaster":
 			cubeVID = uint32(actor.EntityID)
+		case "VillageGuide":
+			talkVID = uint32(actor.EntityID)
+		case "VillageSignpost":
+			infoVID = uint32(actor.EntityID)
+		case "Teleporter":
+			teleporterVID = uint32(actor.EntityID)
 		case "QAPveVerticalMob":
 			mobVID = uint32(actor.EntityID)
 		case "QAPveVerticalPack 1", "QAPveVerticalPack 2":
 			foundPackMembers++
 		}
 	}
-	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 {
-		t.Fatalf("expected guide/hunter/merchant/warehouse/cube/mob actors after import, got %+v", runtime.StaticActors())
+	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 || talkVID == 0 || infoVID == 0 || teleporterVID == 0 {
+		t.Fatalf("expected guide/hunter/merchant/warehouse/cube/mob/talk/info/teleporter actors after import, got %+v", runtime.StaticActors())
 	}
 	if foundPackMembers != 2 {
 		t.Fatalf("expected denser multi-count pack members QAPveVerticalPack 1/2 after import, found=%d actors=%+v", foundPackMembers, runtime.StaticActors())
@@ -170,6 +178,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil || cubeMismatchChat.Message != "Quest requirements are not met." {
 		t.Fatalf("unexpected gated cube mismatch chat: %+v err=%v", cubeMismatchChat, err)
 	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, talkVID, "VillageGuide talk")
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, infoVID, "VillageSignpost info")
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, teleporterVID, "Teleporter warp")
+	assertPveVerticalConnectedPosition(t, runtime, bootstrapMapIndex, hero.X, hero.Y, "failed gated warp")
+	assertPveVerticalPersistedPosition(t, accounts, "pve-vertical", bootstrapMapIndex, hero.X, hero.Y, "failed gated warp")
 
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected pre-guide target selection to return 1 frame, got frames=%d err=%v", len(out), err)
@@ -226,6 +243,57 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !reflect.DeepEqual(loaded, wantAfterGuide) {
 		t.Fatalf("unexpected quest-state after QuestGuide:\n got: %#v\nwant: %#v", loaded, wantAfterGuide)
 	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	talkOut := interactPveVertical(t, flow, talkVID, "unlocked VillageGuide talk")
+	assertPveVerticalSelfOnlyInfoChat(t, talkOut, "VillageGuide:\nWelcome to the QA square.", "unlocked VillageGuide talk")
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "unlocked VillageGuide talk")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	infoOut := interactPveVertical(t, flow, infoVID, "unlocked VillageSignpost info")
+	assertPveVerticalSelfOnlyInfoChat(t, infoOut, "The QA square contains a merchant, teleporter, guide, hunter, warehouse, cube craftsman, and reward mob.", "unlocked VillageSignpost info")
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "unlocked VillageSignpost info")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	const pveVerticalWarpX int32 = 470200
+	warpOut := interactPveVertical(t, flow, teleporterVID, "unlocked Teleporter warp")
+	if len(warpOut) < 5 {
+		t.Fatalf("expected chat + same-map warp rebootstrap frames after Teleporter unlock, got %d", len(warpOut))
+	}
+	warpChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warpOut[0]))
+	if err != nil || warpChat.Type != chatproto.ChatTypeInfo || warpChat.VID != 0 || warpChat.Empire != 0 || warpChat.Message != "Step through the gate." {
+		t.Fatalf("unexpected unlocked Teleporter warp chat: %+v err=%v", warpChat, err)
+	}
+	warpAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, warpOut[1]))
+	if err != nil {
+		t.Fatalf("decode unlocked Teleporter warp self add: %v", err)
+	}
+	if warpAdd.VID != hero.VID || warpAdd.X != pveVerticalWarpX || warpAdd.Y != hero.Y {
+		t.Fatalf("unexpected unlocked Teleporter warp self add: %+v want vid=%d x=%d y=%d", warpAdd, hero.VID, pveVerticalWarpX, hero.Y)
+	}
+	assertPveVerticalConnectedPosition(t, runtime, bootstrapMapIndex, pveVerticalWarpX, hero.Y, "unlocked Teleporter warp")
+	assertPveVerticalPersistedPosition(t, accounts, "pve-vertical", bootstrapMapIndex, pveVerticalWarpX, hero.Y, "unlocked Teleporter warp")
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "unlocked Teleporter warp")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames for self-only PvE warp, got %d", len(queued))
+	}
+
+	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1,
+		Arg:  0,
+		Rot:  12,
+		X:    hero.X,
+		Y:    hero.Y,
+		Time: 0x71727374,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected return MOVE after PvE warp: %v", err)
+	}
+	if len(moveOut) == 0 {
+		t.Fatalf("expected return MOVE after PvE warp to emit a self ack")
+	}
+	assertPveVerticalConnectedPosition(t, runtime, bootstrapMapIndex, hero.X, hero.Y, "return MOVE after PvE warp")
+	assertPveVerticalPersistedPosition(t, accounts, "pve-vertical", bootstrapMapIndex, hero.X, hero.Y, "return MOVE after PvE warp")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	shopOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
@@ -476,6 +544,61 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected mismatch path to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+}
+
+func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected %s interaction error: %v", context, err)
+	}
+	return out
+}
+
+func assertPveVerticalGatedMismatch(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) {
+	t.Helper()
+	assertPveVerticalSelfOnlyInfoChat(t, interactPveVertical(t, flow, targetVID, "gated "+context+" mismatch"), "Quest requirements are not met.", "gated "+context+" mismatch")
+}
+
+func assertPveVerticalSelfOnlyInfoChat(t *testing.T, frames [][]byte, wantMessage string, context string) {
+	t.Helper()
+	if len(frames) != 1 {
+		t.Fatalf("expected 1 self-only %s frame, got %d", context, len(frames))
+	}
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frames[0]))
+	if err != nil || chat.Type != chatproto.ChatTypeInfo || chat.VID != 0 || chat.Empire != 0 || chat.Message != wantMessage {
+		t.Fatalf("unexpected %s chat: %+v err=%v", context, chat, err)
+	}
+}
+
+func assertPveVerticalQuestState(t *testing.T, runtime *gameRuntime, want queststate.Snapshot, context string) {
+	t.Helper()
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after %s: %v", context, err)
+	}
+	if !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("unexpected quest-state after %s:\n got: %#v\nwant: %#v", context, loaded, want)
+	}
+}
+
+func assertPveVerticalConnectedPosition(t *testing.T, runtime *gameRuntime, mapIndex uint32, x int32, y int32, context string) {
+	t.Helper()
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || connected[0].MapIndex != mapIndex || connected[0].X != x || connected[0].Y != y {
+		t.Fatalf("expected %s connected position map=%d x=%d y=%d, got %+v", context, mapIndex, x, y, connected)
+	}
+}
+
+func assertPveVerticalPersistedPosition(t *testing.T, accounts *accountstore.FileStore, login string, mapIndex uint32, x int32, y int32, context string) {
+	t.Helper()
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after %s: %v", context, err)
+	}
+	if len(account.Characters) != 1 || account.Characters[0].MapIndex != mapIndex || account.Characters[0].X != x || account.Characters[0].Y != y {
+		t.Fatalf("expected persisted %s position map=%d x=%d y=%d, got %+v", context, mapIndex, x, y, account.Characters)
 	}
 }
 

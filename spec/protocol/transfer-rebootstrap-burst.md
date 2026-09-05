@@ -111,8 +111,10 @@ At the same time:
 
 ## Same-map transfers
 
-If the runtime updates position but keeps the player on the same effective map scope, this self-session transfer contract does not emit a rebootstrap burst.
+Ordinary same-map `MOVE` / `SYNC_POSITION` that keep the player on the same effective map scope do **not** emit this self-session rebootstrap burst.
 That remains a normal same-map movement/sync concern rather than a visible-world transfer concern.
+
+NPC `warp` INTERACT is different: `HandleInteraction` always commits through the transfer helper with rebootstrap enabled, including same-map destinations such as the composed PvE fixture `npc:qa_teleporter` (`470200,964200` on map `1`). Those warps still emit authored informational text (when present) plus the self rebootstrap burst, even though visibility scope does not change. After that destination the player may still be outside the 300-unit static-actor interaction radius of the source square.
 
 ## Why this slice exists
 
