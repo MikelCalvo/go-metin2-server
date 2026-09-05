@@ -58,7 +58,7 @@ func bootstrapCharacterAddPacket(character loginticket.Character) worldproto.Cha
 		X:           character.X,
 		Y:           character.Y,
 		Z:           character.Z,
-		Type:        6,
+		Type:        worldproto.CharacterTypePC,
 		RaceNum:     character.RaceNum,
 		MovingSpeed: 150,
 		AttackSpeed: 100,

@@ -38,6 +38,11 @@ const (
 	CharacterEquipmentPartCount = 4
 	AffectFlagCount             = 2
 
+	// CHARACTER_ADD.type values owned by the current bootstrap visibility burst.
+	CharacterTypeMonster uint8 = 0
+	CharacterTypeNPC     uint8 = 1
+	CharacterTypePC      uint8 = 6
+
 	characterCreatePayloadSize         = 1 + CharacterNameFieldSize + 2 + 1 + 4
 	characterDeletePayloadSize         = 1 + PrivateCodeFieldSize
 	characterSelectPayloadSize         = 1

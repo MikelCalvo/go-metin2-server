@@ -156,7 +156,7 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPresentationKeepsDeleteRea
 	if err != nil {
 		t.Fatalf("decode presentation refresh CHARACTER_ADD: %v", err)
 	}
-	if add.VID != uint32(group.EntityID) || add.X != 1200 || add.Y != 2200 || add.RaceNum != 102 {
+	if add.VID != uint32(group.EntityID) || add.Type != worldproto.CharacterTypeMonster || add.X != 1200 || add.Y != 2200 || add.RaceNum != 102 {
 		t.Fatalf("unexpected presentation refresh CHARACTER_ADD: %+v", add)
 	}
 	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2]))

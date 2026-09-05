@@ -55,6 +55,9 @@ Payload layout:
 - `angle` — `float32`
 - `x`, `y`, `z` — `int32` each
 - `type` — `uint8`
+  - `0` (`CHAR_TYPE_MONSTER`) for combat-profile static actors (`training_dummy`, `practice_mob`, and registered combat profiles)
+  - `1` (`CHAR_TYPE_NPC`) for ordinary interaction/static actors without a resolved combat profile
+  - `6` (`CHAR_TYPE_PC`) for player self-insert and peer-visibility inserts
 - `race_num` — `uint16`
 - `moving_speed` — `uint8`
 - `attack_speed` — `uint8`
@@ -93,7 +96,9 @@ Frame length:
 ## Current bootstrap behavior
 
 The bootstrap runtime currently uses deterministic values for the visible insert:
-- a fixed self-insert type for player characters
+- a fixed self-insert type `6` (`CHAR_TYPE_PC`) for player characters
+- combat-profile static actors (`training_dummy`, `practice_mob`, and registered combat profiles) insert as type `0` (`CHAR_TYPE_MONSTER`)
+- ordinary interaction/static actors without a resolved combat profile insert as type `1` (`CHAR_TYPE_NPC`)
 - deterministic movement/attack speed values
 - deterministic state bootstrap
 - selected character coordinates, race, empire, level, visible parts, self-update state, and one self-only point refresh

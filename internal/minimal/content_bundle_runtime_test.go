@@ -1549,7 +1549,7 @@ func TestGameRuntimeImportContentBundleFlushesStaticActorReplacementFanoutAfterS
 	if err != nil {
 		t.Fatalf("decode new actor add after successful replacement import: %v", err)
 	}
-	if newAdd.Type != 1 || newAdd.X != 1820 || newAdd.Y != 2920 || newAdd.RaceNum != 20301 {
+	if newAdd.Type != worldproto.CharacterTypeNPC || newAdd.X != 1820 || newAdd.Y != 2920 || newAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected new actor add after successful replacement import: %+v", newAdd)
 	}
 	newInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2]))

@@ -7232,6 +7232,50 @@ func TestStaticActorCharacterAdditionalInfoUsesCombatProfileLevel(t *testing.T) 
 	}
 }
 
+func TestStaticActorCharacterAddUsesMonsterTypeForCombatProfiles(t *testing.T) {
+	practice := worldruntime.StaticEntity{
+		Entity: worldruntime.Entity{
+			ID:   0x07000011,
+			Kind: worldruntime.EntityKindStaticActor,
+			Name: "Practice Mob Type Probe",
+		},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.mob_type_probe",
+	}
+	if packet := staticActorCharacterAddPacket(practice, uint32(practice.Entity.ID)); packet.Type != worldproto.CharacterTypeMonster {
+		t.Fatalf("expected practice-mob CHARACTER_ADD type %d, got %d", worldproto.CharacterTypeMonster, packet.Type)
+	}
+
+	dummy := worldruntime.StaticEntity{
+		Entity: worldruntime.Entity{
+			ID:   0x07000012,
+			Kind: worldruntime.EntityKindStaticActor,
+			Name: "Training Dummy Type Probe",
+		},
+		Position:   worldruntime.NewPosition(bootstrapMapIndex, 1210, 2210),
+		RaceNum:    20350,
+		CombatKind: worldruntime.StaticActorCombatKindTrainingDummy,
+	}
+	if packet := staticActorCharacterAddPacket(dummy, uint32(dummy.Entity.ID)); packet.Type != worldproto.CharacterTypeMonster {
+		t.Fatalf("expected training-dummy CHARACTER_ADD type %d, got %d", worldproto.CharacterTypeMonster, packet.Type)
+	}
+
+	guide := worldruntime.StaticEntity{
+		Entity: worldruntime.Entity{
+			ID:   0x07000013,
+			Kind: worldruntime.EntityKindStaticActor,
+			Name: "VillageGuide",
+		},
+		Position: worldruntime.NewPosition(bootstrapMapIndex, 1220, 2220),
+		RaceNum:  20301,
+	}
+	if packet := staticActorCharacterAddPacket(guide, uint32(guide.Entity.ID)); packet.Type != worldproto.CharacterTypeNPC {
+		t.Fatalf("expected interaction NPC CHARACTER_ADD type %d, got %d", worldproto.CharacterTypeNPC, packet.Type)
+	}
+}
+
 func TestSharedWorldRegistryStaticActorReturnsDeadStateByEntityID(t *testing.T) {
 	registry := newSharedWorldRegistry()
 	actor, ok := registry.RegisterStaticActorWithCombatKind(0, "TrainingDummyLookup", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
@@ -7460,7 +7504,7 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	if err != nil {
 		t.Fatalf("decode destination static actor add after transfer: %v", err)
 	}
-	if destinationActorAdd.VID != uint32(actor.EntityID) || destinationActorAdd.X != actor.X || destinationActorAdd.Y != actor.Y || destinationActorAdd.Type != 1 {
+	if destinationActorAdd.VID != uint32(actor.EntityID) || destinationActorAdd.X != actor.X || destinationActorAdd.Y != actor.Y || destinationActorAdd.Type != worldproto.CharacterTypeNPC {
 		t.Fatalf("unexpected destination static actor add after transfer: %+v", destinationActorAdd)
 	}
 	destinationActorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
@@ -7532,7 +7576,7 @@ func TestGameRuntimeImportContentBundleQueuesSpawnGroupVisibilityForOnlinePlayer
 	if err != nil {
 		t.Fatalf("decode imported spawn actor add: %v", err)
 	}
-	if actorAdd.Type != 1 || actorAdd.X != 1810 || actorAdd.Y != 2910 {
+	if actorAdd.Type != worldproto.CharacterTypeMonster || actorAdd.X != 1810 || actorAdd.Y != 2910 {
 		t.Fatalf("unexpected imported spawn actor add packet: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[1]))
@@ -11389,7 +11433,7 @@ func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(
 	if err != nil {
 		t.Fatalf("decode first bootstrap static actor add: %v", err)
 	}
-	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != worldproto.CharacterTypeNPC || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected first bootstrap static actor add: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, firstEnter[6]))
@@ -11422,7 +11466,7 @@ func TestNewGameSessionFactoryAppendsVisibleStaticActorFramesAfterPeerBootstrap(
 	if err != nil {
 		t.Fatalf("decode second bootstrap static actor add: %v", err)
 	}
-	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+	if staticAdd.VID != uint32(blacksmith.EntityID) || staticAdd.Type != worldproto.CharacterTypeNPC || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected second bootstrap static actor add: %+v", staticAdd)
 	}
 	staticInfo, err = worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, secondEnter[9]))
@@ -11549,7 +11593,7 @@ func TestNewGameSessionFactoryRadiusAOIOnlyBootstrapsNearbyStaticActors(t *testi
 	if err != nil {
 		t.Fatalf("decode nearby static actor add: %v", err)
 	}
-	if staticAdd.VID != uint32(nearActor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
+	if staticAdd.VID != uint32(nearActor.EntityID) || staticAdd.Type != worldproto.CharacterTypeNPC || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected nearby static actor add: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, enterOut[6]))
@@ -11613,7 +11657,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsStaticActorVisibil
 	if err != nil {
 		t.Fatalf("decode static actor add after move into AOI: %v", err)
 	}
-	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
+	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != worldproto.CharacterTypeNPC || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected static actor add after move into AOI: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
@@ -12907,7 +12951,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisi
 	if err != nil {
 		t.Fatalf("decode dead dummy add after move into AOI: %v", err)
 	}
-	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
+	if staticAdd.VID != targetVID || staticAdd.Type != worldproto.CharacterTypeMonster || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
 		t.Fatalf("unexpected dead dummy add after move into AOI: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
@@ -13375,7 +13419,7 @@ func TestNewGameSessionFactoryRadiusAOISyncPositionIntoRangeBootstrapsStaticActo
 	if err != nil {
 		t.Fatalf("decode static actor add after sync_position into AOI: %v", err)
 	}
-	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != 1 || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
+	if staticAdd.VID != uint32(actor.EntityID) || staticAdd.Type != worldproto.CharacterTypeNPC || staticAdd.X != 1300 || staticAdd.Y != 2300 || staticAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected static actor add after sync_position into AOI: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, originEntry[1]))
@@ -13745,7 +13789,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStati
 	if err != nil {
 		t.Fatalf("decode target static actor add during transfer: %v", err)
 	}
-	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != 1 || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
+	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != worldproto.CharacterTypeNPC || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
 		t.Fatalf("unexpected target static actor add during transfer: %+v", addedActor)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[6]))
@@ -14383,7 +14427,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 	if err != nil {
 		t.Fatalf("decode dead dummy transfer add: %v", err)
 	}
-	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1700 || staticAdd.Y != 2800 || staticAdd.RaceNum != 20350 {
+	if staticAdd.VID != targetVID || staticAdd.Type != worldproto.CharacterTypeMonster || staticAdd.X != 1700 || staticAdd.Y != 2800 || staticAdd.RaceNum != 20350 {
 		t.Fatalf("unexpected dead dummy transfer add: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, moveOut[5]))
@@ -14469,7 +14513,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPositionW
 	if err != nil {
 		t.Fatalf("decode target static actor add during sync_position transfer: %v", err)
 	}
-	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != 1 || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
+	if addedActor.VID != uint32(targetActor.EntityID) || addedActor.Type != worldproto.CharacterTypeNPC || addedActor.X != 1700 || addedActor.Y != 2800 || addedActor.RaceNum != 20300 {
 		t.Fatalf("unexpected target static actor add during sync_position transfer: %+v", addedActor)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, syncOut[6]))
@@ -28717,7 +28761,7 @@ func TestNewGameRuntimeBootLoadsPersistedStaticActorsBeforeEnterGame(t *testing.
 	if err != nil {
 		t.Fatalf("decode loaded static actor add: %v", err)
 	}
-	if loadedAdd.VID != 42 || loadedAdd.Type != 1 || loadedAdd.X != 1200 || loadedAdd.Y != 2200 || loadedAdd.RaceNum != 20300 {
+	if loadedAdd.VID != 42 || loadedAdd.Type != worldproto.CharacterTypeNPC || loadedAdd.X != 1200 || loadedAdd.Y != 2200 || loadedAdd.RaceNum != 20300 {
 		t.Fatalf("unexpected loaded static actor add: %+v", loadedAdd)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -29033,7 +29077,7 @@ func TestGameRuntimeRegisterStaticActorQueuesVisibleBootstrapForOnlinePlayers(t 
 	if err != nil {
 		t.Fatalf("decode queued static actor add: %v", err)
 	}
-	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.Type != 1 || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20300 {
+	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.Type != worldproto.CharacterTypeNPC || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20300 {
 		t.Fatalf("unexpected queued static actor add: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[1]))
@@ -29357,7 +29401,7 @@ func TestSharedWorldRegistryUpdateStaticActorClearsSelectedCombatTargetOwnership
 	if err != nil {
 		t.Fatalf("decode queued static actor add after selected update: %v", err)
 	}
-	if actorAdd.VID != targetVID || actorAdd.Type != 1 || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20351 {
+	if actorAdd.VID != targetVID || actorAdd.Type != worldproto.CharacterTypeMonster || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20351 {
 		t.Fatalf("unexpected queued static actor add after selected update: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, queued[2]))
@@ -29566,7 +29610,7 @@ func TestGameRuntimeUpdateStaticActorRefreshesVisibleActorForOnlinePlayers(t *te
 	if err != nil {
 		t.Fatalf("decode queued static actor add during refresh: %v", err)
 	}
-	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.Type != 1 || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20301 {
+	if actorAdd.VID != uint32(actor.EntityID) || actorAdd.Type != worldproto.CharacterTypeNPC || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20301 {
 		t.Fatalf("unexpected queued static actor add during refresh: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[2]))
@@ -29670,7 +29714,7 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 	if err != nil {
 		t.Fatalf("decode dead training-dummy add during refresh: %v", err)
 	}
-	if actorAdd.VID != targetVID || actorAdd.Type != 1 || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20350 {
+	if actorAdd.VID != targetVID || actorAdd.Type != worldproto.CharacterTypeMonster || actorAdd.X != 1250 || actorAdd.Y != 2250 || actorAdd.RaceNum != 20350 {
 		t.Fatalf("unexpected dead training-dummy add during refresh: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[2]))
@@ -29782,7 +29826,7 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 	if err != nil {
 		t.Fatalf("decode respawn training-dummy add: %v", err)
 	}
-	if actorAdd.VID != targetVID || actorAdd.Type != 1 || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20350 {
+	if actorAdd.VID != targetVID || actorAdd.Type != worldproto.CharacterTypeMonster || actorAdd.X != 1200 || actorAdd.Y != 2200 || actorAdd.RaceNum != 20350 {
 		t.Fatalf("unexpected respawn training-dummy add: %+v", actorAdd)
 	}
 	actorInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, nearQueued[2]))
@@ -41589,7 +41633,7 @@ func TestNewGameSessionFactoryBootstrapsStillDeadTrainingDummyWithTrailingDeadRe
 	if err != nil {
 		t.Fatalf("decode dead-dummy bootstrap add: %v", err)
 	}
-	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
+	if staticAdd.VID != targetVID || staticAdd.Type != worldproto.CharacterTypeMonster || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 20350 {
 		t.Fatalf("unexpected dead-dummy bootstrap add: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))
@@ -42219,7 +42263,7 @@ func TestGameSessionFlowContentSpawnGroupStillDeadEnterGameReplaysTrailingDead(t
 	if err != nil {
 		t.Fatalf("decode still-dead content-mob bootstrap add: %v", err)
 	}
-	if staticAdd.VID != targetVID || staticAdd.Type != 1 || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 101 {
+	if staticAdd.VID != targetVID || staticAdd.Type != worldproto.CharacterTypeMonster || staticAdd.X != 1200 || staticAdd.Y != 2200 || staticAdd.RaceNum != 101 {
 		t.Fatalf("unexpected still-dead content-mob bootstrap add: %+v", staticAdd)
 	}
 	staticInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, lateEnter[6]))

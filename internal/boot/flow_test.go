@@ -785,7 +785,7 @@ func sampleVisibleCharacterAddPacket() worldproto.CharacterAddPacket {
 		X:           1000,
 		Y:           2000,
 		Z:           0,
-		Type:        6,
+		Type:        worldproto.CharacterTypePC,
 		RaceNum:     2,
 		MovingSpeed: 150,
 		AttackSpeed: 100,

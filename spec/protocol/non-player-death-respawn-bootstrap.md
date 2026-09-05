@@ -168,7 +168,7 @@ The first owned respawn reset does **not** claim a dedicated revive packet.
 
 Instead, respawn is frozen as a visibility rebuild using families the repo already owns:
 1. server -> client `CHARACTER_DEL(vid)` for the dead visible dummy actor
-2. server -> client `CHARACTER_ADD`
+2. server -> client `CHARACTER_ADD` using type `0` (`CHAR_TYPE_MONSTER`) for combat-profile actors
 3. server -> client `CHAR_ADDITIONAL_INFO`
 4. server -> client `CHARACTER_UPDATE`
 

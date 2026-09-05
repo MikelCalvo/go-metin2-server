@@ -6654,10 +6654,7 @@ func connectedCharacterSnapshot(topology worldruntime.BootstrapTopology, charact
 }
 
 func staticActorSnapshot(topology worldruntime.BootstrapTopology, actor worldruntime.StaticEntity) StaticActorSnapshot {
-	combatProfile := actor.CombatProfile
-	if combatProfile == "" {
-		combatProfile = actor.CombatKind
-	}
+	combatProfile := staticActorResolvedCombatProfile(actor)
 	var combatMaxHP uint8
 	var combatNormalDamage uint8
 	var combatAttackValue uint16
@@ -7217,13 +7214,27 @@ func staticActorCharacterAddPacket(actor worldruntime.StaticEntity, vid uint32) 
 		X:           actor.Position.X,
 		Y:           actor.Position.Y,
 		Z:           0,
-		Type:        1,
+		Type:        staticActorCharacterAddType(actor),
 		RaceNum:     uint16(actor.RaceNum),
 		MovingSpeed: 150,
 		AttackSpeed: 100,
 		StateFlag:   0,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{},
 	}
+}
+
+func staticActorCharacterAddType(actor worldruntime.StaticEntity) uint8 {
+	if _, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(staticActorResolvedCombatProfile(actor)); ok {
+		return worldproto.CharacterTypeMonster
+	}
+	return worldproto.CharacterTypeNPC
+}
+
+func staticActorResolvedCombatProfile(actor worldruntime.StaticEntity) string {
+	if actor.CombatProfile != "" {
+		return actor.CombatProfile
+	}
+	return actor.CombatKind
 }
 
 func staticActorCharacterAdditionalInfoPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAdditionalInfoPacket {
@@ -7241,11 +7252,7 @@ func staticActorCharacterAdditionalInfoPacket(actor worldruntime.StaticEntity, v
 }
 
 func staticActorCharacterAdditionalInfoLevel(actor worldruntime.StaticEntity) uint32 {
-	combatProfile := actor.CombatProfile
-	if combatProfile == "" {
-		combatProfile = actor.CombatKind
-	}
-	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(combatProfile)
+	defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(staticActorResolvedCombatProfile(actor))
 	if !ok {
 		return 0
 	}

@@ -739,7 +739,7 @@ func sampleCharacterAddPacket() CharacterAddPacket {
 		X:           1000,
 		Y:           2000,
 		Z:           0,
-		Type:        6,
+		Type:        CharacterTypePC,
 		RaceNum:     2,
 		MovingSpeed: 150,
 		AttackSpeed: 100,
