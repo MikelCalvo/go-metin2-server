@@ -436,6 +436,16 @@ func TestRunExportTreeStatusRequireFlagsFailClosedOnIncompleteOrAbsentTree(t *te
 			want: "--require-import-result-all-replaced",
 		},
 		{
+			name: "empty-tree-require-wipe-import-result-outcomes",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-wipe-import-result-outcomes-complete"},
+			want: "--require-wipe-import-result-outcomes-complete",
+		},
+		{
+			name: "empty-tree-require-wipe-import-result-all-replaced",
+			args: []string{"export-tree-status", "--export-tree", emptyTree, "--require-wipe-import-result-all-replaced"},
+			want: "--require-wipe-import-result-all-replaced",
+		},
+		{
 			name: "absent-tree-require-quarantine",
 			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-quarantine-complete"},
 			want: "--require-quarantine-complete",
@@ -444,6 +454,16 @@ func TestRunExportTreeStatusRequireFlagsFailClosedOnIncompleteOrAbsentTree(t *te
 			name: "absent-tree-require-import-result-outcomes",
 			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-import-result-outcomes-complete"},
 			want: "--require-import-result-outcomes-complete",
+		},
+		{
+			name: "absent-tree-require-wipe-import-result-outcomes",
+			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-wipe-import-result-outcomes-complete"},
+			want: "--require-wipe-import-result-outcomes-complete",
+		},
+		{
+			name: "absent-tree-require-wipe-import-result-all-replaced",
+			args: []string{"export-tree-status", "--export-tree", missingTree, "--require-wipe-import-result-all-replaced"},
+			want: "--require-wipe-import-result-all-replaced",
 		},
 	}
 	for _, tc := range cases {
@@ -881,17 +901,11 @@ func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
 		"--require-wipe-import-artifacts-complete",
 		"--require-import-result-outcomes-complete",
 		"--require-import-result-all-replaced",
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected usage to list %q, got %q", want, body)
-		}
-	}
-	for _, forbidden := range []string{
 		"--require-wipe-import-result-outcomes-complete",
 		"--require-wipe-import-result-all-replaced",
 	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("wipe-import outcome require flags must stay deferred, got %q", body)
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected usage to list %q, got %q", want, body)
 		}
 	}
 }
@@ -969,6 +983,97 @@ func TestRunExportTreeStatusOutcomeRequireFlagsGateInsertOnlyAndAllReplaced(t *t
 	}
 	if !got.ImportResultOutcomesComplete || !got.ImportResultAllReplaced {
 		t.Fatalf("expected true outcome aggregates under require success, got %#v", got)
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusWipeImportOutcomeRequireFlagsGateInsertOnlyAndAllReplaced(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260905T190000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var outcomesStdout bytes.Buffer
+	var outcomesStderr bytes.Buffer
+	code := Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-wipe-import-result-outcomes-complete",
+	}, nil, &outcomesStdout, &outcomesStderr)
+	if code != exitOK {
+		t.Fatalf("expected insert-only wipe outcomes-complete require to succeed, exit=%d stderr=%q", code, outcomesStderr.String())
+	}
+	if outcomesStderr.Len() != 0 {
+		t.Fatalf("expected no stderr on wipe outcomes-complete success, got %q", outcomesStderr.String())
+	}
+
+	var allReplacedStdout bytes.Buffer
+	var allReplacedStderr bytes.Buffer
+	code = Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-wipe-import-result-all-replaced",
+	}, nil, &allReplacedStdout, &allReplacedStderr)
+	if code != exitError {
+		t.Fatalf("expected insert-only wipe all-replaced require to fail closed, exit=%d stderr=%q stdout=%q", code, allReplacedStderr.String(), allReplacedStdout.String())
+	}
+	if allReplacedStdout.Len() != 0 {
+		t.Fatalf("expected no stdout on wipe all-replaced require failure, got %q", allReplacedStdout.String())
+	}
+	if !strings.Contains(allReplacedStderr.String(), "--require-wipe-import-result-all-replaced") {
+		t.Fatalf("expected stderr to name --require-wipe-import-result-all-replaced, got %q", allReplacedStderr.String())
+	}
+
+	mustRewriteExportTreeWipeImportResult(t, tree, "character-item-state", `{"migration_version":3,"migration_name":"character_item_state","character_count":1,"inventory_item_count":3,"equipment_item_count":1,"quickslot_count":2,"character_ids":[11],"replaced":true}`)
+
+	var mixedStdout bytes.Buffer
+	var mixedStderr bytes.Buffer
+	code = Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-wipe-import-result-all-replaced",
+	}, nil, &mixedStdout, &mixedStderr)
+	if code != exitError {
+		t.Fatalf("expected mixed wipe all-replaced require to fail closed, exit=%d stderr=%q stdout=%q", code, mixedStderr.String(), mixedStdout.String())
+	}
+	if mixedStdout.Len() != 0 {
+		t.Fatalf("expected no stdout on mixed wipe all-replaced require failure, got %q", mixedStdout.String())
+	}
+
+	replacedPayloads := map[string]string{
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_count":1,"inventory_item_count":3,"equipment_item_count":1,"quickslot_count":2,"character_ids":[11],"replaced":true}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
+	}
+	for kind, payload := range replacedPayloads {
+		mustRewriteExportTreeWipeImportResult(t, tree, kind, payload)
+	}
+
+	var bothStdout bytes.Buffer
+	var bothStderr bytes.Buffer
+	code = Run([]string{
+		"export-tree-status",
+		"--export-tree", tree,
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	}, nil, &bothStdout, &bothStderr)
+	if code != exitOK {
+		t.Fatalf("expected all-replaced wipe-outcome require flags to succeed, exit=%d stderr=%q", code, bothStderr.String())
+	}
+	if bothStderr.Len() != 0 {
+		t.Fatalf("expected no stderr on wipe all-replaced require success, got %q", bothStderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(bothStdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode all-replaced gated wipe-outcome export-tree status JSON: %v\nbody:\n%s", err, bothStdout.String())
+	}
+	if !got.WipeImportResultOutcomesComplete || !got.WipeImportResultAllReplaced {
+		t.Fatalf("expected true wipe-outcome aggregates under require success, got %#v", got)
 	}
 	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
 		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)

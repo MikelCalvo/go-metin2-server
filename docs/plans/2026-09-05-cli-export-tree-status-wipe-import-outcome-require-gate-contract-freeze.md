@@ -230,10 +230,16 @@ git diff --check
 
 ## Status
 
-Freeze on `lane/persistence` (docs/spec only). GREEN is the follow-on slice.
+GREEN on `lane/persistence`.
 
-- Exact flag names + failure semantics + two-phase after-status wiring are frozen.
-- Insert-only and scoped-replace after-status stay without wipe-outcome requires.
+- Opt-in `--require-wipe-import-result-outcomes-complete` /
+  `--require-wipe-import-result-all-replaced` fail closed with exit `1` and no
+  stdout JSON when the matching wipe-outcome aggregate is false or the tree is
+  absent.
+- Insert-only and scoped-replace after-status stay without wipe-outcome requires
+  (those printers never emit wipe-import results). Two-phase after-status adds
+  both wipe-outcome requires beside the six existing after-status flags;
+  before-status stays ungated.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze

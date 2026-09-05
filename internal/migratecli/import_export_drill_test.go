@@ -78,6 +78,14 @@ func TestRunImportExportDrillPrintsConfirmationGatedImportCommands(t *testing.T)
 		t.Fatalf("insert-only after-status must not require all-replaced, got:\n%s", body)
 	}
 	for _, forbidden := range []string{
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("insert-only after-status must not require wipe-outcome gates, got %q in:\n%s", forbidden, body)
+		}
+	}
+	for _, forbidden := range []string{
 		"CREATE TABLE",
 		"DROP TABLE",
 		"postgres://",
@@ -189,6 +197,14 @@ func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 	if strings.Contains(body, "--require-import-result-all-replaced") {
 		t.Fatalf("scoped-replace after-status must not require all-replaced (omit-roster path stays valid), got:\n%s", body)
 	}
+	for _, forbidden := range []string{
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("scoped-replace after-status must not require wipe-outcome gates, got %q in:\n%s", forbidden, body)
+		}
+	}
 	if !strings.Contains(body, "opt-in scoped replace") {
 		t.Fatalf("expected scoped-replace comment in opt-in drill stdout:\n%s", body)
 	}
@@ -273,7 +289,7 @@ func TestRunImportExportDrillPrintsTwoPhaseWipeRosterReimport(t *testing.T) {
 		"phase 2: wipe character-FK tip kinds",
 		"phase 3: scoped-replace tip-0002 account-character-roster",
 		"phase 4: scoped-replace reimport non-roster tip kinds",
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced --require-wipe-import-result-outcomes-complete --require-wipe-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, body)

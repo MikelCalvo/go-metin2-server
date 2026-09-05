@@ -535,7 +535,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		"synthesize-wipe-export --kind character-item-state",
 		"wipe-quarantine.json",
 		"wipe-import-result.json",
-		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced --require-wipe-import-result-outcomes-complete --require-wipe-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
 	} {
 		if !strings.Contains(twoPhaseScript, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, twoPhaseScript)
