@@ -307,7 +307,20 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/persistence` (docs/spec only). GREEN is follow-on.
+GREEN on `lane/persistence`.
+
+- Read-only `metin2-migrate export-tree-status-status --export-tree-status <path>`
+  re-validates retained `export-tree-status-before.json` /
+  `export-tree-status-after.json` without walking the original export-tree or
+  opening a database.
+- Outer envelope is `go-metin2-export-tree-status-status-v1`; missing path is
+  ungated `present: false`; present files recompute inner aggregates and reuse
+  `enforceExportTreeStatusRequireGates`.
+- `import-export-drill` before/after printers emit matching
+  `export-tree-status-status` redirects (`*-before-status.json` /
+  `*-after-status.json`) with the same require flags as the live after-status
+  line.
+- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze
 

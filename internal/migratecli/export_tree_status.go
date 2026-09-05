@@ -236,18 +236,7 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 		Kinds:      make([]exportTreeKindStatus, 0, len(exportQuarantineKinds)),
 	}
 
-	wipeKindSet := make(map[string]struct{}, len(importExportDrillWipeKinds))
-	for _, kind := range importExportDrillWipeKinds {
-		wipeKindSet[kind] = struct{}{}
-	}
-
-	quarantinePresent := 0
-	wipeQuarantinePresent := 0
-	wipeStatusPresent := 0
-	importResultPresent := 0
-	importResultStatusPresent := 0
-	wipeImportResultPresent := 0
-	wipeImportResultStatusPresent := 0
+	wipeKindSet := exportTreeWipeKindSet()
 
 	for _, kind := range exportQuarantineKinds {
 		_, isWipeKind := wipeKindSet[kind]
@@ -263,9 +252,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 			return exportTreeStatus{}, err
 		}
 		kindStatus.Quarantine = quarantineArtifact
-		if quarantineArtifact.Present {
-			quarantinePresent++
-		}
 
 		importResultRel := filepath.ToSlash(filepath.Join(kind, "import-result.json"))
 		importResultAbs := filepath.Join(normalizedTree, kind, "import-result.json")
@@ -275,7 +261,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 		}
 		kindStatus.ImportResult = importResultArtifact
 		if importResultArtifact.Present {
-			importResultPresent++
 			kindStatus.ImportResultOutcome = importResultOutcome
 		}
 
@@ -286,9 +271,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 			return exportTreeStatus{}, err
 		}
 		kindStatus.ImportResultStatus = importResultStatusArtifact
-		if importResultStatusArtifact.Present {
-			importResultStatusPresent++
-		}
 
 		if isWipeKind {
 			wipeQuarantineRel := filepath.ToSlash(filepath.Join(kind, "wipe-quarantine.json"))
@@ -298,9 +280,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeQuarantine = &wipeQuarantineArtifact
-			if wipeQuarantineArtifact.Present {
-				wipeQuarantinePresent++
-			}
 
 			wipeStatusRel := filepath.ToSlash(filepath.Join(kind, "wipe-quarantine-status.json"))
 			wipeStatusAbs := filepath.Join(normalizedTree, kind, "wipe-quarantine-status.json")
@@ -309,9 +288,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeQuarantineStatus = &wipeStatusArtifact
-			if wipeStatusArtifact.Present {
-				wipeStatusPresent++
-			}
 			if wipeQuarantineArtifact.Present {
 				kindStatus.WipeQuarantine.ScopeKey = wipeScopeKey
 				kindStatus.WipeQuarantine.ScopeCount = wipeScopeCount
@@ -325,7 +301,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 			}
 			kindStatus.WipeImportResult = &wipeImportArtifact
 			if wipeImportArtifact.Present {
-				wipeImportResultPresent++
 				kindStatus.WipeImportResultOutcome = wipeImportOutcome
 			}
 
@@ -336,14 +311,74 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeImportResultStatus = &wipeImportStatusArtifact
-			if wipeImportStatusArtifact.Present {
-				wipeImportResultStatusPresent++
-			}
 		}
 
 		status.Kinds = append(status.Kinds, kindStatus)
 	}
 
+	applyExportTreeStatusAggregates(&status)
+	return status, nil
+}
+
+func exportTreeWipeKindSet() map[string]struct{} {
+	wipeKindSet := make(map[string]struct{}, len(importExportDrillWipeKinds))
+	for _, kind := range importExportDrillWipeKinds {
+		wipeKindSet[kind] = struct{}{}
+	}
+	return wipeKindSet
+}
+
+func applyExportTreeStatusAggregates(status *exportTreeStatus) {
+	quarantinePresent := 0
+	wipeQuarantinePresent := 0
+	wipeStatusPresent := 0
+	importResultPresent := 0
+	importResultStatusPresent := 0
+	wipeImportResultPresent := 0
+	wipeImportResultStatusPresent := 0
+	replacedCount := 0
+	rowCountTotal := 0
+	outcomeCount := 0
+	wipeReplacedCount := 0
+	wipeRowCountTotal := 0
+	wipeOutcomeCount := 0
+	for _, entry := range status.Kinds {
+		if entry.Quarantine.Present {
+			quarantinePresent++
+		}
+		if entry.WipeQuarantine != nil && entry.WipeQuarantine.Present {
+			wipeQuarantinePresent++
+		}
+		if entry.WipeQuarantineStatus != nil && entry.WipeQuarantineStatus.Present {
+			wipeStatusPresent++
+		}
+		if entry.ImportResult.Present {
+			importResultPresent++
+		}
+		if entry.ImportResultStatus.Present {
+			importResultStatusPresent++
+		}
+		if entry.WipeImportResult != nil && entry.WipeImportResult.Present {
+			wipeImportResultPresent++
+		}
+		if entry.WipeImportResultStatus != nil && entry.WipeImportResultStatus.Present {
+			wipeImportResultStatusPresent++
+		}
+		if entry.ImportResultOutcome != nil {
+			outcomeCount++
+			rowCountTotal += entry.ImportResultOutcome.RowCount
+			if entry.ImportResultOutcome.Replaced {
+				replacedCount++
+			}
+		}
+		if entry.WipeImportResultOutcome != nil {
+			wipeOutcomeCount++
+			wipeRowCountTotal += entry.WipeImportResultOutcome.RowCount
+			if entry.WipeImportResultOutcome.Replaced {
+				wipeReplacedCount++
+			}
+		}
+	}
 	status.QuarantinePresentCount = quarantinePresent
 	status.QuarantineComplete = quarantinePresent == len(exportQuarantineKinds)
 	status.WipeQuarantinePresentCount = wipeQuarantinePresent
@@ -353,19 +388,6 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	status.ImportResultStatusPresentCount = importResultStatusPresent
 	status.ImportResultArtifactsComplete = importResultPresent == len(exportQuarantineKinds) &&
 		importResultStatusPresent == len(exportQuarantineKinds)
-	replacedCount := 0
-	rowCountTotal := 0
-	outcomeCount := 0
-	for _, entry := range status.Kinds {
-		if entry.ImportResultOutcome == nil {
-			continue
-		}
-		outcomeCount++
-		rowCountTotal += entry.ImportResultOutcome.RowCount
-		if entry.ImportResultOutcome.Replaced {
-			replacedCount++
-		}
-	}
 	status.ImportResultReplacedCount = replacedCount
 	status.ImportResultRowCountTotal = rowCountTotal
 	status.ImportResultOutcomesComplete = outcomeCount == len(exportQuarantineKinds)
@@ -374,24 +396,10 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	status.WipeImportResultStatusPresentCount = wipeImportResultStatusPresent
 	status.WipeImportArtifactsComplete = wipeImportResultPresent == len(importExportDrillWipeKinds) &&
 		wipeImportResultStatusPresent == len(importExportDrillWipeKinds)
-	wipeReplacedCount := 0
-	wipeRowCountTotal := 0
-	wipeOutcomeCount := 0
-	for _, entry := range status.Kinds {
-		if entry.WipeImportResultOutcome == nil {
-			continue
-		}
-		wipeOutcomeCount++
-		wipeRowCountTotal += entry.WipeImportResultOutcome.RowCount
-		if entry.WipeImportResultOutcome.Replaced {
-			wipeReplacedCount++
-		}
-	}
 	status.WipeImportResultReplacedCount = wipeReplacedCount
 	status.WipeImportResultRowCountTotal = wipeRowCountTotal
 	status.WipeImportResultOutcomesComplete = wipeOutcomeCount == len(importExportDrillWipeKinds)
 	status.WipeImportResultAllReplaced = status.WipeImportResultOutcomesComplete && wipeReplacedCount == len(importExportDrillWipeKinds)
-	return status, nil
 }
 
 func inspectExportTreeQuarantineArtifact(kind, absPath, relPath string) (exportTreeArtifactStatus, error) {

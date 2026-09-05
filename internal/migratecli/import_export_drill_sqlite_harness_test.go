@@ -528,6 +528,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 	for _, want := range []string{
 		"two-phase wipe → roster → omit-roster reimport",
 		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" > "$EXPORT_TREE/export-tree-status-before.json"`,
+		`metin2-migrate export-tree-status-status --export-tree-status "$EXPORT_TREE/export-tree-status-before.json" > "$EXPORT_TREE/export-tree-status-before-status.json"`,
 		"phase 1: synthesize wipe-quarantine.json artifacts",
 		"phase 2: wipe character-FK tip kinds",
 		"phase 3: scoped-replace tip-0002 account-character-roster",
@@ -536,6 +537,7 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 		"wipe-quarantine.json",
 		"wipe-import-result.json",
 		`metin2-migrate export-tree-status --export-tree "$EXPORT_TREE" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced --require-wipe-import-result-outcomes-complete --require-wipe-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after.json"`,
+		`metin2-migrate export-tree-status-status --export-tree-status "$EXPORT_TREE/export-tree-status-after.json" --require-quarantine-complete --require-two-phase-wipe-artifacts-complete --require-import-result-artifacts-complete --require-wipe-import-artifacts-complete --require-import-result-outcomes-complete --require-import-result-all-replaced --require-wipe-import-result-outcomes-complete --require-wipe-import-result-all-replaced > "$EXPORT_TREE/export-tree-status-after-status.json"`,
 	} {
 		if !strings.Contains(twoPhaseScript, want) {
 			t.Fatalf("expected %q in two-phase drill stdout:\n%s", want, twoPhaseScript)
@@ -653,6 +655,33 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptTwoPhaseWipeRosterReimports
 			if strings.Contains(string(statusRaw), forbidden) {
 				t.Fatalf("%s must not contain %q, got %s", name, forbidden, string(statusRaw))
 			}
+		}
+	}
+
+	afterRaw, err := os.ReadFile(filepath.Join(exportTree, "export-tree-status-after.json"))
+	if err != nil {
+		t.Fatalf("read export-tree-status-after.json: %v", err)
+	}
+	afterStatusRaw, err := os.ReadFile(filepath.Join(exportTree, "export-tree-status-after-status.json"))
+	if err != nil {
+		t.Fatalf("read export-tree-status-after-status.json: %v", err)
+	}
+	var afterStatusEnvelope exportTreeStatusStatus
+	if err := json.Unmarshal(afterStatusRaw, &afterStatusEnvelope); err != nil {
+		t.Fatalf("decode export-tree-status-after-status.json: %v body=%s", err, string(afterStatusRaw))
+	}
+	if afterStatusEnvelope.Format != exportTreeStatusStatusFormat || !afterStatusEnvelope.Present || afterStatusEnvelope.Status == nil {
+		t.Fatalf("unexpected export-tree-status-after-status envelope: %#v", afterStatusEnvelope)
+	}
+	if afterStatusEnvelope.ExportTreeStatusSHA256 != sha256Hex(afterRaw) {
+		t.Fatalf("export-tree-status-after-status checksum mismatch: got %s want %s", afterStatusEnvelope.ExportTreeStatusSHA256, sha256Hex(afterRaw))
+	}
+	if afterStatusEnvelope.Status.Format != exportTreeStatusFormat || !afterStatusEnvelope.Status.Present || !afterStatusEnvelope.Status.WipeImportResultAllReplaced {
+		t.Fatalf("unexpected inner after-status snapshot: %#v", afterStatusEnvelope.Status)
+	}
+	for _, forbidden := range []string{"postgres://", "CREATE TABLE", "DROP TABLE", dsn, "password="} {
+		if strings.Contains(string(afterStatusRaw), forbidden) {
+			t.Fatalf("export-tree-status-after-status.json must not contain %q, got %s", forbidden, string(afterStatusRaw))
 		}
 	}
 
