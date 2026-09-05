@@ -820,6 +820,10 @@ func (r *Runtime) MoveInventoryItemBounded(from inventory.SlotIndex, to inventor
 		return result, true
 	}
 	sourceItem.Count -= mergeCount
+	// Remainder must keep an independent presence clone so later writes cannot
+	// alias the pre-merge live inventory sockets/attributes pointers.
+	sourceItem.Sockets = sourceItem.CloneSockets()
+	sourceItem.Attributes = sourceItem.CloneAttributes()
 	if err := sourceItem.Validate(); err != nil {
 		return inventory.MoveResult{}, false
 	}
@@ -916,6 +920,11 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 			return inventory.MoveResult{}, false
 		}
 		destinationItem.Count = uint16(mergedCount)
+		// Remainder must keep an independent presence clone so later writes cannot
+		// alias the pre-merge live inventory sockets/attributes pointers.
+		// Empty-destination split below keeps the already-owned remainder pointers.
+		sourceRemainder.Sockets = sourceItem.CloneSockets()
+		sourceRemainder.Attributes = sourceItem.CloneAttributes()
 		if err := sourceRemainder.Validate(); err != nil {
 			return inventory.MoveResult{}, false
 		}
