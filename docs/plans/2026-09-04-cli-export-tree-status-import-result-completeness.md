@@ -95,6 +95,8 @@ Follow-up owned separately: opt-in import-outcome require-gate on retained outco
 
 Follow-up owned separately and now GREEN: additive wipe-import outcome aggregates on `export-tree-status` — see [CLI export-tree-status wipe-import outcome aggregates contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-aggregates-contract-freeze.md).
 
+Follow-up owned separately: opt-in wipe-import outcome require-gate on retained wipe-outcome aggregates — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

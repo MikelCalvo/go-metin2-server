@@ -199,6 +199,7 @@ GREEN on `lane/persistence`.
 - `export-tree-status` now projects per-kind `import_result_outcome` plus tree-level replaced/row-count aggregates from retained tip-kind `import-result.json` evidence.
 - Wipe-import outcomes were deferred here; follow-up is now GREEN — see [CLI export-tree-status wipe-import outcome aggregates contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-aggregates-contract-freeze.md).
 - Follow-up owned separately and now GREEN: opt-in import-outcome require-gate + drill after-status wiring — see [CLI export-tree-status import-outcome require-gate contract freeze](2026-09-04-cli-export-tree-status-import-outcome-require-gate-contract-freeze.md).
+- Follow-up owned separately: opt-in wipe-import outcome require-gate + two-phase after-status wiring — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
 
 ## Exit criteria for this freeze
 
