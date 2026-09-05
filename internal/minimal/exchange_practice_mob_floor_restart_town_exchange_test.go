@@ -136,15 +136,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 	if err != nil {
 		t.Fatalf("unexpected attack error before exchange town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and exchange END, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and exchange END, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "exchange_practice_mob_floor_restart_town_exchange owner-floor")
 	assertExchangeEndFrame(t, attackOut[next], "owner exchange END after town immediate death")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 3 {
-		t.Fatalf("expected source peer DEAD, owner damage-info, plus exchange END after exchange town immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 4 {
+		t.Fatalf("expected source peer DEAD, mob damage-info, owner damage-info, plus exchange END after exchange town immediate floor, got %d", len(sourceQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "exchange_practice_mob_floor_restart_town_exchange owner-floor peer")
 	if len(remaining) != 1 {

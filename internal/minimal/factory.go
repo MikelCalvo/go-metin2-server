@@ -9275,8 +9275,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 						frames = append(frames, deadRaw)
 						frames = append(frames, combatproto.EncodeServerClearTarget())
+						if len(resolution.SelfPostMutationFrames) != 0 {
+							frames = append(frames, resolution.SelfPostMutationFrames...)
+						}
 						frames = append(frames, ownerRetaliationDamageInfo)
-						stablePeerFrames = [][]byte{deadRaw, ownerRetaliationDamageInfo}
+						stablePeerFrames = [][]byte{deadRaw}
+						if len(resolution.PeerPostMutationFrames) != 0 {
+							stablePeerFrames = append(stablePeerFrames, resolution.PeerPostMutationFrames...)
+						}
+						stablePeerFrames = append(stablePeerFrames, ownerRetaliationDamageInfo)
 					}
 					persistedFrames, ok := commitSelectedDeathFloorPersistenceFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					if !ok {

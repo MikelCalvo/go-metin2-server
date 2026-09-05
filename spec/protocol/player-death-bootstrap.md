@@ -71,9 +71,9 @@ This contract does **not** yet claim:
 ## Current implementation status
 
 The repository now implements this narrow bootstrap contract:
-- if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear, then one self-only `GC DAMAGE_INFO(owner_vid, abs(final_clamped_delta))`
+- if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear, then one self-only mob `GC DAMAGE_INFO(target_vid, applied_bootstrap_damage)` and one self-only `GC DAMAGE_INFO(owner_vid, abs(final_clamped_delta))`
 - if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion, then the same owner `DAMAGE_INFO`
-- when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` followed by that same owner `DAMAGE_INFO` using the existing shared-world visibility rules
+- when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` followed by that same owner `DAMAGE_INFO` using the existing shared-world visibility rules; an accepted immediate owner-floor hit also queues the matching mob `DAMAGE_INFO(target_vid)` after peer `DEAD(owner_vid)` and before the owner companion
 - that same queued peer-visible death fanout now skips recipients whose own live bootstrap HP is already at the current `0`-HP floor, so a still-connected dead owner does not keep receiving later peer-death `GC DEAD(...)` frames from other sessions
 - those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session until the bootstrap `0`-HP floor: partial live HP loss does **not** write the persisted account snapshot
 - when either immediate or delayed practice-mob retaliation reaches the bootstrap `0`-HP floor, the runtime now persists that selected-character bootstrap HP point as `0` with the owned death/clear frames, so a later reconnect, `/phase_select` re-entry, or fresh process restart that rebuilds `gameRuntime` from the same account FileStore paths rematerializes the dead snapshot (self `PLAYER_POINT_CHANGE` at `0` plus self `GC DEAD(owner_vid)`) even when a post-restart login ticket still carries the pre-death live HP value
@@ -194,7 +194,10 @@ When an immediate or delayed retaliation beat reaches the owner's live HP floor 
 1. self-only `GC PLAYER_POINT_CHANGE` carrying the final `value = 0`
 2. self-only `GC DEAD(owner_vid)`
 3. self-only `GC TARGET(0, 0)`
-4. self-only `GC DAMAGE_INFO(owner_vid, flag = 0, damage = abs(final_clamped_delta))`
+4. on an accepted immediate owner-floor hit only, self-only `GC DAMAGE_INFO(target_vid, flag = 0, damage = applied_bootstrap_damage)`
+5. self-only `GC DAMAGE_INFO(owner_vid, flag = 0, damage = abs(final_clamped_delta))`
+
+Accepted immediate owner-floor hits still start with the ordinary self `GC TARGET(target_vid, hp_percent)` refresh before that death/clear prefix because the mob remains alive. Delayed and proximity-armed floors skip the mob companion.
 
 That ordering applies in both current bootstrap owners:
 - immediate retaliation piggybacked on an accepted live owner `ATTACK`
@@ -500,7 +503,7 @@ After this document lands, the repository should be able to say:
 - the current bootstrap player-death packet is `GC DEAD(owner_vid)` with header `0x0217`
 - that owner death signal is emitted on both immediate and delayed retaliation beats when they drive the engaged owner to `0` HP
 - those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session until the bootstrap `0`-HP floor; once that floor is reached, the selected-character bootstrap HP point is persisted as `0` with the owned death/clear frames so fresh `/phase_select` re-entry, reconnect, and `ENTERGAME` replay `PLAYER_POINT_CHANGE` at `0` plus self `GC DEAD(owner_vid)`, while accepted `/restart_here` / `/restart_town` restore race create MaxHP into that persisted snapshot
-- the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)`
+- the current ordered owner-side floor transition is `GC PLAYER_POINT_CHANGE(value=0)` -> `GC DEAD(owner_vid)` -> `GC TARGET(0, 0)` -> owner `DAMAGE_INFO`; accepted immediate owner-floor hits insert one mob `DAMAGE_INFO(target_vid)` after that clear and before the owner companion
 - once that same floor is reached, later owner-side `MOVE` / `SYNC_POSITION` attempts also fail closed before self ack, shared-world relocation mutation, or transfer-trigger rebootstrap work can run
 - once that same floor is reached, later owner-side static-actor `INTERACT` attempts also fail closed before talk/info delivery, merchant preview open, or warp transfer / rebootstrap work can run; after `/restart_here` / `/restart_town` recovery the same owner-side talk `INTERACT` succeeds normally again (`TestGameSessionFlowPostFloorInteractFailsClosed`, `TestGameSessionFlowPostFloorInteractFailsClosedBeforeRestartTown`)
 - once that same floor is reached, later owner-side merchant-buy attempts also fail closed before runtime/persisted inventory or gold mutation can run through packet `SHOP BUY` or the local `/shop_buy` harness path

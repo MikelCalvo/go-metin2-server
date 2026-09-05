@@ -132,14 +132,14 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenSafeboxBef
 	if err != nil {
 		t.Fatalf("unexpected attack error before safebox town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
+	if len(attackOut) != 7 {
 		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and CloseSafebox, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "safebox_practice_mob_floor_restart_town_exchange owner-floor")
 	assertCloseSafeboxCommandChatFrame(t, attackOut[next], "safebox town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
+	if len(sourceQueued) != 3 {
 		t.Fatalf("expected source peer DEAD plus owner damage-info after safebox town immediate floor, got %d", len(sourceQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "safebox_practice_mob_floor_restart_town_exchange owner-floor peer")

@@ -125,8 +125,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantBe
 	if err != nil {
 		t.Fatalf("unexpected attack error before merchant restart immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and merchant close frames, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and merchant close frames, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "merchant_practice_mob_floor_restart_exchange owner-floor")
 	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[next])); err != nil {
@@ -134,7 +134,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantBe
 	}
 
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 2 {
+	if len(partnerQueued) != 3 {
 		t.Fatalf("expected partner DEAD plus owner damage-info after merchant restart immediate floor, got %d", len(partnerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "merchant_practice_mob_floor_restart_exchange owner-floor peer")

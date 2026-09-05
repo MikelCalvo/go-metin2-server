@@ -139,13 +139,13 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenRefineBefo
 	if err != nil {
 		t.Fatalf("unexpected attack error before refine town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and owner damage-info with no extra refine frames, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, and owner damage-info with no extra refine frames, got %d", len(attackOut))
 	}
 	_ = assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "refine_practice_mob_floor_restart_town_exchange owner-floor")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
+	if len(sourceQueued) != 3 {
 		t.Fatalf("expected source peer DEAD plus owner damage-info after refine town immediate floor, got %d", len(sourceQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "refine_practice_mob_floor_restart_town_exchange owner-floor peer")

@@ -111,14 +111,14 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 	if err != nil {
 		t.Fatalf("unexpected attack error before cube immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and cube close, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
 	assertCubeCommandChatFrame(t, attackOut[next], "cube close", "cube immediate floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 2 {
+	if len(peerQueued) != 3 {
 		t.Fatalf("expected peer DEAD plus owner damage-info after cube immediate floor, got %d", len(peerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")
@@ -451,14 +451,14 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCubeBefore
 	if err != nil {
 		t.Fatalf("unexpected attack error before cube town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and cube close, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
 	assertCubeCommandChatFrame(t, attackOut[next], "cube close", "cube town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
+	if len(sourceQueued) != 3 {
 		t.Fatalf("expected source peer DEAD plus owner damage-info after cube town immediate floor, got %d", len(sourceQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")

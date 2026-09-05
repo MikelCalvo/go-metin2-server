@@ -93,8 +93,8 @@ func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeAntiGiveFeedback(t *te
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
-		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before ITEM_GIVE, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 3 {
+		t.Fatalf("expected peer DEAD plus mob damage-info plus owner damage-info fanout after owner floor before ITEM_GIVE, got %d", len(queued))
 	}
 
 	givePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
@@ -247,8 +247,8 @@ func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeRestartTown(t *testing
 	_ = flushServerFrames(t, townFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
-		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before town ITEM_GIVE, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 3 {
+		t.Fatalf("expected source peer DEAD plus mob damage-info plus owner damage-info fanout after owner floor before town ITEM_GIVE, got %d", len(queued))
 	}
 
 	sourceGivePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
@@ -3629,8 +3629,8 @@ func drivePracticeMobOwnerToBootstrapHPFloor(t *testing.T, flow service.SessionF
 	if err != nil {
 		t.Fatalf("unexpected practice-mob attack before post-floor item guard: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and owner damage-info frames at HP floor, got %d frames", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, mob damage-info, and owner damage-info frames at HP floor, got %d frames", len(attackOut))
 	}
 	_ = assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "player_death_item_guard owner-floor")
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {

@@ -130,15 +130,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
 	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop immediate floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 3 {
-		t.Fatalf("expected peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(peerQueued))
+	if len(peerQueued) != 4 {
+		t.Fatalf("expected peer DEAD, mob damage-info, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(peerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
 	if len(remaining) != 1 {
@@ -487,15 +487,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop guest floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
 	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop guest floor-close host empty sign")
 
 	guestQueued := flushServerFrames(t, guestFlow)
-	if len(guestQueued) != 4 {
-		t.Fatalf("expected guest DEAD, owner damage-info, SHOP END, and empty MYSHOP SHOP_SIGN after host floor, got %d", len(guestQueued))
+	if len(guestQueued) != 5 {
+		t.Fatalf("expected guest DEAD, mob damage-info, owner damage-info, SHOP END, and empty MYSHOP SHOP_SIGN after host floor, got %d", len(guestQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, guestQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
 	if len(remaining) != 2 {
@@ -640,8 +640,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	if err != nil {
 		t.Fatalf("unexpected attack error before dead-guest floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and guest SHOP END, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and guest SHOP END, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, guest.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
 	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[next])); err != nil {
@@ -649,7 +649,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	}
 
 	hostQueued := flushServerFrames(t, hostFlow)
-	if len(hostQueued) != 2 {
+	if len(hostQueued) != 3 {
 		t.Fatalf("expected host to receive guest DEAD plus owner damage-info after dead-guest floor, got %d", len(hostQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, hostQueued, guest.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
@@ -1123,15 +1123,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, mob damage-info, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
 	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 3 {
-		t.Fatalf("expected source peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 4 {
+		t.Fatalf("expected source peer DEAD, mob damage-info, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(sourceQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
 	if len(remaining) != 1 {

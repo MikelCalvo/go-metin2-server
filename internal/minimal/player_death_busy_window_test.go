@@ -106,13 +106,13 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenSafeboxBusyBeforeRestartExchan
 	if err != nil {
 		t.Fatalf("unexpected safebox-death attack: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-change, self dead, clear-target, owner damage-info, and CloseSafebox command chat, got %d", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, mob damage-info, owner damage-info, and CloseSafebox command chat, got %d", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "player_death_busy_window owner-floor")
 	assertCloseSafeboxCommandChatFrame(t, attackOut[next], "safebox-death floor")
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 2 {
+	if len(partnerQueued) != 3 {
 		t.Fatalf("expected partner DEAD plus owner damage-info after safebox-death floor, got %d", len(partnerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "player_death_busy_window owner-floor peer")
@@ -412,12 +412,12 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenRefineBusyBeforeRestartExchang
 	if err != nil {
 		t.Fatalf("unexpected refine-death attack: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and owner damage-info with no extra refine frames, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, mob damage-info, and owner damage-info with no extra refine frames, got %d", len(attackOut))
 	}
 	_ = assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "player_death_busy_window owner-floor")
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 2 {
+	if len(partnerQueued) != 3 {
 		t.Fatalf("expected partner DEAD plus owner damage-info after refine-death floor, got %d", len(partnerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "player_death_busy_window owner-floor peer")

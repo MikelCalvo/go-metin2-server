@@ -107,15 +107,15 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 	if err != nil {
 		t.Fatalf("unexpected exchange restart immediate floor-close attack: %v", err)
 	}
-	if len(attackOut) != 6 {
-		t.Fatalf("expected target refresh, point-change, self dead, clear-target, owner damage-info, and exchange END on owner death, got %d frames", len(attackOut))
+	if len(attackOut) != 7 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, mob damage-info, owner damage-info, and exchange END on owner death, got %d frames", len(attackOut))
 	}
 	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, -1, "exchange_practice_mob_floor_restart_exchange owner-floor")
 	assertExchangeEndFrame(t, attackOut[next], "owner exchange END after immediate death")
 
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 3 {
-		t.Fatalf("expected partner visible DEAD, owner damage-info, plus exchange END after owner death, got %d frames", len(partnerQueued))
+	if len(partnerQueued) != 4 {
+		t.Fatalf("expected partner visible DEAD, mob damage-info, owner damage-info, plus exchange END after owner death, got %d frames", len(partnerQueued))
 	}
 	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "exchange_practice_mob_floor_restart_exchange owner-floor peer")
 	if len(remaining) != 1 {
