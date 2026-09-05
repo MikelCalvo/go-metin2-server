@@ -1928,8 +1928,8 @@ func TestGameSessionFlowPostFloorExchangeStartFailsClosed(t *testing.T) {
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
-		t.Fatalf("expected peer DEAD fanout after owner floor before exchange open, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before exchange open, got %d", len(queued))
 	}
 
 	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
@@ -2071,8 +2071,8 @@ func TestGameSessionFlowPostFloorExchangeStartFailsClosedBeforeRestartTown(t *te
 	}
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source peer DEAD fanout after owner floor before town exchange open, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before town exchange open, got %d", len(queued))
 	}
 
 	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
@@ -2239,8 +2239,8 @@ func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosed(t *t
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
-		t.Fatalf("expected peer DEAD fanout after owner floor before dead-partner exchange, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before dead-partner exchange, got %d", len(queued))
 	}
 
 	out, err := peerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
@@ -2383,8 +2383,8 @@ func TestGameSessionFlowPostFloorExchangeStartAgainstDeadPartnerFailsClosedBefor
 	}
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source peer DEAD fanout after owner floor before dead-partner town exchange, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before dead-partner town exchange, got %d", len(queued))
 	}
 
 	out, err := sourceFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
@@ -2699,8 +2699,8 @@ func TestGameSessionFlowPostFloorMyShopGuestOnClickFailsClosed(t *testing.T) {
 	}
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, guestFlow, guest, targetVID)
-	if queued := flushServerFrames(t, hostFlow); len(queued) != 1 {
-		t.Fatalf("expected host DEAD fanout after guest floor before ON_CLICK deny, got %d", len(queued))
+	if queued := flushServerFrames(t, hostFlow); len(queued) != 2 {
+		t.Fatalf("expected host DEAD plus owner damage-info fanout after guest floor before ON_CLICK deny, got %d", len(queued))
 	}
 
 	denyOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: host.VID})))
@@ -2897,8 +2897,8 @@ func TestGameSessionFlowPostFloorMyShopGuestOnClickFailsClosedBeforeRestartTown(
 	}
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, guestFlow, guest, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source host DEAD fanout after guest floor before town ON_CLICK deny, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source host DEAD plus owner damage-info fanout after guest floor before town ON_CLICK deny, got %d", len(queued))
 	}
 
 	denyOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientOnClick(combatproto.ClientOnClickPacket{VID: sourceHost.VID})))

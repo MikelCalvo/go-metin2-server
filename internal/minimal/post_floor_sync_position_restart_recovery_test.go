@@ -81,8 +81,8 @@ func TestGameSessionFlowPostFloorSyncPositionFailsClosed(t *testing.T) {
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
-		t.Fatalf("expected peer DEAD fanout after owner floor before sync denial, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before sync denial, got %d", len(queued))
 	}
 
 	assertPostFloorSyncPositionDenied(t, ownerFlow, peerFlow, runtime, owner, 1500, 2600, "post-floor")
@@ -191,8 +191,8 @@ func TestGameSessionFlowPostFloorSyncPositionFailsClosedBeforeRestartTown(t *tes
 	_ = flushServerFrames(t, townFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source peer DEAD fanout after owner floor before town sync denial, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before town sync denial, got %d", len(queued))
 	}
 
 	assertPostFloorSyncPositionDenied(t, ownerFlow, sourceFlow, runtime, owner, 1500, 2600, "post-floor town")

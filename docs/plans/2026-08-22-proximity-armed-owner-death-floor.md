@@ -13,11 +13,12 @@ that was armed only by proximity aggro (no `TARGET`, no `ATTACK`).
    - self `PLAYER_POINT_CHANGE(value = 0)`
    - self `DEAD(owner_vid)`
    - self `TARGET(0, 0)` even though no prior selection existed
+   - self `DAMAGE_INFO(owner_vid, abs(final_clamped_delta))`
 3. Persist bootstrap HP `0`; release aggro-lite engagement; stop further delayed
-   beats; omit owner-floor `DAMAGE_INFO`.
-4. Visible live peers receive one queued `DEAD(owner_vid)`; post-floor owner
-   `TARGET` / `ATTACK` fail closed; a third party may freshly `TARGET` the
-   still-live mob after engagement release.
+   beats; emit the owner-floor `DAMAGE_INFO` companion after death/clear.
+4. Visible live peers receive one queued `DEAD(owner_vid)` followed by that same
+   owner `DAMAGE_INFO`; post-floor owner `TARGET` / `ATTACK` fail closed; a third
+   party may freshly `TARGET` the still-live mob after engagement release.
 5. Non-floor proximity walk-away outside aggro radius remains silent (no invented
    `TARGET(0, 0)`).
 

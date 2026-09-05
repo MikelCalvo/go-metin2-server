@@ -1292,8 +1292,8 @@ func TestGameRuntimePlayerDeathFloorRematerializesAcrossDaemonRestart(t *testing
 	if err != nil {
 		t.Fatalf("unexpected attack error before death-floor daemon restart: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss, self dead, and clear-target frames before death-floor daemon restart, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss, self dead, clear-target, and owner damage-info frames before death-floor daemon restart, got %d", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {

@@ -77,8 +77,8 @@ func TestGameSessionFlowPostFloorPeerFacingChatFailsClosed(t *testing.T) {
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
-		t.Fatalf("expected peer DEAD fanout after owner floor before peer chat, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before peer chat, got %d", len(queued))
 	}
 
 	assertPostFloorPeerFacingChatDenied(t, ownerFlow, peerFlow, peer.Name, "post-floor")
@@ -186,8 +186,8 @@ func TestGameSessionFlowPostFloorPeerFacingChatFailsClosedBeforeRestartTown(t *t
 	_ = flushServerFrames(t, townFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source peer DEAD fanout after owner floor before town peer chat, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before town peer chat, got %d", len(queued))
 	}
 
 	assertPostFloorPeerFacingChatDenied(t, ownerFlow, sourceFlow, sourcePeer.Name, "post-floor town")

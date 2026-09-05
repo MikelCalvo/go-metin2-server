@@ -85,8 +85,8 @@ func TestGameSessionFlowPostFloorSafeboxCheckinSucceedsAfterRestartHere(t *testi
 	if err != nil {
 		t.Fatalf("unexpected attack before post-floor safebox check-in success: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-change, self dead, and clear-target frames at HP floor, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and owner damage-info frames at HP floor, got %d frames", len(attackOut))
 	}
 
 	checkinPacket := itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
@@ -214,7 +214,7 @@ func TestGameSessionFlowPostFloorSafeboxCheckinSucceedsAfterRestartTown(t *testi
 	if err != nil {
 		t.Fatalf("unexpected attack before post-floor town safebox check-in success: %v", err)
 	}
-	if len(attackOut) != 4 {
+	if len(attackOut) != 5 {
 		t.Fatalf("expected town floor attack frames at HP floor, got %d", len(attackOut))
 	}
 

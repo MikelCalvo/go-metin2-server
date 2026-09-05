@@ -111,42 +111,19 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 	if err != nil {
 		t.Fatalf("unexpected attack error before cube immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and cube close, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode cube immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode cube immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected cube immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode cube immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected cube immediate floor-close clear target, got %+v", clear)
-	}
-	assertCubeCommandChatFrame(t, attackOut[4], "cube close", "cube immediate floor-close")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
+	assertCubeCommandChatFrame(t, attackOut[next], "cube close", "cube immediate floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 1 {
-		t.Fatalf("expected peer DEAD after cube immediate floor, got %d", len(peerQueued))
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info after cube immediate floor, got %d", len(peerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode peer DEAD after cube immediate floor-close: %v", err)
-	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected peer DEAD for owner VID %d, got %+v", owner.VID, peerDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -301,42 +278,19 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube(t *test
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and cube close, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode cube delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode cube delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected cube delayed floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode cube delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected cube delayed floor-close clear target, got %+v", clear)
-	}
-	assertCubeCommandChatFrame(t, queued[3], "cube close", "cube delayed floor-close")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
+	assertCubeCommandChatFrame(t, queued[next], "cube close", "cube delayed floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 1 {
-		t.Fatalf("expected peer DEAD after cube delayed floor, got %d", len(peerQueued))
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info after cube delayed floor, got %d", len(peerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode peer DEAD after cube delayed floor-close: %v", err)
-	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected peer DEAD for owner VID %d, got %+v", owner.VID, peerDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
@@ -497,42 +451,19 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCubeBefore
 	if err != nil {
 		t.Fatalf("unexpected attack error before cube town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and cube close, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode cube town immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode cube town immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected cube town immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode cube town immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected cube town immediate floor-close clear target, got %+v", clear)
-	}
-	assertCubeCommandChatFrame(t, attackOut[4], "cube close", "cube town immediate floor-close")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
+	assertCubeCommandChatFrame(t, attackOut[next], "cube close", "cube town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 1 {
-		t.Fatalf("expected source peer DEAD after cube town immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info after cube town immediate floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after cube town immediate floor-close: %v", err)
-	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -758,42 +689,19 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCubeBeforeRe
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and cube close, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and cube close, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode cube town delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode cube town delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected cube town delayed floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode cube town delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected cube town delayed floor-close clear target, got %+v", clear)
-	}
-	assertCubeCommandChatFrame(t, queued[3], "cube close", "cube town delayed floor-close")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "cube_practice_mob_floor_close owner-floor")
+	assertCubeCommandChatFrame(t, queued[next], "cube close", "cube town delayed floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 1 {
-		t.Fatalf("expected source peer DEAD after cube town delayed floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info after cube town delayed floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after cube town delayed floor-close: %v", err)
-	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "cube_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{

@@ -857,8 +857,8 @@ func TestGameSessionFlowPracticeMobQuickslotEditsFailClosedAfterImmediateRetalia
 			if err != nil {
 				t.Fatalf("unexpected attack error before post-floor quickslot denial: %v", err)
 			}
-			if len(attackOut) != 4 {
-				t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before post-floor quickslot denial, got %d", len(attackOut))
+			if len(attackOut) != 5 {
+				t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before post-floor quickslot denial, got %d", len(attackOut))
 			}
 			currentTime = currentTime.Add(time.Second)
 			if queued := flushServerFrames(t, flow); len(queued) != 0 {

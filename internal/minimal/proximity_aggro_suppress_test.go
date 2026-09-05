@@ -342,8 +342,8 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 3 {
-		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, target clear, and owner damage-info, got %d frames", len(floorQueued))
 	}
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
 		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)
@@ -485,8 +485,8 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 3 {
-		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, target clear, and owner damage-info, got %d frames", len(floorQueued))
 	}
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, prePhaseSelectEntityID) {
 		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)
@@ -673,8 +673,8 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 3 {
-		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, target clear, and owner damage-info, got %d frames", len(floorQueued))
 	}
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, preReconnectEntityID) {
 		t.Fatalf("expected proximity-armed death floor to release engagement for entity %d", group.EntityID)

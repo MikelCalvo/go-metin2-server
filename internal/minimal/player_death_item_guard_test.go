@@ -93,8 +93,8 @@ func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeAntiGiveFeedback(t *te
 	_ = flushServerFrames(t, peerFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
-		t.Fatalf("expected peer DEAD fanout after owner floor before ITEM_GIVE, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 2 {
+		t.Fatalf("expected peer DEAD plus owner damage-info fanout after owner floor before ITEM_GIVE, got %d", len(queued))
 	}
 
 	givePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
@@ -247,8 +247,8 @@ func TestGameSessionFlowPostFloorItemGiveFailsClosedBeforeRestartTown(t *testing
 	_ = flushServerFrames(t, townFlow)
 
 	drivePracticeMobOwnerToBootstrapHPFloor(t, ownerFlow, owner, targetVID)
-	if queued := flushServerFrames(t, sourceFlow); len(queued) != 1 {
-		t.Fatalf("expected source peer DEAD fanout after owner floor before town ITEM_GIVE, got %d", len(queued))
+	if queued := flushServerFrames(t, sourceFlow); len(queued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info fanout after owner floor before town ITEM_GIVE, got %d", len(queued))
 	}
 
 	sourceGivePacket := itemproto.EncodeClientGive(itemproto.ClientGivePacket{
@@ -3629,30 +3629,10 @@ func drivePracticeMobOwnerToBootstrapHPFloor(t *testing.T, flow service.SessionF
 	if err != nil {
 		t.Fatalf("unexpected practice-mob attack before post-floor item guard: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-change, self dead, and clear-target frames at HP floor, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and owner damage-info frames at HP floor, got %d frames", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode post-floor item guard point-change: %v", err)
-	}
-	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != bootstrapPracticeMobRetaliationPointDelta || pointChange.Value != 0 {
-		t.Fatalf("unexpected post-floor item guard point-change: %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode post-floor item guard self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected self DEAD for owner %#08x, got %#08x", owner.VID, dead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode post-floor item guard target clear: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected post-floor item guard to clear active target, got %+v", clearTarget)
-	}
+	_ = assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "player_death_item_guard owner-floor")
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after post-floor item guard owner death without peers, got %d", len(queued))
 	}

@@ -136,44 +136,21 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 	if err != nil {
 		t.Fatalf("unexpected attack error before exchange town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and exchange END, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and exchange END, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode exchange town immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode exchange town immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected exchange town immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode exchange town immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected exchange town immediate floor-close clear target, got %+v", clear)
-	}
-	assertExchangeEndFrame(t, attackOut[4], "owner exchange END after town immediate death")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "exchange_practice_mob_floor_restart_town_exchange owner-floor")
+	assertExchangeEndFrame(t, attackOut[next], "owner exchange END after town immediate death")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
-		t.Fatalf("expected source peer DEAD plus exchange END after exchange town immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 3 {
+		t.Fatalf("expected source peer DEAD, owner damage-info, plus exchange END after exchange town immediate floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after exchange town immediate floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "exchange_practice_mob_floor_restart_town_exchange owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
-	}
-	assertExchangeEndFrame(t, sourceQueued[1], "source peer exchange END after town immediate death")
+	assertExchangeEndFrame(t, remaining[0], "source peer exchange END after town immediate death")
 
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -416,44 +393,21 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShel
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 4 {
-		t.Fatalf("expected delayed point-change, self dead, clear-target, and exchange END on owner death, got %d frames", len(floorQueued))
+	if len(floorQueued) != 5 {
+		t.Fatalf("expected delayed point-change, self dead, clear-target, owner damage-info, and exchange END on owner death, got %d frames", len(floorQueued))
 	}
-	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange town floor point-change: %v", err)
-	}
-	if floorPoint.VID != owner.VID || floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
-		t.Fatalf("unexpected delayed exchange town floor point-change: %+v", floorPoint)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange town self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected delayed exchange town self dead for owner %#08x, got %#08x", owner.VID, dead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange town target clear: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected delayed exchange town death to clear active combat target, got %+v", clearTarget)
-	}
-	assertExchangeEndFrame(t, floorQueued[3], "owner exchange END after delayed town death")
+	next := assertOwnerFloorDeathSequence(t, floorQueued, 0, owner.VID, -1, "exchange_practice_mob_floor_restart_town_exchange owner-floor")
+	assertExchangeEndFrame(t, floorQueued[next], "owner exchange END after delayed town death")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
-		t.Fatalf("expected source peer DEAD plus exchange END after delayed exchange town floor, got %d frames", len(sourceQueued))
+	if len(sourceQueued) != 3 {
+		t.Fatalf("expected source peer DEAD, owner damage-info, plus exchange END after delayed exchange town floor, got %d frames", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after delayed exchange town floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "exchange_practice_mob_floor_restart_town_exchange owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
-	}
-	assertExchangeEndFrame(t, sourceQueued[1], "source peer exchange END after delayed town death")
+	assertExchangeEndFrame(t, remaining[0], "source peer exchange END after delayed town death")
 
 	postFloorCancel, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{
 		Subheader: itemproto.ExchangeSubheaderCancel,

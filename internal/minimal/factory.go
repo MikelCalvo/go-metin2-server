@@ -5525,11 +5525,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return
 			}
 			frames := [][]byte{encodePlayerPointChangeFrame(previousSelected.VID, retaliation)}
-			var ownerRetaliationDamageInfo []byte
-			if !clearTarget {
-				ownerRetaliationDamageInfo = encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
-				frames = append(frames, ownerRetaliationDamageInfo)
-			}
+			ownerRetaliationDamageInfo := encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
 			var stablePeerFrames [][]byte
 			if clearTarget {
 				clearActiveCombatTarget()
@@ -5538,7 +5534,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 				frames = append(frames, deadRaw)
 				frames = append(frames, combatproto.EncodeServerClearTarget())
-				stablePeerFrames = [][]byte{deadRaw}
+				frames = append(frames, ownerRetaliationDamageInfo)
+				stablePeerFrames = [][]byte{deadRaw, ownerRetaliationDamageInfo}
+			} else {
+				frames = append(frames, ownerRetaliationDamageInfo)
 			}
 			frames, ok = commitSelectedDeathFloorPersistenceFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
@@ -9267,6 +9266,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
+					ownerRetaliationDamageInfo := encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
 					var stablePeerFrames [][]byte
 					if clearTarget {
 						clearActiveCombatTarget()
@@ -9275,7 +9275,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: previousSelected.VID})
 						frames = append(frames, deadRaw)
 						frames = append(frames, combatproto.EncodeServerClearTarget())
-						stablePeerFrames = [][]byte{deadRaw}
+						frames = append(frames, ownerRetaliationDamageInfo)
+						stablePeerFrames = [][]byte{deadRaw, ownerRetaliationDamageInfo}
 					}
 					persistedFrames, ok := commitSelectedDeathFloorPersistenceFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 					if !ok {
@@ -9288,7 +9289,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 					}
 					if !clearTarget {
-						ownerRetaliationDamageInfo := encodePracticeMobOwnerRetaliationDamageInfoFrame(previousSelected.VID, retaliation)
 						persistedFrames = append(persistedFrames, ownerRetaliationDamageInfo)
 						if ownsLiveSharedWorldSession() {
 							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), [][]byte{ownerRetaliationDamageInfo})

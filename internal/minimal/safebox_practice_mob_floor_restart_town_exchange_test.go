@@ -132,42 +132,19 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenSafeboxBef
 	if err != nil {
 		t.Fatalf("unexpected attack error before safebox town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and CloseSafebox, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and CloseSafebox, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode safebox town immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode safebox town immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected safebox town immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode safebox town immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected safebox town immediate floor-close clear target, got %+v", clear)
-	}
-	assertCloseSafeboxCommandChatFrame(t, attackOut[4], "safebox town immediate floor-close")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "safebox_practice_mob_floor_restart_town_exchange owner-floor")
+	assertCloseSafeboxCommandChatFrame(t, attackOut[next], "safebox town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 1 {
-		t.Fatalf("expected source peer DEAD after safebox town immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info after safebox town immediate floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after safebox town immediate floor-close: %v", err)
-	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "safebox_practice_mob_floor_restart_town_exchange owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -395,42 +372,19 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenSafeboxBefor
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and CloseSafebox, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and CloseSafebox, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode safebox town delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode safebox town delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected safebox town delayed floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode safebox town delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected safebox town delayed floor-close clear target, got %+v", clear)
-	}
-	assertCloseSafeboxCommandChatFrame(t, queued[3], "safebox town delayed floor-close")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "safebox_practice_mob_floor_restart_town_exchange owner-floor")
+	assertCloseSafeboxCommandChatFrame(t, queued[next], "safebox town delayed floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 1 {
-		t.Fatalf("expected source peer DEAD after safebox town delayed floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 2 {
+		t.Fatalf("expected source peer DEAD plus owner damage-info after safebox town delayed floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after safebox town delayed floor-close: %v", err)
-	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "safebox_practice_mob_floor_restart_town_exchange owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{

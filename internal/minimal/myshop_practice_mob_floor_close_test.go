@@ -130,44 +130,21 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode myshop immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode myshop immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected myshop immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode myshop immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected myshop immediate floor-close clear target, got %+v", clear)
-	}
-	assertMyShopEmptySignFrame(t, attackOut[4], owner.VID, "myshop immediate floor-close")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop immediate floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 2 {
-		t.Fatalf("expected peer DEAD plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(peerQueued))
+	if len(peerQueued) != 3 {
+		t.Fatalf("expected peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(peerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode peer DEAD after myshop immediate floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected peer DEAD for owner VID %d, got %+v", owner.VID, peerDead)
-	}
-	assertMyShopEmptySignFrame(t, peerQueued[1], owner.VID, "myshop immediate floor-close peer empty sign")
+	assertMyShopEmptySignFrame(t, remaining[0], owner.VID, "myshop immediate floor-close peer empty sign")
 
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -335,44 +312,21 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode myshop delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode myshop delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected myshop delayed floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode myshop delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected myshop delayed floor-close clear target, got %+v", clear)
-	}
-	assertMyShopEmptySignFrame(t, queued[3], owner.VID, "myshop delayed floor-close")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, queued[next], owner.VID, "myshop delayed floor-close")
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 2 {
-		t.Fatalf("expected peer DEAD plus empty MYSHOP SHOP_SIGN around-broadcast after delayed floor, got %d", len(peerQueued))
+	if len(peerQueued) != 3 {
+		t.Fatalf("expected peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after delayed floor, got %d", len(peerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode peer DEAD after myshop delayed floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, peerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected peer DEAD for owner VID %d, got %+v", owner.VID, peerDead)
-	}
-	assertMyShopEmptySignFrame(t, peerQueued[1], owner.VID, "myshop delayed floor-close peer empty sign")
+	assertMyShopEmptySignFrame(t, remaining[0], owner.VID, "myshop delayed floor-close peer empty sign")
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -533,26 +487,24 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop guest floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
-	assertMyShopEmptySignFrame(t, attackOut[4], owner.VID, "myshop guest floor-close host empty sign")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop guest floor-close host empty sign")
 
 	guestQueued := flushServerFrames(t, guestFlow)
-	if len(guestQueued) != 3 {
-		t.Fatalf("expected guest DEAD, SHOP END, and empty MYSHOP SHOP_SIGN after host floor, got %d", len(guestQueued))
+	if len(guestQueued) != 4 {
+		t.Fatalf("expected guest DEAD, owner damage-info, SHOP END, and empty MYSHOP SHOP_SIGN after host floor, got %d", len(guestQueued))
 	}
-	guestDead, err := worldproto.DecodeDead(decodeSingleFrame(t, guestQueued[0]))
-	if err != nil {
-		t.Fatalf("decode guest DEAD after myshop guest floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, guestQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 extra owner-floor peer frames after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if guestDead.VID != owner.VID {
-		t.Fatalf("expected guest DEAD for host VID %d, got %+v", owner.VID, guestDead)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, guestQueued[1])); err != nil {
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, remaining[0])); err != nil {
 		t.Fatalf("decode guest SHOP END after myshop guest floor-close: %v", err)
 	}
-	assertMyShopEmptySignFrame(t, guestQueued[2], owner.VID, "myshop guest floor-close guest empty sign")
+	assertMyShopEmptySignFrame(t, remaining[1], owner.VID, "myshop guest floor-close guest empty sign")
 
 	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
 	if err != nil {
@@ -688,44 +640,21 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 	if err != nil {
 		t.Fatalf("unexpected attack error before dead-guest floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and guest SHOP END, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and guest SHOP END, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode dead-guest floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop guest HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode dead-guest floor-close self dead: %v", err)
-	}
-	if dead.VID != guest.VID {
-		t.Fatalf("expected dead-guest floor-close DEAD for guest VID %d, got %+v", guest.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode dead-guest floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected dead-guest floor-close clear target, got %+v", clear)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[4])); err != nil {
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, guest.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[next])); err != nil {
 		t.Fatalf("decode dead-guest floor-close guest SHOP END: %v", err)
 	}
 
 	hostQueued := flushServerFrames(t, hostFlow)
-	if len(hostQueued) != 1 {
-		t.Fatalf("expected host to receive only guest DEAD after dead-guest floor, got %d", len(hostQueued))
+	if len(hostQueued) != 2 {
+		t.Fatalf("expected host to receive guest DEAD plus owner damage-info after dead-guest floor, got %d", len(hostQueued))
 	}
-	hostDead, err := worldproto.DecodeDead(decodeSingleFrame(t, hostQueued[0]))
-	if err != nil {
-		t.Fatalf("decode host DEAD after dead-guest floor-close: %v", err)
-	}
-	if hostDead.VID != guest.VID {
-		t.Fatalf("expected host DEAD for guest VID %d, got %+v", guest.VID, hostDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, hostQueued, guest.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
@@ -869,47 +798,24 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode myshop guest delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop host HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode myshop guest delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected myshop guest delayed floor-close DEAD for host VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode myshop guest delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected myshop guest delayed floor-close clear target, got %+v", clear)
-	}
-	assertMyShopEmptySignFrame(t, queued[3], owner.VID, "myshop guest delayed floor-close host empty sign")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, queued[next], owner.VID, "myshop guest delayed floor-close host empty sign")
 
 	guestQueued := flushServerFrames(t, guestFlow)
-	if len(guestQueued) != 3 {
-		t.Fatalf("expected guest DEAD, SHOP END, and empty MYSHOP SHOP_SIGN after host delayed floor, got %d", len(guestQueued))
+	if len(guestQueued) != 4 {
+		t.Fatalf("expected guest DEAD, owner damage-info, SHOP END, and empty MYSHOP SHOP_SIGN after host delayed floor, got %d", len(guestQueued))
 	}
-	guestDead, err := worldproto.DecodeDead(decodeSingleFrame(t, guestQueued[0]))
-	if err != nil {
-		t.Fatalf("decode guest DEAD after myshop guest delayed floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, guestQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 2 {
+		t.Fatalf("expected 2 extra owner-floor peer frames after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if guestDead.VID != owner.VID {
-		t.Fatalf("expected guest DEAD for host VID %d, got %+v", owner.VID, guestDead)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, guestQueued[1])); err != nil {
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, remaining[0])); err != nil {
 		t.Fatalf("decode guest SHOP END after myshop guest delayed floor-close: %v", err)
 	}
-	assertMyShopEmptySignFrame(t, guestQueued[2], owner.VID, "myshop guest delayed floor-close guest empty sign")
+	assertMyShopEmptySignFrame(t, remaining[1], owner.VID, "myshop guest delayed floor-close guest empty sign")
 
 	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
 	if err != nil {
@@ -1054,44 +960,21 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, guestFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and guest SHOP END, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and guest SHOP END, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode dead-guest delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop guest HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode dead-guest delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != guest.VID {
-		t.Fatalf("expected dead-guest delayed floor-close DEAD for guest VID %d, got %+v", guest.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode dead-guest delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected dead-guest delayed floor-close clear target, got %+v", clear)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[3])); err != nil {
+	next := assertOwnerFloorDeathSequence(t, queued, 0, guest.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[next])); err != nil {
 		t.Fatalf("decode dead-guest delayed floor-close guest SHOP END: %v", err)
 	}
 
 	hostQueued := flushServerFrames(t, hostFlow)
-	if len(hostQueued) != 1 {
-		t.Fatalf("expected host to receive only guest DEAD after dead-guest delayed floor, got %d", len(hostQueued))
+	if len(hostQueued) != 2 {
+		t.Fatalf("expected host to receive guest DEAD plus owner damage-info after dead-guest delayed floor, got %d", len(hostQueued))
 	}
-	hostDead, err := worldproto.DecodeDead(decodeSingleFrame(t, hostQueued[0]))
-	if err != nil {
-		t.Fatalf("decode host DEAD after dead-guest delayed floor-close: %v", err)
-	}
-	if hostDead.VID != guest.VID {
-		t.Fatalf("expected host DEAD for guest VID %d, got %+v", guest.VID, hostDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, hostQueued, guest.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	secondEndOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
@@ -1240,44 +1123,21 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 	if err != nil {
 		t.Fatalf("unexpected attack error before myshop town immediate floor-close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode myshop town immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode myshop town immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected myshop town immediate floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode myshop town immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected myshop town immediate floor-close clear target, got %+v", clear)
-	}
-	assertMyShopEmptySignFrame(t, attackOut[4], owner.VID, "myshop town immediate floor-close")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, attackOut[next], owner.VID, "myshop town immediate floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
-		t.Fatalf("expected source peer DEAD plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 3 {
+		t.Fatalf("expected source peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after immediate floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after myshop town immediate floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
-	}
-	assertMyShopEmptySignFrame(t, sourceQueued[1], owner.VID, "myshop town immediate floor-close source empty sign")
+	assertMyShopEmptySignFrame(t, remaining[0], owner.VID, "myshop town immediate floor-close source empty sign")
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -1512,44 +1372,21 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and empty MYSHOP SHOP_SIGN, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode myshop town delayed floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode myshop town delayed floor-close self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected myshop town delayed floor-close DEAD for owner VID %d, got %+v", owner.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode myshop town delayed floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected myshop town delayed floor-close clear target, got %+v", clear)
-	}
-	assertMyShopEmptySignFrame(t, queued[3], owner.VID, "myshop town delayed floor-close")
+	next := assertOwnerFloorDeathSequence(t, queued, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "myshop_practice_mob_floor_close owner-floor")
+	assertMyShopEmptySignFrame(t, queued[next], owner.VID, "myshop town delayed floor-close")
 
 	sourceQueued := flushServerFrames(t, sourceFlow)
-	if len(sourceQueued) != 2 {
-		t.Fatalf("expected source peer DEAD plus empty MYSHOP SHOP_SIGN around-broadcast after delayed floor, got %d", len(sourceQueued))
+	if len(sourceQueued) != 3 {
+		t.Fatalf("expected source peer DEAD, owner damage-info, plus empty MYSHOP SHOP_SIGN around-broadcast after delayed floor, got %d", len(sourceQueued))
 	}
-	sourceDead, err := worldproto.DecodeDead(decodeSingleFrame(t, sourceQueued[0]))
-	if err != nil {
-		t.Fatalf("decode source peer DEAD after myshop town delayed floor-close: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, sourceQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "myshop_practice_mob_floor_close owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 extra owner-floor peer frame(s) after DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if sourceDead.VID != owner.VID {
-		t.Fatalf("expected source peer DEAD for owner VID %d, got %+v", owner.VID, sourceDead)
-	}
-	assertMyShopEmptySignFrame(t, sourceQueued[1], owner.VID, "myshop town delayed floor-close source empty sign")
+	assertMyShopEmptySignFrame(t, remaining[0], owner.VID, "myshop town delayed floor-close source empty sign")
 
 	alreadyClosedOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,

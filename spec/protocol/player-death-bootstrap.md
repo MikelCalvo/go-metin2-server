@@ -71,9 +71,9 @@ This contract does **not** yet claim:
 ## Current implementation status
 
 The repository now implements this narrow bootstrap contract:
-- if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear
-- if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion
-- when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` using the existing shared-world visibility rules
+- if an immediate retaliation tick reaches the engaged owner's live HP floor at `0`, the accepted attack frames now append one self-only `GC DEAD(owner_vid)` before the existing self-only `GC TARGET(0, 0)` clear, then one self-only `GC DAMAGE_INFO(owner_vid, abs(final_clamped_delta))`
+- if a delayed server-origin retaliation beat reaches that same `0`-HP floor, the queued pending server frames now append the same self-only `GC DEAD(owner_vid)` before the same self-only clear-target companion, then the same owner `DAMAGE_INFO`
+- when either of those retaliation beats reaches that same `0`-HP floor, currently visible peer sessions now also receive one queued `GC DEAD(owner_vid)` followed by that same owner `DAMAGE_INFO` using the existing shared-world visibility rules
 - that same queued peer-visible death fanout now skips recipients whose own live bootstrap HP is already at the current `0`-HP floor, so a still-connected dead owner does not keep receiving later peer-death `GC DEAD(...)` frames from other sessions
 - those immediate and delayed retaliation point-loss beats stay runtime-only for the selected live session until the bootstrap `0`-HP floor: partial live HP loss does **not** write the persisted account snapshot
 - when either immediate or delayed practice-mob retaliation reaches the bootstrap `0`-HP floor, the runtime now persists that selected-character bootstrap HP point as `0` with the owned death/clear frames, so a later reconnect, `/phase_select` re-entry, or fresh process restart that rebuilds `gameRuntime` from the same account FileStore paths rematerializes the dead snapshot (self `PLAYER_POINT_CHANGE` at `0` plus self `GC DEAD(owner_vid)`) even when a post-restart login ticket still carries the pre-death live HP value
@@ -194,12 +194,13 @@ When an immediate or delayed retaliation beat reaches the owner's live HP floor 
 1. self-only `GC PLAYER_POINT_CHANGE` carrying the final `value = 0`
 2. self-only `GC DEAD(owner_vid)`
 3. self-only `GC TARGET(0, 0)`
+4. self-only `GC DAMAGE_INFO(owner_vid, flag = 0, damage = abs(final_clamped_delta))`
 
 That ordering applies in both current bootstrap owners:
 - immediate retaliation piggybacked on an accepted live owner `ATTACK`
 - delayed retaliation flushed later through the pending server-frame path
 
-The delayed path includes proximity-armed beats that never established a selected combat target and never accepted an owner `ATTACK`. Walking into aggro radius alone may arm the delayed cadence; when that beat reaches the `0`-HP floor, the same `PLAYER_POINT_CHANGE(value=0)` → `GC DEAD(owner_vid)` → `GC TARGET(0, 0)` sequence still fires. The self `TARGET(0, 0)` companion remains intentional even when no prior selection existed: it is the owned floor clear surface, not an invented mid-life selection. By contrast, proximity-only walk-away release outside aggro radius (before the floor) stays silent and does **not** invent `TARGET(0, 0)`.
+The delayed path includes proximity-armed beats that never established a selected combat target and never accepted an owner `ATTACK`. Walking into aggro radius alone may arm the delayed cadence; when that beat reaches the `0`-HP floor, the same `PLAYER_POINT_CHANGE(value=0)` → `GC DEAD(owner_vid)` → `GC TARGET(0, 0)` → owner `DAMAGE_INFO` sequence still fires. The self `TARGET(0, 0)` companion remains intentional even when no prior selection existed: it is the owned floor clear surface, not an invented mid-life selection. By contrast, proximity-only walk-away release outside aggro radius (before the floor) stays silent and does **not** invent `TARGET(0, 0)`.
 
 The target-clear companion remains important even after `GC DEAD(owner_vid)` because the current slice still wants any stale engaged practice-mob target removed deterministically on the same edge, and proximity-armed floors reuse that same clear surface so clients never keep a half-dead engagement state.
 
@@ -428,10 +429,10 @@ Why this is the current owned boundary:
 ## First owned peer-visible player death fanout
 
 The current bootstrap player-death contract now also owns one narrow visible-peer death rule for that same selected live owner session:
-- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, currently visible peer sessions receive one queued `GC DEAD(owner_vid)`
+- once immediate or delayed practice-mob retaliation has already driven the owner's live bootstrap HP to `0`, currently visible peer sessions receive one queued `GC DEAD(owner_vid)` followed by one queued owner `GC DAMAGE_INFO(owner_vid, abs(final_clamped_delta))`
 - that fanout is visibility-gated through the existing shared-world rules: only sessions that can currently see the owner receive it
 - recipients whose own live bootstrap HP is already at that same `0`-HP floor are skipped from that queued fanout even if they still remain connected and visible in shared world
-- the owner-side transition stays unchanged and still uses the existing self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear ordering
+- the owner-side transition stays unchanged and still uses the existing self-only `GC DEAD(owner_vid)` plus self-only `GC TARGET(0, 0)` clear ordering, then the owner `DAMAGE_INFO` companion
 - this slice does **not** yet add a peer-facing target clear companion because the current owned combat-target model still belongs to bootstrap non-player targets, not player-vs-player selection
 - this slice also does **not** yet delete, respawn, or otherwise rebuild the dead player actor for peers
 

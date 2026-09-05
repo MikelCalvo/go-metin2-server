@@ -2543,9 +2543,9 @@ func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWit
 func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithoutHitOrTarget(t *testing.T) {
 	// Proximity-armed delayed retaliation must reach the owned 0-HP floor without ever
 	// inventing selected-target ownership or a hit. Floor choreography still emits the
-	// owned point-change -> DEAD -> TARGET(0,0) sequence (TARGET clear is intentional even
-	// when no prior selection existed), persists HP 0, releases engagement, and fans out
-	// peer DEAD while skipping further delayed beats / owner DAMAGE_INFO.
+	// owned point-change -> DEAD -> TARGET(0,0) -> DAMAGE_INFO sequence (TARGET clear is
+	// intentional even when no prior selection existed), persists HP 0, releases engagement,
+	// and fans out peer DEAD plus owner DAMAGE_INFO while skipping further delayed beats.
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroFloorOwner", 0x01030198, 0x02040198, 1850, 2800, 0, 101, 201)
@@ -2631,30 +2631,10 @@ func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithou
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 3 {
-		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected proximity-armed owner-floor retaliation to emit point-change, player dead, target clear, and owner damage-info, got %d frames", len(floorQueued))
 	}
-	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
-	if err != nil {
-		t.Fatalf("decode proximity-armed owner-floor point-change: %v", err)
-	}
-	if floorPoint.VID != owner.VID || floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
-		t.Fatalf("expected proximity-armed delayed retaliation to reach owner HP floor 0, got %+v", floorPoint)
-	}
-	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
-	if err != nil {
-		t.Fatalf("decode proximity-armed owner-floor dead frame: %v", err)
-	}
-	if ownerDead.VID != owner.VID {
-		t.Fatalf("expected proximity-armed owner-floor dead for %#08x, got %#08x", owner.VID, ownerDead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
-	if err != nil {
-		t.Fatalf("decode proximity-armed owner-floor target clear: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected proximity-armed owner-floor TARGET(0,0) clear even without prior selection, got %+v", clearTarget)
-	}
+	_ = assertOwnerFloorDeathSequence(t, floorQueued, 0, owner.VID, -1, "shared_world owner-floor")
 	if snapshot, ok := runtime.CombatTargetSnapshot("AggroFloorOwner"); ok {
 		t.Fatalf("expected proximity-armed death floor to keep inventing no selected target after clear, got %+v", snapshot)
 	}
@@ -2663,15 +2643,12 @@ func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithou
 	}
 
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected visible watcher to receive 1 queued owner DEAD after proximity-armed floor, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected visible watcher to receive 2 queued owner DEAD + damage-info after proximity-armed floor, got %d", len(watcherQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode proximity-armed peer owner DEAD: %v", err)
-	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected proximity-armed peer DEAD for owner %#08x, got %#08x", owner.VID, peerDead.VID)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	persisted, err := accounts.Load("aggro-floor-owner")
@@ -3900,27 +3877,7 @@ func TestGameRuntimeOwnerDeathFloorArmsHomewardAfterChaseDisplaceWithinRadius(t 
 	if chaseMove.VID != targetVID || chaseMove.X != 1800 || chaseMove.Y != 2800 {
 		t.Fatalf("expected chase displace to +100 toward owner before death floor, got %+v", chaseMove)
 	}
-	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, chaseFloorQueued[1]))
-	if err != nil {
-		t.Fatalf("decode owner-floor point-change after chase displace: %v", err)
-	}
-	if floorPoint.Type != bootstrapPlayerPointType || floorPoint.Value != 0 {
-		t.Fatalf("expected delayed owner-floor retaliation to reach HP 0 after chase displace, got %+v", floorPoint)
-	}
-	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, chaseFloorQueued[2]))
-	if err != nil {
-		t.Fatalf("decode owner-floor dead frame after chase displace: %v", err)
-	}
-	if ownerDead.VID != owner.VID {
-		t.Fatalf("expected owner-floor dead for %#08x after chase displace, got %#08x", owner.VID, ownerDead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, chaseFloorQueued[3]))
-	if err != nil {
-		t.Fatalf("decode owner-floor target clear after chase displace: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected owner-floor target clear after chase displace, got %+v", clearTarget)
-	}
+	_ = assertOwnerFloorDeathSequence(t, chaseFloorQueued, 1, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "shared_world owner-floor")
 	displaced, ok := runtime.SpawnGroup(group.EntityID)
 	if !ok || displaced.X != 1800 || displaced.Y != 2800 || displaced.SpawnLeash == nil || displaced.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
 		t.Fatalf("expected chase-displaced within_radius actor after death-floor release, ok=%v snapshot=%+v", ok, displaced)
@@ -12725,30 +12682,10 @@ func TestNewGameSessionFactoryPracticeMobServerOriginRetaliationTicksUntilOwnerF
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, flow)
-	if len(floorQueued) != 3 {
-		t.Fatalf("expected owner-floor retaliation to emit point-change, player dead, and target clear, got %d frames", len(floorQueued))
+	if len(floorQueued) != 4 {
+		t.Fatalf("expected owner-floor retaliation to emit point-change, player dead, target clear, and owner damage-info, got %d frames", len(floorQueued))
 	}
-	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
-	if err != nil {
-		t.Fatalf("decode owner-floor server-origin retaliation point-change: %v", err)
-	}
-	if floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
-		t.Fatalf("expected owner-floor server-origin retaliation to lower owner HP to 0, got %+v", floorPoint)
-	}
-	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
-	if err != nil {
-		t.Fatalf("decode owner-floor dead frame: %v", err)
-	}
-	if ownerDead.VID != owner.VID {
-		t.Fatalf("expected owner-floor dead frame for owner %#08x, got %#08x", owner.VID, ownerDead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
-	if err != nil {
-		t.Fatalf("decode owner-floor target clear frame: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected owner-floor target clear, got %+v", clearTarget)
-	}
+	_ = assertOwnerFloorDeathSequence(t, floorQueued, 0, owner.VID, -1, "shared_world owner-floor")
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if staleQueued := flushServerFrames(t, flow); len(staleQueued) != 0 {
@@ -15581,8 +15518,8 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner server-notice skip after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner server-notice skip after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -15592,15 +15529,12 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner server-notice skip after delayed retaliation, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner server-notice skip, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner server-notice skip, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner server-notice skip after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner server-notice skip after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	delivered := runtime.BroadcastNotice("server maintenance after floor")
@@ -15773,16 +15707,16 @@ func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRet
 
 	currentTime = currentTime.Add(time.Second)
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP peer-appearance recipient skip test, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP peer-appearance recipient skip test, got %d frames", len(ownerQueued))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to watcher before zero-HP peer-appearance recipient skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames to watcher before zero-HP peer-appearance recipient skip test, got %d", len(watcherQueued))
 	}
 	observerQueued := flushServerFrames(t, observerFlow)
-	if len(observerQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to observer before zero-HP peer-appearance recipient skip test, got %d", len(observerQueued))
+	if len(observerQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames to observer before zero-HP peer-appearance recipient skip test, got %d", len(observerQueued))
 	}
 
 	equipOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
@@ -15878,19 +15812,16 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 
 	currentTime = currentTime.Add(time.Second)
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherQueued))
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP peer-DEAD recipient skip test, got %d frames", len(watcherQueued))
 	}
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 1 {
-		t.Fatalf("expected watcher death to queue 1 visible-peer DEAD frame before zero-HP peer-DEAD recipient skip test, got %d", len(ownerQueued))
+	if len(ownerQueued) != 2 {
+		t.Fatalf("expected watcher death to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP peer-DEAD recipient skip test, got %d", len(ownerQueued))
 	}
-	deadWatcher, err := worldproto.DecodeDead(decodeSingleFrame(t, ownerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode watcher visible-peer dead frame before zero-HP peer-DEAD recipient skip test: %v", err)
-	}
-	if deadWatcher.VID != watcher.VID {
-		t.Fatalf("expected watcher death to queue DEAD(watcher_vid) before zero-HP peer-DEAD recipient skip test, got %+v", deadWatcher)
+	remaining := assertOwnerFloorPeerDeadFanout(t, ownerQueued, watcher.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	ownerSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -15913,8 +15844,8 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 
 	currentTime = currentTime.Add(time.Second)
 	ownerQueued = flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames for owner before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames for owner before zero-HP peer-DEAD recipient skip test, got %d frames", len(ownerQueued))
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected zero-HP watcher to receive no queued visible-peer DEAD frame when owner dies later, got %d", len(queued))
@@ -15984,19 +15915,16 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before zero-HP owner visible mob-death recipient skip test: %v", err)
 	}
-	if len(ownerAttackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner visible mob-death recipient skip test, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner visible mob-death recipient skip test, got %d frames", len(ownerAttackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame before zero-HP owner visible mob-death recipient skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner visible mob-death recipient skip test, got %d", len(watcherQueued))
 	}
-	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued owner death before zero-HP owner visible mob-death recipient skip test: %v", err)
-	}
-	if ownerDead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner visible mob-death recipient skip test, got %+v", ownerDead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -16132,16 +16060,16 @@ func TestGameSessionFlowPracticeMobDamageInfoFanoutSkipsZeroHPOwnerRecipientAfte
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before zero-HP damage-info recipient skip test: %v", err)
 	}
-	if len(ownerAttackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP damage-info recipient skip test, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP damage-info recipient skip test, got %d frames", len(ownerAttackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to watcher before zero-HP damage-info recipient skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames to watcher before zero-HP damage-info recipient skip test, got %d", len(watcherQueued))
 	}
 	observerQueued := flushServerFrames(t, observerFlow)
-	if len(observerQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame to observer before zero-HP damage-info recipient skip test, got %d", len(observerQueued))
+	if len(observerQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames to observer before zero-HP damage-info recipient skip test, got %d", len(observerQueued))
 	}
 	ownerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
 	if err != nil {
@@ -16295,12 +16223,12 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before zero-HP owner respawn recipient skip test: %v", err)
 	}
-	if len(ownerAttackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner respawn recipient skip test, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner respawn recipient skip test, got %d frames", len(ownerAttackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected owner death to queue 1 visible-peer DEAD frame before zero-HP owner respawn recipient skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected owner death to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner respawn recipient skip test, got %d", len(watcherQueued))
 	}
 
 	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -16454,8 +16382,8 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 
 	advance(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP static-actor visibility recipient test, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP static-actor visibility recipient test, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -16465,15 +16393,12 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP static-actor visibility recipient test, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP static-actor visibility recipient test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP static-actor visibility recipient test, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP static-actor visibility recipient test: %v", err)
-	}
-	if dead.VID != ownerVID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP static-actor visibility recipient test, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, ownerVID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 }
 
@@ -18338,8 +18263,8 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationRespawn(t 
 	}
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	ownerDeathFrames := flushServerFrames(t, ownerFlow)
-	if len(ownerDeathFrames) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, owner dead, and clear-target before restart-town due-respawn preflight, got %d frames", len(ownerDeathFrames))
+	if len(ownerDeathFrames) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, owner dead, clear-target, and owner damage-info before restart-town due-respawn preflight, got %d frames", len(ownerDeathFrames))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, ownerDeathFrames[0]))
 	if err != nil {
@@ -19686,8 +19611,8 @@ func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayed
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner peer-join skip test, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner peer-join skip test, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -19697,15 +19622,12 @@ func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayed
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner peer-join skip test, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner peer-join skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner peer-join skip test, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner peer-join skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner peer-join skip test, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	newcomerFlow, newcomerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-three", 0x33333333)
@@ -19801,8 +19723,8 @@ func TestGameSessionFlowPracticeMobFreshPeerBootstrapAppendsDeadForAlreadyDeadVi
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before fresh-peer dead bootstrap test, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before fresh-peer dead bootstrap test, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -19812,8 +19734,8 @@ func TestGameSessionFlowPracticeMobFreshPeerBootstrapAppendsDeadForAlreadyDeadVi
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before fresh-peer dead bootstrap test, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before fresh-peer dead bootstrap test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before fresh-peer dead bootstrap test, got %d", len(watcherQueued))
 	}
 
 	newcomerFlow, newcomerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-three", 0x33333333)
@@ -19912,8 +19834,8 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner move-into-range skip test, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner move-into-range skip test, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -20021,8 +19943,8 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner sync-into-range skip test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner sync-into-range skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before zero-HP owner sync-into-range skip test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20139,8 +20061,8 @@ func TestGameSessionFlowPracticeMobPeerMoveWithinVisibleSetSkipsZeroHPOwnerRecip
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner stable-move skip test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner stable-move skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before zero-HP owner stable-move skip test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20150,26 +20072,20 @@ func TestGameSessionFlowPracticeMobPeerMoveWithinVisibleSetSkipsZeroHPOwnerRecip
 		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner stable-move skip test, got %+v", pointChange)
 	}
 	moverQueued := flushServerFrames(t, moverFlow)
-	if len(moverQueued) != 1 {
-		t.Fatalf("expected mover to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-move skip test, got %d", len(moverQueued))
+	if len(moverQueued) != 2 {
+		t.Fatalf("expected mover to receive 2 queued DEAD + owner damage-info frames before zero-HP owner stable-move skip test, got %d", len(moverQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, moverQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for mover before zero-HP owner stable-move skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected mover queued death fanout to target owner VID before zero-HP owner stable-move skip test, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, moverQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected watcher to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-move skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected watcher to receive 2 queued DEAD + owner damage-info frames before zero-HP owner stable-move skip test, got %d", len(watcherQueued))
 	}
-	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for watcher before zero-HP owner stable-move skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected watcher queued death fanout to target owner VID before zero-HP owner stable-move skip test, got %+v", dead)
+	remaining = assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	moveOut, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1250, Y: 2250, Time: 0x11121314})))
@@ -20270,8 +20186,8 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionWithinVisibleSetSkipsZeroHPOw
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner stable-sync skip test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner stable-sync skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before zero-HP owner stable-sync skip test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20281,26 +20197,20 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionWithinVisibleSetSkipsZeroHPOw
 		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner stable-sync skip test, got %+v", pointChange)
 	}
 	syncerQueued := flushServerFrames(t, syncerFlow)
-	if len(syncerQueued) != 1 {
-		t.Fatalf("expected syncer to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-sync skip test, got %d", len(syncerQueued))
+	if len(syncerQueued) != 2 {
+		t.Fatalf("expected syncer to receive 2 queued DEAD + owner damage-info frames before zero-HP owner stable-sync skip test, got %d", len(syncerQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, syncerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for syncer before zero-HP owner stable-sync skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected syncer queued death fanout to target owner VID before zero-HP owner stable-sync skip test, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, syncerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected watcher to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner stable-sync skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected watcher to receive 2 queued DEAD + owner damage-info frames before zero-HP owner stable-sync skip test, got %d", len(watcherQueued))
 	}
-	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for watcher before zero-HP owner stable-sync skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected watcher queued death fanout to target owner VID before zero-HP owner stable-sync skip test, got %+v", dead)
+	remaining = assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	syncOut, err := syncerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
@@ -20404,8 +20314,8 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner later peer-death skip test: %v", err)
 	}
-	if len(ownerAttackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner later peer-death skip test, got %d frames", len(ownerAttackOut))
+	if len(ownerAttackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before zero-HP owner later peer-death skip test, got %d frames", len(ownerAttackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, ownerAttackOut[1]))
 	if err != nil {
@@ -20415,26 +20325,20 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 		t.Fatalf("expected immediate retaliation to reach owner HP floor before zero-HP owner later peer-death skip test, got %+v", pointChange)
 	}
 	victimQueued := flushServerFrames(t, victimFlow)
-	if len(victimQueued) != 1 {
-		t.Fatalf("expected victim to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner later peer-death skip test, got %d", len(victimQueued))
+	if len(victimQueued) != 2 {
+		t.Fatalf("expected victim to receive 2 queued DEAD + owner damage-info frames before zero-HP owner later peer-death skip test, got %d", len(victimQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, victimQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for victim before zero-HP owner later peer-death skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected victim queued death fanout to target owner VID before zero-HP owner later peer-death skip test, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, victimQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected watcher to receive exactly 1 queued DEAD(owner_vid) frame before zero-HP owner later peer-death skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected watcher to receive 2 queued DEAD + owner damage-info frames before zero-HP owner later peer-death skip test, got %d", len(watcherQueued))
 	}
-	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(owner_vid) for watcher before zero-HP owner later peer-death skip test: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected watcher queued death fanout to target owner VID before zero-HP owner later peer-death skip test, got %+v", dead)
+	remaining = assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected zero-HP owner to have no queued frames immediately after its own retaliation-driven death before later peer-death skip test, got %d", len(queued))
@@ -20462,8 +20366,8 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 	if err != nil {
 		t.Fatalf("unexpected victim attack error before later peer-death skip test: %v", err)
 	}
-	if len(victimAttackOut) != 4 {
-		t.Fatalf("expected victim attack to emit immediate target-refresh, point-loss retaliation, self dead, and clear-target before later peer-death skip test, got %d frames", len(victimAttackOut))
+	if len(victimAttackOut) != 5 {
+		t.Fatalf("expected victim attack to emit immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before later peer-death skip test, got %d frames", len(victimAttackOut))
 	}
 	pointChange, err = worldproto.DecodePlayerPointChange(decodeSingleFrame(t, victimAttackOut[1]))
 	if err != nil {
@@ -20476,15 +20380,12 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 		t.Fatalf("expected already-dead owner to receive no queued DEAD(victim_vid) frames when a later visible peer dies, got %d", len(queued))
 	}
 	watcherQueued = flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected live watcher to receive exactly 1 queued DEAD(victim_vid) frame before later peer-death skip test, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected live watcher to receive 2 queued DEAD + owner damage-info frames before later peer-death skip test, got %d", len(watcherQueued))
 	}
-	dead, err = worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode queued DEAD(victim_vid) for watcher before later peer-death skip test: %v", err)
-	}
-	if dead.VID != victim.VID {
-		t.Fatalf("expected watcher queued death fanout to target victim VID before later peer-death skip test, got %+v", dead)
+	remaining = assertOwnerFloorPeerDeadFanout(t, watcherQueued, victim.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 }
 
@@ -20563,8 +20464,8 @@ func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRec
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner transfer-visibility skip test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before zero-HP owner transfer-visibility skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before zero-HP owner transfer-visibility skip test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20679,8 +20580,8 @@ func TestGameSessionFlowDeadOwnerTransferIntoVisibilityReplaysDeathStateForLiveP
 	if err != nil {
 		t.Fatalf("unexpected attack error before dead-owner transfer replay test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before dead-owner transfer replay test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before dead-owner transfer replay test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20793,8 +20694,8 @@ func TestGameSessionFlowDeadOwnerTransferSkipsDestinationPeerVisibilityForSelf(t
 	if err != nil {
 		t.Fatalf("unexpected attack error before dead-owner transfer self-replay test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before dead-owner transfer self-replay test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before dead-owner transfer self-replay test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -20908,8 +20809,8 @@ func TestGameSessionFlowDeadOwnerTransferSkipsDestinationStaticActorVisibilityFo
 	if err != nil {
 		t.Fatalf("unexpected attack error before dead-owner transfer static-actor skip test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, and clear-target before dead-owner transfer static-actor skip test, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, point-loss retaliation, self dead, clear-target, and owner damage-info before dead-owner transfer static-actor skip test, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -38189,44 +38090,21 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 	if err != nil {
 		t.Fatalf("unexpected exchange death attack: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-change, self dead, clear-target, and exchange END on owner death, got %d frames", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-change, self dead, clear-target, owner damage-info, and exchange END on owner death, got %d frames", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode exchange death point-change: %v", err)
-	}
-	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != -1 || pointChange.Value != 0 {
-		t.Fatalf("unexpected exchange death point-change: %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode exchange death self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected exchange death self dead for owner %#08x, got %#08x", owner.VID, dead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode exchange death target clear: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected exchange death to clear active combat target, got %+v", clearTarget)
-	}
-	assertExchangeEndFrame(t, attackOut[4], "owner exchange END after death")
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, owner.VID, -1, "shared_world owner-floor")
+	assertExchangeEndFrame(t, attackOut[next], "owner exchange END after death")
 
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 2 {
-		t.Fatalf("expected partner visible DEAD plus exchange END after owner death, got %d frames", len(partnerQueued))
+	if len(partnerQueued) != 3 {
+		t.Fatalf("expected partner visible DEAD, owner damage-info, plus exchange END after owner death, got %d frames", len(partnerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, partnerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode partner queued owner dead before exchange END: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected exchange END after owner-floor peer DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected partner queued owner dead for %#08x, got %#08x", owner.VID, peerDead.VID)
-	}
-	assertExchangeEndFrame(t, partnerQueued[1], "partner exchange END after owner death")
+	assertExchangeEndFrame(t, remaining[0], "partner exchange END after owner death")
 
 	postFloorCancel, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
@@ -38336,44 +38214,21 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShel
 
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
-	if len(floorQueued) != 4 {
-		t.Fatalf("expected delayed point-change, self dead, clear-target, and exchange END on owner death, got %d frames", len(floorQueued))
+	if len(floorQueued) != 5 {
+		t.Fatalf("expected delayed point-change, self dead, clear-target, owner damage-info, and exchange END on owner death, got %d frames", len(floorQueued))
 	}
-	floorPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, floorQueued[0]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange floor point-change: %v", err)
-	}
-	if floorPoint.VID != owner.VID || floorPoint.Type != bootstrapPlayerPointType || floorPoint.Amount != -1 || floorPoint.Value != 0 {
-		t.Fatalf("unexpected delayed exchange floor point-change: %+v", floorPoint)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, floorQueued[1]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange self dead: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected delayed exchange self dead for owner %#08x, got %#08x", owner.VID, dead.VID)
-	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, floorQueued[2]))
-	if err != nil {
-		t.Fatalf("decode delayed exchange target clear: %v", err)
-	}
-	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
-		t.Fatalf("expected delayed exchange death to clear active combat target, got %+v", clearTarget)
-	}
-	assertExchangeEndFrame(t, floorQueued[3], "owner exchange END after delayed death")
+	next := assertOwnerFloorDeathSequence(t, floorQueued, 0, owner.VID, -1, "shared_world owner-floor")
+	assertExchangeEndFrame(t, floorQueued[next], "owner exchange END after delayed death")
 
 	partnerQueued := flushServerFrames(t, partnerFlow)
-	if len(partnerQueued) != 2 {
-		t.Fatalf("expected partner visible DEAD plus exchange END after delayed owner death, got %d frames", len(partnerQueued))
+	if len(partnerQueued) != 3 {
+		t.Fatalf("expected partner visible DEAD, owner damage-info, plus exchange END after delayed owner death, got %d frames", len(partnerQueued))
 	}
-	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, partnerQueued[0]))
-	if err != nil {
-		t.Fatalf("decode partner queued owner dead before delayed exchange END: %v", err)
+	remaining := assertOwnerFloorPeerDeadFanout(t, partnerQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 1 {
+		t.Fatalf("expected exchange END after owner-floor peer DEAD + damage-info, got %d leftover frames", len(remaining))
 	}
-	if peerDead.VID != owner.VID {
-		t.Fatalf("expected partner queued delayed owner dead for %#08x, got %#08x", owner.VID, peerDead.VID)
-	}
-	assertExchangeEndFrame(t, partnerQueued[1], "partner exchange END after delayed owner death")
+	assertExchangeEndFrame(t, remaining[0], "partner exchange END after delayed owner death")
 
 	postFloorCancel, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
 	if err != nil {
@@ -38480,31 +38335,11 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantWi
 	if err != nil {
 		t.Fatalf("unexpected attack error before merchant immediate floor-close test: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and merchant close frames, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, owner damage-info, and merchant close frames, got %d", len(attackOut))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
-	if err != nil {
-		t.Fatalf("decode merchant immediate floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected immediate retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
-	if err != nil {
-		t.Fatalf("decode merchant immediate floor-close self dead: %v", err)
-	}
-	if dead.VID != buyer.VID {
-		t.Fatalf("expected merchant immediate floor-close DEAD for owner VID %d, got %+v", buyer.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[3]))
-	if err != nil {
-		t.Fatalf("decode merchant immediate floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected merchant immediate floor-close clear target, got %+v", clear)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[4])); err != nil {
+	next := assertOwnerFloorDeathSequence(t, attackOut, 1, buyer.VID, bootstrapPracticeMobRetaliationPointDelta, "shared_world owner-floor")
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, attackOut[next])); err != nil {
 		t.Fatalf("decode merchant immediate floor-close shop end: %v", err)
 	}
 
@@ -38634,31 +38469,11 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMerchantWind
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, and merchant close frames, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to queue point-loss, self dead, clear-target, owner damage-info, and merchant close frames, got %d", len(queued))
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
-	if err != nil {
-		t.Fatalf("decode merchant floor-close point-change: %v", err)
-	}
-	if pointChange.Value != 0 {
-		t.Fatalf("expected delayed retaliation floor to drop owner HP to 0, got %+v", pointChange)
-	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
-	if err != nil {
-		t.Fatalf("decode merchant floor-close self dead: %v", err)
-	}
-	if dead.VID != buyer.VID {
-		t.Fatalf("expected merchant floor-close DEAD for owner VID %d, got %+v", buyer.VID, dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
-	if err != nil {
-		t.Fatalf("decode merchant floor-close clear target: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected merchant floor-close clear target, got %+v", clear)
-	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[3])); err != nil {
+	next := assertOwnerFloorDeathSequence(t, queued, 0, buyer.VID, bootstrapPracticeMobRetaliationPointDelta, "shared_world owner-floor")
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, queued[next])); err != nil {
 		t.Fatalf("decode merchant floor-close shop end: %v", err)
 	}
 
@@ -43968,8 +43783,8 @@ func TestGameSessionFlowPracticeMobRetaliationStopsAtOwnerHPFloorAfterImmediateB
 	if err != nil {
 		t.Fatalf("unexpected first attack error before owner-HP-floor retaliation test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, and clear-target on owner-HP-floor hit, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, clear-target, and owner damage-info on owner-HP-floor hit, got %d frames", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -44051,8 +43866,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationStopsAtOwnerHPFloor(t *test
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected queued delayed retaliation point-loss plus self dead and clear-target frames before the owner HP floor is reached, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected queued delayed retaliation point-loss plus self dead, clear-target, and owner damage-info frames before the owner HP floor is reached, got %d frames", len(queued))
 	}
 	secondPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -44125,8 +43940,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	if err != nil {
 		t.Fatalf("unexpected first attack error before immediate retaliation runtime-only test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, and clear-target frames before immediate retaliation runtime-only test, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, clear-target, and owner damage-info frames before immediate retaliation runtime-only test, got %d", len(attackOut))
 	}
 
 	persisted, err := accounts.Load("peer-one")
@@ -44204,8 +44019,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation beat plus self dead and clear-target frames before /phase_select recovery test, got %d queued frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation beat plus self dead, clear-target, and owner damage-info frames before /phase_select recovery test, got %d queued frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -44457,8 +44272,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPersistsZeroHPFloorAcrossRe
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation beat plus self dead and clear-target frames before death-persistence reconnect test, got %d queued frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation beat plus self dead, clear-target, and owner damage-info frames before death-persistence reconnect test, got %d queued frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -45093,8 +44908,8 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterImmediateRetaliationRea
 	if err != nil {
 		t.Fatalf("unexpected first attack error before zero-HP owner attack denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, and clear-target frames before zero-HP owner attack denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner attack denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -45178,8 +44993,8 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterDelayedRetaliationReach
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected queued delayed retaliation point-loss plus self dead and clear-target frames before zero-HP owner attack denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected queued delayed retaliation point-loss plus self dead, clear-target, and owner damage-info frames before zero-HP owner attack denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -45259,8 +45074,8 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterImmediateRetaliationRea
 	if err != nil {
 		t.Fatalf("unexpected first attack error before zero-HP owner target denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, and clear-target frames before zero-HP owner target denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate target-refresh, self-only point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner target denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -45336,8 +45151,8 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReach
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected queued delayed retaliation point-loss plus self dead and clear-target frames before zero-HP owner target denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected queued delayed retaliation point-loss plus self dead, clear-target, and owner damage-info frames before zero-HP owner target denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -45419,13 +45234,13 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterImmediateRetaliatio
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before immediate-retaliation aggro release: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before immediate-retaliation aggro release, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before immediate-retaliation aggro release, got %d frames", len(attackOut))
 	}
 
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected immediate owner death to queue 1 visible-peer DEAD frame before aggro release, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected immediate owner death to queue 2 visible-peer DEAD + owner damage-info frames before aggro release, got %d", len(watcherQueued))
 	}
 
 	watcherTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -45532,12 +45347,12 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed-retaliation aggro release, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before delayed-retaliation aggro release, got %d frames", len(queued))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed owner death to queue 1 visible-peer DEAD frame before aggro release, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed owner death to queue 2 visible-peer DEAD + owner damage-info frames before aggro release, got %d", len(watcherQueued))
 	}
 
 	watcherTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -45644,19 +45459,16 @@ func TestGameSessionFlowPracticeMobMoveFailsClosedAfterImmediateRetaliationReach
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner move denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner move denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner move denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected immediate retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner move denial, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected immediate retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner move denial, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner move denial after immediate retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner move denial after immediate retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x11121314})))
@@ -45756,19 +45568,16 @@ func TestGameSessionFlowPracticeMobSyncPositionFailsClosedAfterDelayedRetaliatio
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner sync-position denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner sync-position denial after delayed retaliation, got %d frames", len(queued))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner sync-position denial, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner sync-position denial, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner sync-position denial after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner sync-position denial after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	syncOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{
@@ -45867,8 +45676,8 @@ func TestGameSessionFlowPracticeMobInteractionFailsClosedAfterImmediateRetaliati
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner interaction denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner interaction denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner interaction denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 
 	currentTime = currentTime.Add(time.Second)
@@ -45976,8 +45785,8 @@ func TestGameSessionFlowPracticeMobInteractionFailsClosedAfterDelayedRetaliation
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner interaction denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner interaction denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -46098,11 +45907,11 @@ func TestGameSessionFlowPracticeMobPacketShopBuyFailsClosedAfterImmediateRetalia
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP merchant packet-buy denial: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames including merchant close before zero-HP merchant packet-buy denial, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 6 frames including merchant close before zero-HP merchant packet-buy denial, got %d", len(attackOut))
 	}
-	if !reflect.DeepEqual(attackOut[4], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected immediate retaliation floor attack to append merchant close before zero-HP merchant packet-buy denial, got %#v", attackOut[4])
+	if !reflect.DeepEqual(attackOut[5], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected immediate retaliation floor attack to append merchant close before zero-HP merchant packet-buy denial, got %#v", attackOut[5])
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -46231,8 +46040,8 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and merchant close frames before zero-HP merchant slash-buy denial, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, owner damage-info, and merchant close frames before zero-HP merchant slash-buy denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -46241,8 +46050,8 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	if pointChange.Value != 0 {
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP merchant slash-buy denial, got %+v", pointChange)
 	}
-	if !reflect.DeepEqual(queued[3], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected delayed retaliation floor to append merchant close before zero-HP merchant slash-buy denial, got %#v", queued[3])
+	if !reflect.DeepEqual(queued[4], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected delayed retaliation floor to append merchant close before zero-HP merchant slash-buy denial, got %#v", queued[4])
 	}
 
 	slashBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/shop_buy 0"})))
@@ -46363,11 +46172,11 @@ func TestGameSessionFlowPracticeMobPacketShopSellFailsClosedAfterImmediateRetali
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP merchant packet-sell denial: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames including merchant close before zero-HP merchant packet-sell denial, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 6 frames including merchant close before zero-HP merchant packet-sell denial, got %d", len(attackOut))
 	}
-	if !reflect.DeepEqual(attackOut[4], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected immediate retaliation floor attack to append merchant close before zero-HP merchant packet-sell denial, got %#v", attackOut[4])
+	if !reflect.DeepEqual(attackOut[5], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected immediate retaliation floor attack to append merchant close before zero-HP merchant packet-sell denial, got %#v", attackOut[5])
 	}
 
 	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 5})))
@@ -46492,8 +46301,8 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and merchant close frames before zero-HP merchant packet-sell2 denial, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, owner damage-info, and merchant close frames before zero-HP merchant packet-sell2 denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -46502,8 +46311,8 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	if pointChange.Value != 0 {
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP merchant packet-sell2 denial, got %+v", pointChange)
 	}
-	if !reflect.DeepEqual(queued[3], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected delayed retaliation floor to append merchant close before zero-HP merchant packet-sell2 denial, got %#v", queued[3])
+	if !reflect.DeepEqual(queued[4], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected delayed retaliation floor to append merchant close before zero-HP merchant packet-sell2 denial, got %#v", queued[4])
 	}
 
 	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell2(shopproto.ClientSell2Packet{Slot: 5, Count: 2})))
@@ -46949,11 +46758,11 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterImmediateRetaliation
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP merchant close: %v", err)
 	}
-	if len(attackOut) != 5 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames including merchant close, got %d", len(attackOut))
+	if len(attackOut) != 6 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 6 frames including merchant close, got %d", len(attackOut))
 	}
-	if !reflect.DeepEqual(attackOut[4], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected immediate retaliation floor attack to append merchant close, got %#v", attackOut[4])
+	if !reflect.DeepEqual(attackOut[5], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected immediate retaliation floor attack to append merchant close, got %#v", attackOut[5])
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47061,8 +46870,8 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationRe
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 4 {
-		t.Fatalf("expected delayed retaliation floor to emit point-loss, self dead, clear-target, and merchant close frames, got %d", len(queued))
+	if len(queued) != 5 {
+		t.Fatalf("expected delayed retaliation floor to emit point-loss, self dead, clear-target, owner damage-info, and merchant close frames, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -47071,8 +46880,8 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationRe
 	if pointChange.Value != 0 {
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP merchant close, got %+v", pointChange)
 	}
-	if !reflect.DeepEqual(queued[3], shopproto.EncodeServerEnd()) {
-		t.Fatalf("expected delayed retaliation floor to append merchant close, got %#v", queued[3])
+	if !reflect.DeepEqual(queued[4], shopproto.EncodeServerEnd()) {
+		t.Fatalf("expected delayed retaliation floor to append merchant close, got %#v", queued[4])
 	}
 
 	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
@@ -47157,8 +46966,8 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterImmediateRetaliationRe
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP item-use denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP item-use denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP item-use denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47251,8 +47060,8 @@ func TestGameSessionFlowPracticeMobGoldDropFailsClosedAfterImmediateRetaliationR
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP gold-drop denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP gold-drop denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP gold-drop denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47338,8 +47147,8 @@ func TestGameSessionFlowPracticeMobItemDropFailsClosedAfterImmediateRetaliationR
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP item-drop denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP item-drop denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP item-drop denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47445,8 +47254,8 @@ func TestGameSessionFlowPracticeMobItemUsePacketFailsClosedAfterImmediateRetalia
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP packet item-use denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP packet item-use denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP packet item-use denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47557,8 +47366,8 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReac
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed zero-HP item-use denial, got %d", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before delayed zero-HP item-use denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -47663,8 +47472,8 @@ func TestGameSessionFlowPracticeMobUseToItemFailsClosedAfterImmediateRetaliation
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP use-to-item denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP use-to-item denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP use-to-item denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47770,8 +47579,8 @@ func TestGameSessionFlowPracticeMobEquipItemFailsClosedAfterImmediateRetaliation
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP equip denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP equip denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP equip denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -47903,8 +47712,8 @@ func TestGameSessionFlowPracticeMobUnequipItemFailsClosedAfterDelayedRetaliation
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed zero-HP equip denial, got %d", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before delayed zero-HP equip denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48018,8 +47827,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterImmediateRetalia
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP inventory-move denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before immediate zero-HP inventory-move denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before immediate zero-HP inventory-move denial, got %d", len(attackOut))
 	}
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -48121,8 +47930,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterDelayedRetaliati
 	}
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before delayed zero-HP inventory-move denial, got %d", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before delayed zero-HP inventory-move denial, got %d", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48360,19 +48169,16 @@ func TestGameSessionFlowPracticeMobPeerChatFailsClosedAfterImmediateRetaliationR
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner peer-chat denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner peer-chat denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner peer-chat denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected immediate retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner peer-chat denial, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected immediate retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner peer-chat denial, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner peer-chat denial after immediate retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner peer-chat denial after immediate retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop once immediate retaliation reached owner HP floor before zero-HP owner peer-chat denial, got %d queued frames", len(queued))
@@ -48457,8 +48263,8 @@ func TestGameSessionFlowPracticeMobInfoChatFailsClosedAfterImmediateRetaliationR
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner info-chat denial after immediate retaliation: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner info-chat denial after immediate retaliation, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner info-chat denial after immediate retaliation, got %d frames", len(attackOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop once immediate retaliation reached owner HP floor before zero-HP owner info-chat denial, got %d queued frames", len(queued))
@@ -48535,8 +48341,8 @@ func TestGameSessionFlowPracticeMobInfoChatFailsClosedAfterDelayedRetaliationRea
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner info-chat denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner info-chat denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48628,8 +48434,8 @@ func TestGameSessionFlowPracticeMobWhisperFailsClosedAfterDelayedRetaliationReac
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner whisper denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner whisper denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48639,15 +48445,12 @@ func TestGameSessionFlowPracticeMobWhisperFailsClosedAfterDelayedRetaliationReac
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner whisper denial after delayed retaliation, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner whisper denial, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner whisper denial, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner whisper denial after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner whisper denial after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	existingTargetOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: watcher.Name, Message: "hola privado"})))
@@ -48740,8 +48543,8 @@ func TestGameSessionFlowPracticeMobWhisperToZeroHPOwnerFailsClosedAfterDelayedRe
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner recipient whisper denial after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner recipient whisper denial after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48751,15 +48554,12 @@ func TestGameSessionFlowPracticeMobWhisperToZeroHPOwnerFailsClosedAfterDelayedRe
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner recipient whisper denial after delayed retaliation, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner recipient whisper denial, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner recipient whisper denial, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner recipient whisper denial after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner recipient whisper denial after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	whisperOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientWhisper(chatproto.ClientWhisperPacket{Target: owner.Name, Message: "sigues ahi?"})))
@@ -48844,8 +48644,8 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner recipient local-chat skip after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner recipient local-chat skip after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48855,15 +48655,12 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner recipient local-chat skip after delayed retaliation, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner recipient local-chat skip, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner recipient local-chat skip, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner recipient local-chat skip after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner recipient local-chat skip after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	chatOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "hola despues del piso"})))
@@ -48959,8 +48756,8 @@ func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayed
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, ownerFlow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d frames", len(queued))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -48970,15 +48767,12 @@ func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayed
 		t.Fatalf("expected delayed retaliation beat to reach owner HP floor before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %+v", pointChange)
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 1 visible-peer DEAD frame before zero-HP owner recipient broadcast-chat skip, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected delayed retaliation reaching owner HP floor to queue 2 visible-peer DEAD + owner damage-info frames before zero-HP owner recipient broadcast-chat skip, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer dead frame before zero-HP owner recipient broadcast-chat skip after delayed retaliation: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 
 	chatCases := []struct {
@@ -49066,8 +48860,8 @@ func TestGameSessionFlowPracticeMobQuitSlashCommandStillWorksAfterImmediateRetal
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner /quit regression check: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner /quit regression check, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner /quit regression check, got %d frames", len(attackOut))
 	}
 
 	quitOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/quit"})))
@@ -49146,8 +48940,8 @@ func TestGameSessionFlowPracticeMobLogoutSlashCommandStillWorksAfterImmediateRet
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP owner /logout regression check: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames before zero-HP owner /logout regression check, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames before zero-HP owner /logout regression check, got %d frames", len(attackOut))
 	}
 
 	logoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
@@ -49229,8 +49023,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationSendsSelfDeadBeforeTarget
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate retaliation target clear: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames when immediate retaliation reaches owner HP floor, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames when immediate retaliation reaches owner HP floor, got %d frames", len(attackOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[2]))
 	if err != nil {
@@ -49307,8 +49101,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationSendsSelfDeadBeforeTargetCl
 
 	currentTime = currentTime.Add(time.Second)
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames when delayed retaliation reaches owner HP floor, got %d frames", len(queued))
+	if len(queued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames when delayed retaliation reaches owner HP floor, got %d frames", len(queued))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, queued[1]))
 	if err != nil {
@@ -49387,19 +49181,16 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationQueuesVisiblePeerDeadAtOw
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate peer-dead retaliation check: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss retaliation, self dead, and clear-target frames when immediate retaliation reaches owner HP floor, got %d frames", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss retaliation, self dead, clear-target, and owner damage-info frames when immediate retaliation reaches owner HP floor, got %d frames", len(attackOut))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected 1 queued visible-peer DEAD frame when immediate retaliation reaches owner HP floor, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected 2 queued visible-peer DEAD + owner damage-info frames when immediate retaliation reaches owner HP floor, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer immediate retaliation dead frame: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) when immediate retaliation reaches owner HP floor, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 }
 
@@ -49473,19 +49264,16 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwne
 
 	currentTime = currentTime.Add(time.Second)
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 3 {
-		t.Fatalf("expected delayed retaliation point-loss, self dead, and clear-target frames when delayed retaliation reaches owner HP floor, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 4 {
+		t.Fatalf("expected delayed retaliation point-loss, self dead, clear-target, and owner damage-info frames when delayed retaliation reaches owner HP floor, got %d frames", len(ownerQueued))
 	}
 	watcherQueued := flushServerFrames(t, watcherFlow)
-	if len(watcherQueued) != 1 {
-		t.Fatalf("expected 1 queued visible-peer DEAD frame when delayed retaliation reaches owner HP floor, got %d", len(watcherQueued))
+	if len(watcherQueued) != 2 {
+		t.Fatalf("expected 2 queued visible-peer DEAD + owner damage-info frames when delayed retaliation reaches owner HP floor, got %d", len(watcherQueued))
 	}
-	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
-	if err != nil {
-		t.Fatalf("decode visible-peer delayed retaliation dead frame: %v", err)
-	}
-	if dead.VID != owner.VID {
-		t.Fatalf("expected visible-peer DEAD(owner_vid) when delayed retaliation reaches owner HP floor, got %+v", dead)
+	remaining := assertOwnerFloorPeerDeadFanout(t, watcherQueued, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "shared_world owner-floor peer")
+	if len(remaining) != 0 {
+		t.Fatalf("expected no extra owner-floor peer frames after DEAD + damage-info, got %d", len(remaining))
 	}
 }
 
@@ -49543,8 +49331,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationRejectsQuickslotMutations
 	if err != nil {
 		t.Fatalf("unexpected attack error before quickslot floor denial: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected immediate retaliation floor attack to emit 4 frames before quickslot denial, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected immediate retaliation floor attack to emit 5 frames before quickslot denial, got %d", len(attackOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no delayed retaliation frames after immediate quickslot denial setup, got %d", len(queued))
@@ -49977,8 +49765,8 @@ func TestGameSessionFlowZeroHPOwnerMoveAndSyncFailClosed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected attack error before zero-HP movement rejection test: %v", err)
 	}
-	if len(attackOut) != 4 {
-		t.Fatalf("expected target refresh, point-loss, self dead, and clear-target frames before zero-HP movement rejection test, got %d", len(attackOut))
+	if len(attackOut) != 5 {
+		t.Fatalf("expected target refresh, point-loss, self dead, clear-target, and owner damage-info frames before zero-HP movement rejection test, got %d", len(attackOut))
 	}
 	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, attackOut[1]))
 	if err != nil {
@@ -50536,6 +50324,11 @@ func (h *practiceMobTCPHarness) driveOwnerDeathFromImmediateRetaliation(t *testi
 	if pointChange.Type != bootstrapPlayerPointValueIndex || pointChange.Amount != -1 || pointChange.Value != 0 {
 		t.Fatalf("expected tcp %s-triggering retaliation to reduce player HP to 0, got %+v", context, pointChange)
 	}
+	assertTCPOwnerFloorDeathSuffix(t, h, -pointChange.Amount, context)
+}
+
+func assertTCPOwnerFloorDeathSuffix(t *testing.T, h *practiceMobTCPHarness, wantDamage int32, context string) {
+	t.Helper()
 	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
 	if err != nil {
 		t.Fatalf("decode tcp %s-triggering self dead: %v", context, err)
@@ -50550,6 +50343,7 @@ func (h *practiceMobTCPHarness) driveOwnerDeathFromImmediateRetaliation(t *testi
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp %s-triggering death to clear target, got %+v", context, clear)
 	}
+	assertTCPDamageInfo(t, h.client.readFrame(t), 0x02040131, wantDamage, context+" owner-floor damage-info")
 }
 
 func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
@@ -50949,20 +50743,7 @@ func TestGameSessionFlowPracticeMobCustomRetaliationPointDeltaOverPlainTCP(t *te
 	if floorPointChange.Type != bootstrapPlayerPointValueIndex || floorPointChange.Amount != -1 || floorPointChange.Value != 0 {
 		t.Fatalf("expected tcp custom-retaliation delayed floor to clamp by 1 to 0, got %+v", floorPointChange)
 	}
-	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp custom-retaliation delayed floor self dead: %v", err)
-	}
-	if dead.VID != 0x02040131 {
-		t.Fatalf("expected tcp custom-retaliation delayed floor self dead for selected character VID 0x02040131, got %+v", dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp custom-retaliation delayed floor target clear: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected tcp custom-retaliation delayed floor to clear target, got %+v", clear)
-	}
+	assertTCPOwnerFloorDeathSuffix(t, h, -floorPointChange.Amount, "custom-retaliation delayed floor")
 }
 
 func TestGameSessionFlowPracticeMobDelayedRetaliationOwnerDeathOverPlainTCP(t *testing.T) {
@@ -50999,20 +50780,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationOwnerDeathOverPlainTCP(t *t
 	if floor.VID != 0x02040131 || floor.Type != bootstrapPlayerPointValueIndex || floor.Amount != -1 || floor.Value != 0 {
 		t.Fatalf("expected tcp delayed retaliation to clamp player HP at 0, got %+v", floor)
 	}
-	dead, err := worldproto.DecodeDead(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp delayed-retaliation owner dead: %v", err)
-	}
-	if dead.VID != 0x02040131 {
-		t.Fatalf("expected tcp delayed retaliation owner death for selected character VID 0x02040131, got %+v", dead)
-	}
-	clear, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
-	if err != nil {
-		t.Fatalf("decode tcp delayed-retaliation owner target clear: %v", err)
-	}
-	if clear.TargetVID != 0 || clear.HPPercent != 0 {
-		t.Fatalf("expected tcp delayed retaliation owner death to clear target, got %+v", clear)
-	}
+	assertTCPOwnerFloorDeathSuffix(t, h, -floor.Amount, "delayed-retaliation owner death")
 
 	h.advance(bootstrapPracticeMobServerOriginRetaliationDelay)
 	h.client.expectNoFrame(t, "stale delayed retaliation after owner death")
@@ -54706,6 +54474,56 @@ func flushNonFloorDelayedRetaliationFrames(t *testing.T, flow service.SessionFlo
 	}
 	damage := assertDamageInfoFrame(t, frames[1], ownerVID, -wantAmount, context+" owner damage-info")
 	return pointChange, damage
+}
+
+func assertOwnerFloorDeathSequence(t *testing.T, frames [][]byte, start int, ownerVID uint32, wantAmount int32, context string) int {
+	t.Helper()
+	if len(frames) < start+4 {
+		t.Fatalf("expected at least %d owner-floor death frames %s (point-change, dead, clear-target, damage-info), got %d", start+4, context, len(frames))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, frames[start]))
+	if err != nil {
+		t.Fatalf("decode %s owner-floor point-change: %v", context, err)
+	}
+	if pointChange.VID != ownerVID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != wantAmount || pointChange.Value != 0 {
+		t.Fatalf("unexpected %s owner-floor point-change: %+v", context, pointChange)
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, frames[start+1]))
+	if err != nil {
+		t.Fatalf("decode %s owner-floor dead: %v", context, err)
+	}
+	if dead.VID != ownerVID {
+		t.Fatalf("expected %s owner-floor DEAD for %#08x, got %#08x", context, ownerVID, dead.VID)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[start+2]))
+	if err != nil {
+		t.Fatalf("decode %s owner-floor target clear: %v", context, err)
+	}
+	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
+		t.Fatalf("expected %s owner-floor TARGET(0, 0), got %+v", context, clearTarget)
+	}
+	wantDamage := wantAmount
+	if wantDamage < 0 {
+		wantDamage = -wantDamage
+	}
+	assertDamageInfoFrame(t, frames[start+3], ownerVID, wantDamage, context+" owner-floor damage-info")
+	return start + 4
+}
+
+func assertOwnerFloorPeerDeadFanout(t *testing.T, frames [][]byte, ownerVID uint32, wantDamage int32, context string) [][]byte {
+	t.Helper()
+	if len(frames) < 2 {
+		t.Fatalf("expected at least 2 queued owner-floor peer frames %s (DEAD + damage-info), got %d", context, len(frames))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode %s owner-floor peer DEAD: %v", context, err)
+	}
+	if dead.VID != ownerVID {
+		t.Fatalf("expected %s owner-floor peer DEAD for %#08x, got %#08x", context, ownerVID, dead.VID)
+	}
+	assertDamageInfoFrame(t, frames[1], ownerVID, wantDamage, context+" owner-floor peer damage-info")
+	return frames[2:]
 }
 
 func assertOwnerRetaliationDamageInfoFrame(t *testing.T, raw []byte, ownerVID uint32, wantDamage int32, context string) combatproto.ServerDamageInfoPacket {
