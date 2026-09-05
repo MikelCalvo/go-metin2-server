@@ -105,37 +105,153 @@ func TestRuntimePickupGroundItemCompatibleMergeKeepsDestinationInstancePresence(
 }
 
 func TestRuntimePickupGroundItemFreeCellPreservesSourceInstancePresence(t *testing.T) {
-	sourceSockets := inventory.SocketValues{11, 0, -3}
-	sourceAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
-	runtime := NewRuntime(loginticket.Character{
-		ID:   0x01030902,
-		VID:  0x02040902,
-		Name: "MergeFreeCellPreservePickup",
-	}, SessionLink{Login: "merge-free-cell-pickup", CharacterIndex: 1})
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
 
-	ground := inventory.ItemInstance{
-		ID:         21,
-		Vnum:       27001,
-		Count:      3,
-		Slot:       6,
-		Sockets:    &sourceSockets,
-		Attributes: &sourceAttributes,
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted presence"},
 	}
-	result, ok := runtime.PickupGroundItem(ground, 6, 200)
-	if !ok {
-		t.Fatal("expected free-cell pickup placement to succeed")
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				ID:   0x01030902,
+				VID:  0x02040902,
+				Name: "MergeFreeCellPreservePickup",
+			}, SessionLink{Login: "merge-free-cell-pickup", CharacterIndex: 1})
+
+			ground := inventory.ItemInstance{
+				ID:         21,
+				Vnum:       27001,
+				Count:      3,
+				Slot:       6,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}
+			result, ok := runtime.PickupGroundItem(ground, 6, 200)
+			if !ok {
+				t.Fatal("expected free-cell pickup placement to succeed")
+			}
+			if result.Merged || result.Split || result.Placed.ID != 21 || result.Placed.Slot != 6 || result.Placed.Count != 3 {
+				t.Fatalf("unexpected free-cell pickup result: %+v", result)
+			}
+			assertIndependentPickupPlacementPresence(t, ground, result.Placed, "pickup result placement")
+			if len(runtime.liveInventory) != 1 {
+				t.Fatalf("expected one live inventory item after free-cell pickup, got %#v", runtime.liveInventory)
+			}
+			assertIndependentPickupPlacementPresence(t, ground, runtime.liveInventory[0], "live placement")
+		})
 	}
-	if result.Merged || result.Split || result.Placed.ID != 21 || result.Placed.Slot != 6 || result.Placed.Count != 3 {
-		t.Fatalf("unexpected free-cell pickup result: %+v", result)
+}
+
+func TestRuntimePickupGroundItemSplitRemainderPreservesSourceInstancePresence(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted presence"},
 	}
-	if !result.Placed.HasSockets() || result.Placed.Sockets == nil || *result.Placed.Sockets != sourceSockets {
-		t.Fatalf("expected free-cell placement to keep source sockets %+v, got %#v", sourceSockets, result.Placed.Sockets)
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runtime := NewRuntime(loginticket.Character{
+				ID:   0x01030912,
+				VID:  0x02040912,
+				Name: "SplitRemainderPreservePickup",
+				Inventory: []inventory.ItemInstance{
+					{ID: 11, Vnum: 27001, Count: 198, Slot: 0},
+					{ID: 12, Vnum: 27001, Count: 199, Slot: 2},
+				},
+			}, SessionLink{Login: "split-remainder-pickup", CharacterIndex: 1})
+
+			ground := inventory.ItemInstance{
+				ID:         13,
+				Vnum:       27001,
+				Count:      5,
+				Slot:       6,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}
+			result, ok := runtime.PickupGroundItem(ground, 6, 200)
+			if !ok {
+				t.Fatal("expected split pickup to fill compatible stacks and place the remainder")
+			}
+			if !result.Split || result.Merged || result.Placed.ID != 13 || result.Placed.Slot != 6 || result.Placed.Count != 2 {
+				t.Fatalf("unexpected split pickup result: %+v", result)
+			}
+			if len(result.UpdatedItems) != 2 || result.UpdatedItems[0].ID != 11 || result.UpdatedItems[0].Count != 200 || result.UpdatedItems[1].ID != 12 || result.UpdatedItems[1].Count != 200 {
+				t.Fatalf("unexpected split pickup updated stacks: %#v", result.UpdatedItems)
+			}
+			if result.UpdatedItems[0].HasSockets() || result.UpdatedItems[0].HasAttributes() || result.UpdatedItems[1].HasSockets() || result.UpdatedItems[1].HasAttributes() {
+				t.Fatalf("expected destination-wins omitted presence on filled stacks, got %#v", result.UpdatedItems)
+			}
+			assertIndependentPickupPlacementPresence(t, ground, result.Placed, "split remainder placement")
+			if len(runtime.liveInventory) != 3 {
+				t.Fatalf("expected three live inventory items after split pickup, got %#v", runtime.liveInventory)
+			}
+			assertIndependentPickupPlacementPresence(t, ground, runtime.liveInventory[2], "live split remainder")
+			if runtime.liveInventory[0].HasSockets() || runtime.liveInventory[0].HasAttributes() || runtime.liveInventory[1].HasSockets() || runtime.liveInventory[1].HasAttributes() {
+				t.Fatalf("expected live filled stacks to stay omitted, got %#v", runtime.liveInventory)
+			}
+		})
 	}
-	if !result.Placed.HasAttributes() || result.Placed.Attributes == nil || *result.Placed.Attributes != sourceAttributes {
-		t.Fatalf("expected free-cell placement to keep source attributes %+v, got %#v", sourceAttributes, result.Placed.Attributes)
+}
+
+func assertIndependentPickupPlacementPresence(t *testing.T, ground, placed inventory.ItemInstance, label string) {
+	t.Helper()
+	if placed.HasSockets() != ground.HasSockets() {
+		t.Fatalf("%s HasSockets=%v want %v", label, placed.HasSockets(), ground.HasSockets())
 	}
-	if result.Placed.Sockets == ground.Sockets || result.Placed.Attributes == ground.Attributes {
-		t.Fatal("expected free-cell placement to clone source presence independently")
+	if placed.HasAttributes() != ground.HasAttributes() {
+		t.Fatalf("%s HasAttributes=%v want %v", label, placed.HasAttributes(), ground.HasAttributes())
+	}
+	if ground.HasSockets() {
+		if placed.Sockets == ground.Sockets {
+			t.Fatalf("%s expected pickup placement to clone sockets independently from the ground snapshot pointer", label)
+		}
+		want := *ground.Sockets
+		if *placed.Sockets != want {
+			t.Fatalf("%s expected placement sockets %+v, got %+v", label, want, *placed.Sockets)
+		}
+		(*placed.Sockets)[0] = 99
+		if (*ground.Sockets)[0] == 99 {
+			t.Fatalf("%s mutating placement sockets aliased the ground snapshot pointer", label)
+		}
+		*placed.Sockets = want
+	} else if placed.Sockets != nil {
+		t.Fatalf("%s expected omitted placement sockets, got %#v", label, placed.Sockets)
+	}
+	if ground.HasAttributes() {
+		if placed.Attributes == ground.Attributes {
+			t.Fatalf("%s expected pickup placement to clone attributes independently from the ground snapshot pointer", label)
+		}
+		want := *ground.Attributes
+		if *placed.Attributes != want {
+			t.Fatalf("%s expected placement attributes %+v, got %+v", label, want, *placed.Attributes)
+		}
+		(*placed.Attributes)[0].Value = 99
+		if (*ground.Attributes)[0].Value == 99 {
+			t.Fatalf("%s mutating placement attributes aliased the ground snapshot pointer", label)
+		}
+		*placed.Attributes = want
+	} else if placed.Attributes != nil {
+		t.Fatalf("%s expected omitted placement attributes, got %#v", label, placed.Attributes)
 	}
 }
 
