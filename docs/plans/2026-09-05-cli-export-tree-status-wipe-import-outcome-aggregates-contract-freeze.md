@@ -216,11 +216,11 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/persistence`.
+GREEN on `lane/persistence`.
 
-- Exact additive wipe-outcome field names + primary `row_count` mapping are frozen.
-- GREEN implementation is intentionally deferred to the next persistence slice.
-- Wipe-import outcome require flags remain deferred after GREEN.
+- Exact additive wipe-outcome field names + primary `row_count` mapping are frozen and implemented.
+- `export-tree-status` now projects per-wipe-kind `wipe_import_result_outcome` plus tree-level wipe replaced/row-count aggregates from retained `wipe-import-result.json` evidence.
+- Wipe-import outcome require flags remain deferred.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze

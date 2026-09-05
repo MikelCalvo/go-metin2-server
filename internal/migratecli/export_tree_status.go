@@ -40,16 +40,17 @@ type exportTreeImportResultOutcome struct {
 }
 
 type exportTreeKindStatus struct {
-	Kind                   string                         `json:"kind"`
-	WipeKind               bool                           `json:"wipe_kind"`
-	Quarantine             exportTreeArtifactStatus       `json:"quarantine"`
-	WipeQuarantine         *exportTreeArtifactStatus      `json:"wipe_quarantine,omitempty"`
-	WipeQuarantineStatus   *exportTreeArtifactStatus      `json:"wipe_quarantine_status,omitempty"`
-	ImportResult           exportTreeArtifactStatus       `json:"import_result"`
-	ImportResultStatus     exportTreeArtifactStatus       `json:"import_result_status"`
-	ImportResultOutcome    *exportTreeImportResultOutcome `json:"import_result_outcome,omitempty"`
-	WipeImportResult       *exportTreeArtifactStatus      `json:"wipe_import_result,omitempty"`
-	WipeImportResultStatus *exportTreeArtifactStatus      `json:"wipe_import_result_status,omitempty"`
+	Kind                    string                         `json:"kind"`
+	WipeKind                bool                           `json:"wipe_kind"`
+	Quarantine              exportTreeArtifactStatus       `json:"quarantine"`
+	WipeQuarantine          *exportTreeArtifactStatus      `json:"wipe_quarantine,omitempty"`
+	WipeQuarantineStatus    *exportTreeArtifactStatus      `json:"wipe_quarantine_status,omitempty"`
+	ImportResult            exportTreeArtifactStatus       `json:"import_result"`
+	ImportResultStatus      exportTreeArtifactStatus       `json:"import_result_status"`
+	ImportResultOutcome     *exportTreeImportResultOutcome `json:"import_result_outcome,omitempty"`
+	WipeImportResult        *exportTreeArtifactStatus      `json:"wipe_import_result,omitempty"`
+	WipeImportResultStatus  *exportTreeArtifactStatus      `json:"wipe_import_result_status,omitempty"`
+	WipeImportResultOutcome *exportTreeImportResultOutcome `json:"wipe_import_result_outcome,omitempty"`
 }
 
 type exportTreeStatus struct {
@@ -71,6 +72,10 @@ type exportTreeStatus struct {
 	WipeImportResultPresentCount       int                    `json:"wipe_import_result_present_count,omitempty"`
 	WipeImportResultStatusPresentCount int                    `json:"wipe_import_result_status_present_count,omitempty"`
 	WipeImportArtifactsComplete        bool                   `json:"wipe_import_artifacts_complete,omitempty"`
+	WipeImportResultReplacedCount      int                    `json:"wipe_import_result_replaced_count,omitempty"`
+	WipeImportResultRowCountTotal      int                    `json:"wipe_import_result_row_count_total,omitempty"`
+	WipeImportResultOutcomesComplete   bool                   `json:"wipe_import_result_outcomes_complete,omitempty"`
+	WipeImportResultAllReplaced        bool                   `json:"wipe_import_result_all_replaced,omitempty"`
 	Kinds                              []exportTreeKindStatus `json:"kinds,omitempty"`
 }
 
@@ -294,13 +299,14 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 
 			wipeImportRel := filepath.ToSlash(filepath.Join(kind, "wipe-import-result.json"))
 			wipeImportAbs := filepath.Join(normalizedTree, kind, "wipe-import-result.json")
-			wipeImportArtifact, wipeImportSHA, _, err := inspectExportTreeImportResultArtifact(kind, wipeImportAbs, wipeImportRel)
+			wipeImportArtifact, wipeImportSHA, wipeImportOutcome, err := inspectExportTreeImportResultArtifact(kind, wipeImportAbs, wipeImportRel)
 			if err != nil {
 				return exportTreeStatus{}, err
 			}
 			kindStatus.WipeImportResult = &wipeImportArtifact
 			if wipeImportArtifact.Present {
 				wipeImportResultPresent++
+				kindStatus.WipeImportResultOutcome = wipeImportOutcome
 			}
 
 			wipeImportStatusRel := filepath.ToSlash(filepath.Join(kind, "wipe-import-result-status.json"))
@@ -348,6 +354,23 @@ func inspectExportTreeStatus(exportTree string) (exportTreeStatus, error) {
 	status.WipeImportResultStatusPresentCount = wipeImportResultStatusPresent
 	status.WipeImportArtifactsComplete = wipeImportResultPresent == len(importExportDrillWipeKinds) &&
 		wipeImportResultStatusPresent == len(importExportDrillWipeKinds)
+	wipeReplacedCount := 0
+	wipeRowCountTotal := 0
+	wipeOutcomeCount := 0
+	for _, entry := range status.Kinds {
+		if entry.WipeImportResultOutcome == nil {
+			continue
+		}
+		wipeOutcomeCount++
+		wipeRowCountTotal += entry.WipeImportResultOutcome.RowCount
+		if entry.WipeImportResultOutcome.Replaced {
+			wipeReplacedCount++
+		}
+	}
+	status.WipeImportResultReplacedCount = wipeReplacedCount
+	status.WipeImportResultRowCountTotal = wipeRowCountTotal
+	status.WipeImportResultOutcomesComplete = wipeOutcomeCount == len(importExportDrillWipeKinds)
+	status.WipeImportResultAllReplaced = status.WipeImportResultOutcomesComplete && wipeReplacedCount == len(importExportDrillWipeKinds)
 	return status, nil
 }
 

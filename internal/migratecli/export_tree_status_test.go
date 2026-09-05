@@ -650,6 +650,222 @@ func TestRunExportTreeStatusRejectsInvalidImportResultBeforeOutcomeAggregation(t
 	}
 }
 
+func TestRunExportTreeStatusReportsInsertOnlyWipeImportResultOutcomes(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260905T180000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected insert-only wipe-outcome export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode insert-only wipe-outcome export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || !got.WipeImportArtifactsComplete || !got.WipeImportResultOutcomesComplete {
+		t.Fatalf("expected complete wipe-import outcomes, got %#v", got)
+	}
+	if got.WipeImportResultReplacedCount != 0 || got.WipeImportResultAllReplaced || got.WipeImportResultRowCountTotal != 0 {
+		t.Fatalf("unexpected insert-only wipe-outcome aggregates: %#v", got)
+	}
+	if !got.ImportResultOutcomesComplete || got.ImportResultReplacedCount != 0 || got.ImportResultAllReplaced || got.ImportResultRowCountTotal != 0 {
+		t.Fatalf("tip-kind import_result_outcome aggregates must stay insert-only beside wipe fields: %#v", got)
+	}
+	for _, entry := range got.Kinds {
+		if entry.WipeKind {
+			if entry.WipeImportResultOutcome == nil {
+				t.Fatalf("expected wipe_import_result_outcome for %s", entry.Kind)
+			}
+			if entry.WipeImportResultOutcome.Replaced || entry.WipeImportResultOutcome.RowCount != 0 {
+				t.Fatalf("unexpected insert-only wipe outcome for %s: %#v", entry.Kind, entry.WipeImportResultOutcome)
+			}
+			continue
+		}
+		if entry.WipeImportResultOutcome != nil {
+			t.Fatalf("non-wipe kind %s must omit wipe_import_result_outcome, got %#v", entry.Kind, entry.WipeImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusReportsMixedAndAllReplacedWipeImportResultOutcomes(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260905T181000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+
+	replacedPayloads := map[string]string{
+		"character-item-state":         `{"migration_version":3,"migration_name":"character_item_state","character_count":1,"inventory_item_count":3,"equipment_item_count":1,"quickslot_count":2,"character_ids":[11],"replaced":true}`,
+		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
+		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
+		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
+	}
+	wantRows := map[string]int{
+		"character-item-state":         6,
+		"character-point-state":        4,
+		"character-myshop-unit-prices": 5,
+		"character-quest-state":        6,
+		"character-safebox-state":      7,
+		"bootstrap-ground-item-state":  11,
+	}
+
+	mustRewriteExportTreeWipeImportResult(t, tree, "character-item-state", replacedPayloads["character-item-state"])
+
+	var mixedStdout bytes.Buffer
+	var mixedStderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &mixedStdout, &mixedStderr)
+	if code != exitOK {
+		t.Fatalf("expected mixed wipe-outcome export-tree-status to succeed, exit=%d stderr=%q", code, mixedStderr.String())
+	}
+	var mixed exportTreeStatus
+	if err := json.Unmarshal(mixedStdout.Bytes(), &mixed); err != nil {
+		t.Fatalf("decode mixed wipe-outcome export-tree status JSON: %v\nbody:\n%s", err, mixedStdout.String())
+	}
+	if !mixed.WipeImportResultOutcomesComplete || mixed.WipeImportResultReplacedCount != 1 || mixed.WipeImportResultAllReplaced || mixed.WipeImportResultRowCountTotal != wantRows["character-item-state"] {
+		t.Fatalf("unexpected mixed wipe-outcome aggregates: %#v", mixed)
+	}
+	if !mixed.ImportResultOutcomesComplete || mixed.ImportResultReplacedCount != 0 || mixed.ImportResultAllReplaced {
+		t.Fatalf("tip-kind import_result_outcome aggregates must stay insert-only beside mixed wipe fields: %#v", mixed)
+	}
+	for _, entry := range mixed.Kinds {
+		if !entry.WipeKind {
+			if entry.WipeImportResultOutcome != nil {
+				t.Fatalf("non-wipe kind %s must omit wipe_import_result_outcome, got %#v", entry.Kind, entry.WipeImportResultOutcome)
+			}
+			continue
+		}
+		if entry.WipeImportResultOutcome == nil {
+			t.Fatalf("expected wipe_import_result_outcome for %s", entry.Kind)
+		}
+		if entry.Kind == "character-item-state" {
+			if !entry.WipeImportResultOutcome.Replaced || entry.WipeImportResultOutcome.RowCount != wantRows[entry.Kind] {
+				t.Fatalf("unexpected replaced wipe outcome for %s: %#v", entry.Kind, entry.WipeImportResultOutcome)
+			}
+			continue
+		}
+		if entry.WipeImportResultOutcome.Replaced || entry.WipeImportResultOutcome.RowCount != 0 {
+			t.Fatalf("unexpected insert-only wipe outcome for %s: %#v", entry.Kind, entry.WipeImportResultOutcome)
+		}
+	}
+
+	for kind, payload := range replacedPayloads {
+		mustRewriteExportTreeWipeImportResult(t, tree, kind, payload)
+	}
+	var allStdout bytes.Buffer
+	var allStderr bytes.Buffer
+	code = Run([]string{"export-tree-status", "--export-tree", tree}, nil, &allStdout, &allStderr)
+	if code != exitOK {
+		t.Fatalf("expected all-replaced wipe-outcome export-tree-status to succeed, exit=%d stderr=%q", code, allStderr.String())
+	}
+	var all exportTreeStatus
+	if err := json.Unmarshal(allStdout.Bytes(), &all); err != nil {
+		t.Fatalf("decode all-replaced wipe-outcome export-tree status JSON: %v\nbody:\n%s", err, allStdout.String())
+	}
+	wantTotal := 0
+	for _, rows := range wantRows {
+		wantTotal += rows
+	}
+	if !all.WipeImportResultOutcomesComplete || all.WipeImportResultReplacedCount != len(importExportDrillWipeKinds) || !all.WipeImportResultAllReplaced || all.WipeImportResultRowCountTotal != wantTotal {
+		t.Fatalf("unexpected all-replaced wipe-outcome aggregates: %#v", all)
+	}
+	if !all.ImportResultOutcomesComplete || all.ImportResultReplacedCount != 0 || all.ImportResultAllReplaced {
+		t.Fatalf("tip-kind import_result_outcome aggregates must stay insert-only beside all-replaced wipe fields: %#v", all)
+	}
+	for _, entry := range all.Kinds {
+		if !entry.WipeKind {
+			if entry.WipeImportResultOutcome != nil {
+				t.Fatalf("non-wipe kind %s must omit wipe_import_result_outcome, got %#v", entry.Kind, entry.WipeImportResultOutcome)
+			}
+			continue
+		}
+		if entry.WipeImportResultOutcome == nil || !entry.WipeImportResultOutcome.Replaced || entry.WipeImportResultOutcome.RowCount != wantRows[entry.Kind] {
+			t.Fatalf("unexpected all-replaced wipe outcome for %s: %#v", entry.Kind, entry.WipeImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusOmitsWipeImportResultOutcomeWhenWipeImportResultAbsent(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260905T182000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+	if err := os.Remove(filepath.Join(tree, "character-quest-state", "wipe-import-result.json")); err != nil {
+		t.Fatalf("remove wipe-import-result: %v", err)
+	}
+	if err := os.Remove(filepath.Join(tree, "character-quest-state", "wipe-import-result-status.json")); err != nil {
+		t.Fatalf("remove wipe-import-result-status: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected incomplete wipe-outcome export-tree-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got exportTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode incomplete wipe-outcome export-tree status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.WipeImportResultOutcomesComplete || got.WipeImportResultAllReplaced || got.WipeImportResultReplacedCount != 0 || got.WipeImportResultRowCountTotal != 0 {
+		t.Fatalf("unexpected incomplete wipe-outcome aggregates: %#v", got)
+	}
+	if !got.ImportResultOutcomesComplete {
+		t.Fatalf("tip-kind import_result_outcomes_complete must stay true when only a wipe result is absent: %#v", got)
+	}
+	for _, entry := range got.Kinds {
+		if entry.Kind == "character-quest-state" {
+			if entry.WipeImportResultOutcome != nil {
+				t.Fatalf("expected omitted wipe_import_result_outcome for %s, got %#v", entry.Kind, entry.WipeImportResultOutcome)
+			}
+			continue
+		}
+		if entry.WipeKind && entry.WipeImportResultOutcome == nil {
+			t.Fatalf("expected wipe_import_result_outcome for present wipe kind %s", entry.Kind)
+		}
+		if !entry.WipeKind && entry.WipeImportResultOutcome != nil {
+			t.Fatalf("non-wipe kind %s must omit wipe_import_result_outcome, got %#v", entry.Kind, entry.WipeImportResultOutcome)
+		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunExportTreeStatusRejectsInvalidWipeImportResultBeforeOutcomeAggregation(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	tree := filepath.Join(t.TempDir(), "exports", "20260905T183000Z-abcdef012345")
+	mustMaterializeEmptyExportTreeStatusFixtures(t, tree)
+	mustMaterializeEmptyExportTreeImportResultFixtures(t, tree)
+	mustWriteFile(t, filepath.Join(tree, "character-item-state", "wipe-import-result.json"), []byte(`{"migration_version":3,"migration_name":"character_item_state","character_count":0,"inventory_item_count":0,"equipment_item_count":0,"quickslot_count":0,"character_ids":[],"extra":true}`+"\n"))
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"export-tree-status", "--export-tree", tree}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected invalid wipe-import-result to fail closed, exit=%d stderr=%q stdout=%q", code, stderr.String(), stdout.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on invalid wipe-import-result, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "character-item-state/wipe-import-result.json") {
+		t.Fatalf("expected stderr to name invalid wipe-import-result path, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("export-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -668,6 +884,14 @@ func TestRunExportTreeStatusUsageListsRequireFlags(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected usage to list %q, got %q", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("wipe-import outcome require flags must stay deferred, got %q", body)
 		}
 	}
 }
@@ -839,4 +1063,19 @@ func mustRewriteExportTreeImportResult(t *testing.T, exportTree, kind, payload s
 		t.Fatalf("import-export-status rewrite for %s: exit=%d stderr=%q", kind, code, statusStderr.String())
 	}
 	mustWriteFile(t, filepath.Join(dir, "import-result-status.json"), statusStdout.Bytes())
+}
+
+func mustRewriteExportTreeWipeImportResult(t *testing.T, exportTree, kind, payload string) {
+	t.Helper()
+	dir := filepath.Join(exportTree, kind)
+	mustMkdir(t, dir)
+	resultPath := filepath.Join(dir, "wipe-import-result.json")
+	mustWriteFile(t, resultPath, []byte(payload+"\n"))
+	var statusStdout bytes.Buffer
+	var statusStderr bytes.Buffer
+	code := Run([]string{"import-export-status", "--kind", kind, "--import-result", resultPath}, nil, &statusStdout, &statusStderr)
+	if code != exitOK {
+		t.Fatalf("import-export-status wipe rewrite for %s: exit=%d stderr=%q", kind, code, statusStderr.String())
+	}
+	mustWriteFile(t, filepath.Join(dir, "wipe-import-result-status.json"), statusStdout.Bytes())
 }
