@@ -241,6 +241,7 @@ GREEN on `lane/persistence`.
   both wipe-outcome requires beside the six existing after-status flags;
   before-status stays ungated.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
+- Follow-up owned separately: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

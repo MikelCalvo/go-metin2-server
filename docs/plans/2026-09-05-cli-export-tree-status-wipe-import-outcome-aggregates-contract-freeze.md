@@ -221,6 +221,7 @@ GREEN on `lane/persistence`.
 - Exact additive wipe-outcome field names + primary `row_count` mapping are frozen and implemented.
 - `export-tree-status` now projects per-wipe-kind `wipe_import_result_outcome` plus tree-level wipe replaced/row-count aggregates from retained `wipe-import-result.json` evidence.
 - Wipe-import outcome require flags are now GREEN — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
+- Follow-up owned separately: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze

@@ -200,6 +200,7 @@ GREEN on `lane/persistence`.
 - Wipe-import outcomes were deferred here; follow-up is now GREEN — see [CLI export-tree-status wipe-import outcome aggregates contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-aggregates-contract-freeze.md).
 - Follow-up owned separately and now GREEN: opt-in import-outcome require-gate + drill after-status wiring — see [CLI export-tree-status import-outcome require-gate contract freeze](2026-09-04-cli-export-tree-status-import-outcome-require-gate-contract-freeze.md).
 - Follow-up owned separately and now GREEN: opt-in wipe-import outcome require-gate + two-phase after-status wiring — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
+- Follow-up owned separately: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

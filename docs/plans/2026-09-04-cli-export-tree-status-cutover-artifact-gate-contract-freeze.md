@@ -185,6 +185,8 @@ Follow-up owned separately and now GREEN: additive wipe-import outcome aggregate
 
 Follow-up owned separately and now GREEN: opt-in wipe-import outcome require-gate on retained wipe-outcome aggregates — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
 
+Follow-up owned separately: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
+
 ## Status
 
 GREEN on `lane/persistence`.

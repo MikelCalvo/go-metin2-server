@@ -224,7 +224,7 @@ GREEN on `lane/persistence`.
 - Insert-only and scoped-replace after-status add outcomes-complete only
   (scoped-replace still supports omit-roster / partial re-backfill); two-phase
   after-status adds both outcome requires; before-status stays ungated.
-- Wipe-import outcome projection is now GREEN — see [CLI export-tree-status wipe-import outcome aggregates contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-aggregates-contract-freeze.md); wipe-import outcome require flags are now GREEN — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md).
+- Wipe-import outcome projection is now GREEN — see [CLI export-tree-status wipe-import outcome aggregates contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-aggregates-contract-freeze.md); wipe-import outcome require flags are now GREEN — see [CLI export-tree-status wipe-import outcome require-gate contract freeze](2026-09-05-cli-export-tree-status-wipe-import-outcome-require-gate-contract-freeze.md). Follow-up owned separately: read-only `export-tree-status-status` for retained `export-tree-status` JSON — see [CLI export-tree-status-status contract freeze](2026-09-05-cli-export-tree-status-status-contract-freeze.md).
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze
