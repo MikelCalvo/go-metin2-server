@@ -1,0 +1,9 @@
+{
+  "interaction_definitions": [
+    {
+      "kind": "info",
+      "ref": "lore:qa_info_embedded_nul",
+      "text": "visible\u0000hidden"
+    }
+  ]
+}

@@ -2441,6 +2441,29 @@ func TestLocalContentBundleValidateEndpointRejectsShopPreviewForeignRewardItemVn
 	}
 }
 
+func TestLocalContentBundleValidateEndpointRejectsInfoEmbeddedNULTextExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-info-embedded-nul-text-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid info embedded NUL text example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for checked-in info embedded NUL text example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
 func TestLocalContentBundleValidateEndpointRejectsConflictingRegisteredCombatProfileSnapshot(t *testing.T) {
 	const profile = "practice_ops_conflict_wolf"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

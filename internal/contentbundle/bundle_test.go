@@ -6195,6 +6195,31 @@ func TestCanonicalizeRejectsCheckedInShopPreviewForeignRewardItemVnumExample(t *
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInInfoEmbeddedNULTextExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-info-embedded-nul-text-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid info embedded NUL text example bundle: %v", err)
+	}
+	if bytes.Contains(raw, []byte{0}) {
+		t.Fatal("checked-in info embedded NUL example must keep JSON \\u0000 escaped rather than a raw NUL byte")
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid info embedded NUL text example bundle: %v", err)
+	}
+	if len(bundle.InteractionDefinitions) != 1 || !strings.ContainsRune(bundle.InteractionDefinitions[0].Text, '\x00') {
+		t.Fatalf("expected decoded info text to contain an embedded NUL, got %#v", bundle.InteractionDefinitions)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in info embedded NUL text example, got %v", err)
+	}
+}
+
 func TestCanonicalizeKillQuestCreditAuthoringExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

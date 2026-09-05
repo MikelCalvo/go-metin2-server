@@ -68,8 +68,11 @@ git diff --check
 1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
    exists.
 2. Keep branching quest scripts deferred.
-3. Add further checked-in negatives only when a later reject case still forces
-   QA to invent JSON. With warehouse + craftsman + merchant scalar
-   `reward_item_vnum` shorthand twins landed, Track D foreign-field dry-run
-   coverage for the highest-confusion turn-in shorthand is otherwise closed
-   unless a new reject still forces improvised JSON.
+3. ~~Add further checked-in negatives only when a later reject case still forces
+   QA to invent JSON.~~ Done for `info.text` JSON `\u0000`:
+   `docs/examples/bootstrap-invalid-info-embedded-nul-text-bundle.json`
+   (`docs/plans/2026-09-05-invalid-info-embedded-nul-text-fixture.md`).
+   With warehouse + craftsman + merchant scalar `reward_item_vnum` shorthand
+   twins landed, Track D foreign-field dry-run coverage for the
+   highest-confusion turn-in shorthand is otherwise closed unless a new reject
+   still forces improvised JSON.

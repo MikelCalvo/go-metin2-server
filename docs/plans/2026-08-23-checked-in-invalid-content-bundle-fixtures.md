@@ -88,3 +88,7 @@ git diff --check
    conflicting kill-quest credit:
    `docs/examples/bootstrap-invalid-conflicting-kill-quest-credit-bundle.json`; later also `docs/examples/bootstrap-invalid-colliding-regen-member-refs-bundle.json`
    (`docs/plans/2026-08-24-invalid-conflicting-kill-quest-credit-fixture.md`).
+7. ~~Optionally add another checked-in negative fixture only when a later reject
+   case still forces QA to invent JSON.~~ Done for `info.text` JSON `\u0000`:
+   `docs/examples/bootstrap-invalid-info-embedded-nul-text-bundle.json`
+   (`docs/plans/2026-09-05-invalid-info-embedded-nul-text-fixture.md`).
