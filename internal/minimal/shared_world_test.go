@@ -7812,8 +7812,8 @@ func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPA
 	if err != nil {
 		t.Fatalf("unexpected formula-profile killing hit error: %v", err)
 	}
-	if len(killingOut) < 2 {
-		t.Fatalf("expected formula-profile killing hit to emit death/clear before rewards, got %d frames", len(killingOut))
+	if len(killingOut) < 3 {
+		t.Fatalf("expected formula-profile killing hit to emit death/clear/damage-info before rewards, got %d frames", len(killingOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingOut[0]))
 	if err != nil {
@@ -7829,6 +7829,7 @@ func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPA
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected formula-profile killing hit to clear target, got %+v", clear)
 	}
+	assertDamageInfoFrame(t, killingOut[2], targetVID, 5, "formula-profile killing hit")
 }
 
 func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t *testing.T) {
@@ -12325,7 +12326,7 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 		}
 		wantFrames := 4
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d frames on pending-retaliation cleanup hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -12876,7 +12877,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisi
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on dummy death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -14350,7 +14351,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on target-map dummy death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -15993,8 +15994,8 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 	if err != nil {
 		t.Fatalf("unexpected watcher death-hit attack error before zero-HP owner visible mob-death recipient skip test: %v", err)
 	}
-	if len(watcherFinalAttack) != 2 {
-		t.Fatalf("expected self dead-plus-clear-target transition for watcher kill hit before zero-HP owner visible mob-death recipient skip test, got %d frames", len(watcherFinalAttack))
+	if len(watcherFinalAttack) != 3 {
+		t.Fatalf("expected self dead-plus-clear-plus-damage-info transition for watcher kill hit before zero-HP owner visible mob-death recipient skip test, got %d frames", len(watcherFinalAttack))
 	}
 	watcherMobDeath, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherFinalAttack[0]))
 	if err != nil {
@@ -16003,6 +16004,7 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 	if watcherMobDeath.VID != targetVID {
 		t.Fatalf("expected watcher self death transition to report DEAD(mob_vid) before zero-HP owner visible mob-death recipient skip test, got %+v", watcherMobDeath)
 	}
+	assertDamageInfoFrame(t, watcherFinalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher kill hit before zero-HP owner visible skip")
 
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected already-dead owner to receive no later visible practice-mob DEAD fanout when watcher kills the mob, got %d queued frames", len(queued))
@@ -16296,9 +16298,10 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 	if err != nil {
 		t.Fatalf("unexpected watcher death-hit attack error before zero-HP owner respawn recipient skip test: %v", err)
 	}
-	if len(watcherFinalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames for watcher kill hit before zero-HP owner respawn recipient skip test, got %d", len(watcherFinalAttack))
+	if len(watcherFinalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames for watcher kill hit before zero-HP owner respawn recipient skip test, got %d", len(watcherFinalAttack))
 	}
+	assertDamageInfoFrame(t, watcherFinalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher kill hit before zero-HP owner respawn skip")
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected already-dead owner to receive no queued visible practice-mob death fanout before respawn recipient skip assertions, got %d", len(queued))
 	}
@@ -16870,9 +16873,10 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected watcher death-hit attack error before /restart_here due-respawn preflight: %v", err)
 	}
-	if len(watcherFinalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames for watcher kill hit before /restart_here due-respawn preflight, got %d", len(watcherFinalAttack))
+	if len(watcherFinalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames for watcher kill hit before /restart_here due-respawn preflight, got %d", len(watcherFinalAttack))
 	}
+	assertDamageInfoFrame(t, watcherFinalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher kill hit before restart-here due-respawn preflight")
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected already-dead owner to skip practice-mob death fanout before /restart_here due-respawn preflight, got %d", len(queued))
 	}
@@ -21689,7 +21693,7 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on snapshot death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -21925,7 +21929,7 @@ func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t 
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on structured-result death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -22792,31 +22796,31 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 			t.Fatalf("unexpected attack error on combined reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 6 {
+	if len(killOut) != 7 {
 		t.Fatalf("expected killing hit to return dead, clear target, exp, gold, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode combined reward exp point-change: %v", err)
 	}
 	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected combined reward exp point-change: %+v", expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode combined reward gold point-change: %v", err)
 	}
 	if goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
 		t.Fatalf("unexpected combined reward gold point-change: %+v", goldChange)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil {
 		t.Fatalf("decode combined reward ground add: %v", err)
 	}
 	if ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y {
 		t.Fatalf("unexpected combined reward ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil {
 		t.Fatalf("decode combined reward ownership: %v", err)
 	}
@@ -22903,7 +22907,7 @@ func TestGameRuntimeDropTableRewardDescriptorKillingHitEmitsAllRewards(t *testin
 			t.Fatalf("unexpected table reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 8 {
+	if len(killOut) != 9 {
 		t.Fatalf("expected table killing hit to return dead, clear, exp, gold, two ground-add/ownership pairs, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
@@ -22914,27 +22918,27 @@ func TestGameRuntimeDropTableRewardDescriptorKillingHitEmitsAllRewards(t *testin
 	if err != nil || clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("unexpected table reward clear-target frame: clear=%+v err=%v", clear, err)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil || expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected table reward exp point-change: %+v err=%v", expChange, err)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
 		t.Fatalf("unexpected table reward gold point-change: %+v err=%v", goldChange, err)
 	}
-	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil || firstGround.Vnum != 27001 || firstGround.X != killer.X || firstGround.Y != killer.Y {
 		t.Fatalf("unexpected first table reward ground add: %+v err=%v", firstGround, err)
 	}
-	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil || firstOwnership.VID != firstGround.VID || firstOwnership.OwnerName != killer.Name {
 		t.Fatalf("unexpected first table reward ownership: %+v err=%v", firstOwnership, err)
 	}
-	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[6]))
+	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[7]))
 	if err != nil || secondGround.Vnum != 27002 || secondGround.X != killer.X || secondGround.Y != killer.Y {
 		t.Fatalf("unexpected second table reward ground add: %+v err=%v", secondGround, err)
 	}
-	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[7]))
+	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[8]))
 	if err != nil || secondOwnership.VID != secondGround.VID || secondOwnership.OwnerName != killer.Name {
 		t.Fatalf("unexpected second table reward ownership: %+v err=%v", secondOwnership, err)
 	}
@@ -23000,17 +23004,17 @@ func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotWithoutPersistingRetal
 			t.Fatalf("unexpected attack error on retaliated reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, exp, and gold frames, got %d", len(killOut))
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode retaliated reward exp point-change: %v", err)
 	}
 	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected retaliated reward exp point-change: %+v", expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode retaliated reward gold point-change: %v", err)
 	}
@@ -23102,7 +23106,7 @@ func TestGameRuntimeScalarRewardPersistenceFailureRollsBackLiveScalarsWithoutClo
 			t.Fatalf("unexpected attack error on save-fail reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected save-fail reward kill to return only dead and clear-target frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23176,7 +23180,7 @@ func TestGameRuntimeScalarRewardPersistenceFailureKeepsValidDropReward(t *testin
 			t.Fatalf("unexpected attack error on save-fail scalar/drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected failed scalar persistence to omit scalar frames but keep valid drop reward, got %d frames", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23189,14 +23193,14 @@ func TestGameRuntimeScalarRewardPersistenceFailureKeepsValidDropReward(t *testin
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected save-fail scalar/drop clear target: %+v", clearTarget)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode save-fail scalar/drop ground add: %v", err)
 	}
 	if ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y {
 		t.Fatalf("unexpected save-fail scalar/drop ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode save-fail scalar/drop ownership: %v", err)
 	}
@@ -23272,7 +23276,7 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 			t.Fatalf("unexpected attack error on colliding reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected colliding reward kill to return only dead and clear-target frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23345,7 +23349,7 @@ func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing
 			t.Fatalf("unexpected template-restricted reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected template-restricted reward kill to return dead, clear-target, and only the allowed drop frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23358,7 +23362,7 @@ func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected template-restricted reward clear target: %+v", clearTarget)
 	}
-	allowedGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	allowedGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode allowed template reward ground add: %v", err)
 	}
@@ -23366,7 +23370,7 @@ func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing
 	if allowedGround.Vnum != 27001 || allowedGround.VID != allowedVID {
 		t.Fatalf("expected only allowed reward drop vnum=27001 vid=%d, got %+v", allowedVID, allowedGround)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode allowed template reward ownership: %v", err)
 	}
@@ -23432,7 +23436,7 @@ func TestGameRuntimeDropRewardInvalidOwnerNameSkipsGroundFrames(t *testing.T) {
 			t.Fatalf("unexpected attack error on invalid-owner reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected invalid owner metadata to keep death/clear plus scalar reward frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23445,14 +23449,14 @@ func TestGameRuntimeDropRewardInvalidOwnerNameSkipsGroundFrames(t *testing.T) {
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected invalid-owner reward clear target: %+v", clearTarget)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode invalid-owner reward exp point-change: %v", err)
 	}
 	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected invalid-owner reward exp point-change: %+v", expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode invalid-owner reward gold point-change: %v", err)
 	}
@@ -23515,7 +23519,7 @@ func TestGameRuntimeDropRewardOverlongOwnerNameSkipsGroundFrames(t *testing.T) {
 			t.Fatalf("unexpected attack error on overlong-owner reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected overlong owner name to keep death/clear plus scalar reward frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23528,14 +23532,14 @@ func TestGameRuntimeDropRewardOverlongOwnerNameSkipsGroundFrames(t *testing.T) {
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected overlong-owner reward clear target: %+v", clearTarget)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode overlong-owner reward exp point-change: %v", err)
 	}
 	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected overlong-owner reward exp point-change: %+v", expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode overlong-owner reward gold point-change: %v", err)
 	}
@@ -23605,7 +23609,7 @@ func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 			t.Fatalf("unexpected attack error on partial collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected partial collision reward kill to return dead, clear-target, and the non-colliding drop frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23621,7 +23625,7 @@ func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 	if stored, ok := runtime.sharedWorld.GroundItemVisibleTo(sharedWorldID, killer, collidingVID); !ok || stored.Vnum != 3001 {
 		t.Fatalf("expected pre-existing colliding ground item to remain preserved, got %+v ok=%v", stored, ok)
 	}
-	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode non-colliding reward ground add: %v", err)
 	}
@@ -23629,7 +23633,7 @@ func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 	if nonCollidingAdd.Vnum != 27002 || nonCollidingAdd.VID != expectedVID {
 		t.Fatalf("expected only non-colliding reward drop to be emitted, got %+v want vid=%d vnum=27002", nonCollidingAdd, expectedVID)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode non-colliding reward ownership: %v", err)
 	}
@@ -23690,7 +23694,7 @@ func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testin
 			t.Fatalf("unexpected attack error on descriptor collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 8 {
+	if len(killOut) != 9 {
 		t.Fatalf("expected normalized three-drop reward kill to return dead, clear-target, and three ground-add/ownership pairs, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23705,7 +23709,7 @@ func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testin
 	}
 	normalizedDropVnums := []uint32{27001, 27002, 27003}
 	for index, vnum := range normalizedDropVnums {
-		add, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2+index*2]))
+		add, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3+index*2]))
 		if err != nil {
 			t.Fatalf("decode normalized reward ground add %d: %v", index, err)
 		}
@@ -23767,7 +23771,7 @@ func TestGameRuntimeScalarRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t
 			t.Fatalf("unexpected attack error on scalar overflow drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected scalar overflow reward kill to return dead, clear-target, ground-add, and ownership frames only, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23780,7 +23784,7 @@ func TestGameRuntimeScalarRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected scalar overflow reward clear target: %+v", clearTarget)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode scalar overflow reward ground add: %v", err)
 	}
@@ -23788,7 +23792,7 @@ func TestGameRuntimeScalarRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t
 	if ground.Vnum != rewardVnum || ground.VID != expectedVID {
 		t.Fatalf("expected scalar overflow reward to keep valid drop, got %+v want vid=%d vnum=%d", ground, expectedVID, rewardVnum)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode scalar overflow reward ownership: %v", err)
 	}
@@ -23856,7 +23860,7 @@ func TestGameRuntimeGoldRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t *
 			t.Fatalf("unexpected attack error on gold overflow drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected gold overflow reward kill to return dead, clear-target, ground-add, and ownership frames only, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23869,7 +23873,7 @@ func TestGameRuntimeGoldRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t *
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected gold overflow reward clear target: %+v", clearTarget)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode gold overflow reward ground add: %v", err)
 	}
@@ -23877,7 +23881,7 @@ func TestGameRuntimeGoldRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t *
 	if ground.Vnum != rewardVnum || ground.VID != expectedVID {
 		t.Fatalf("expected gold overflow reward to keep valid drop, got %+v want vid=%d vnum=%d", ground, expectedVID, rewardVnum)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode gold overflow reward ownership: %v", err)
 	}
@@ -23955,7 +23959,7 @@ func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 			t.Fatalf("unexpected attack error on scalar collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected scalar collision reward kill to return dead, clear-target, exp, and gold frames only, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -23968,14 +23972,14 @@ func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("unexpected scalar collision reward clear target: %+v", clearTarget)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	expChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode scalar collision reward exp point-change: %v", err)
 	}
 	if expChange.Type != bootstrapExperiencePointType || expChange.Amount != 75 || expChange.Value != 100 {
 		t.Fatalf("unexpected scalar collision reward exp point-change: %+v", expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode scalar collision reward gold point-change: %v", err)
 	}
@@ -24056,10 +24060,10 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 			t.Fatalf("unexpected attack error on peer-visible drop hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killer to receive dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	killerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	killerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode killer reward ground add: %v", err)
 	}
@@ -24068,8 +24072,8 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 	}
 
 	peerFrames := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, killer.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before peer-visible drop reward fanout")
-	if len(peerFrames) != 3 {
-		t.Fatalf("expected watcher to receive mob dead, ground-add, and ownership frames, got %d", len(peerFrames))
+	if len(peerFrames) != 4 {
+		t.Fatalf("expected watcher to receive mob dead, damage-info, ground-add, and ownership frames, got %d", len(peerFrames))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerFrames[0]))
 	if err != nil {
@@ -24078,14 +24082,15 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 	if dead.VID != targetVID {
 		t.Fatalf("unexpected watcher mob dead frame: %+v", dead)
 	}
-	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, peerFrames[1]))
+	assertDamageInfoFrame(t, peerFrames[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher drop-reward killing-hit")
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, peerFrames[2]))
 	if err != nil {
 		t.Fatalf("decode watcher reward ground add: %v", err)
 	}
 	if peerGround.VID != killerGround.VID || peerGround.Vnum != killerGround.Vnum || peerGround.X != killerGround.X || peerGround.Y != killerGround.Y {
 		t.Fatalf("expected watcher ground add to mirror killer drop, got killer=%+v watcher=%+v", killerGround, peerGround)
 	}
-	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, peerFrames[2]))
+	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, peerFrames[3]))
 	if err != nil {
 		t.Fatalf("decode watcher reward ownership: %v", err)
 	}
@@ -24153,10 +24158,10 @@ func TestGameRuntimeDropRewardSkipsDeadVisiblePeers(t *testing.T) {
 			t.Fatalf("unexpected attack error on dead-peer drop hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killer to receive dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2])); err != nil {
+	if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3])); err != nil {
 		t.Fatalf("decode killer reward ground add for dead-peer test: %v", err)
 	}
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
@@ -24221,18 +24226,19 @@ func TestGameRuntimeDropRewardOwnerCloseRemovesPendingGroundHandleForVisiblePeer
 			t.Fatalf("unexpected reward owner close attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killer to receive dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	killerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	killerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode reward owner close ground add: %v", err)
 	}
 	peerFrames := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, killer.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before reward owner close drop fanout")
-	if len(peerFrames) != 3 {
-		t.Fatalf("expected watcher to receive mob dead, ground-add, and ownership before owner close, got %d", len(peerFrames))
+	if len(peerFrames) != 4 {
+		t.Fatalf("expected watcher to receive mob dead, damage-info, ground-add, and ownership before owner close, got %d", len(peerFrames))
 	}
-	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, peerFrames[1]))
+	assertDamageInfoFrame(t, peerFrames[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher owner-close killing-hit")
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, peerFrames[2]))
 	if err != nil {
 		t.Fatalf("decode watcher reward owner close ground add: %v", err)
 	}
@@ -24314,10 +24320,10 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 			t.Fatalf("unexpected attack error on occupancy drop hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode occupancy drop ground add: %v", err)
 	}
@@ -24414,10 +24420,10 @@ func TestGameRuntimeRewardDropPickupUsesTemplateAuthoredPickupRange(t *testing.T
 			t.Fatalf("unexpected long-range reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected long-range reward killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode long-range reward ground add: %v", err)
 	}
@@ -24517,10 +24523,10 @@ func TestGameRuntimeRewardDropPickupTemplateAuthoredShortRangeFailsClosed(t *tes
 			t.Fatalf("unexpected short-range reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected short-range reward killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode short-range reward ground add: %v", err)
 	}
@@ -24612,10 +24618,10 @@ func TestGameRuntimeDeadCollectorCannotPickupPracticeMobDropReward(t *testing.T)
 			t.Fatalf("unexpected dead-collector reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode dead-collector reward ground add: %v", err)
 	}
@@ -24696,10 +24702,10 @@ func TestGameRuntimeLivingCollectorTakesPracticeMobDropRewardWhenOwnerIsDead(t *
 			t.Fatalf("unexpected dead-owner reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode dead-owner reward ground add: %v", err)
 	}
@@ -24822,14 +24828,14 @@ func TestGameRuntimeRewardDropPublicReleaseAllowsLivingCollectorPickup(t *testin
 			t.Fatalf("unexpected public reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode public reward ground add: %v", err)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode public reward ownership: %v", err)
 	}
@@ -29117,7 +29123,7 @@ func TestGameRuntimeRemoveStaticActorReturnsDeadTrainingDummySnapshot(t *testing
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on delete snapshot death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -29631,7 +29637,7 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on dead refresh hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -29750,7 +29756,7 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on respawn hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -30167,9 +30173,10 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 	if err != nil {
 		t.Fatalf("unexpected registered-profile killing attack error: %v", err)
 	}
-	if len(killingHit) != 2 {
-		t.Fatalf("expected registered-profile killing hit to return death + clear, got %d frames", len(killingHit))
+	if len(killingHit) != 3 {
+		t.Fatalf("expected registered-profile killing hit to return death, clear, and damage-info, got %d frames", len(killingHit))
 	}
+	assertDamageInfoFrame(t, killingHit[2], targetVID, 2, "registered-profile killing hit")
 
 	currentTime = currentTime.Add(1499 * time.Millisecond)
 	if early := flushServerFrames(t, flow); len(early) != 0 {
@@ -32047,7 +32054,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 			t.Fatalf("unexpected attack error on registered-profile reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, experience, and gold point-change frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32060,14 +32067,14 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected registered-profile reward killing hit to clear target, got %+v", clearTarget)
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode registered-profile experience reward point change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 33 || experienceChange.Value != 43 {
 		t.Fatalf("unexpected registered-profile experience reward point change: %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode registered-profile gold reward point change: %v", err)
 	}
@@ -32142,7 +32149,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropRewa
 			t.Fatalf("unexpected attack error on registered-profile drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32155,7 +32162,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropRewa
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected registered-profile drop reward killing hit to clear target, got %+v", clearTarget)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode registered-profile drop reward ground add: %v", err)
 	}
@@ -32163,7 +32170,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropRewa
 	if ground.VID != expectedVID || ground.Vnum != 27003 || ground.X != killer.X || ground.Y != killer.Y {
 		t.Fatalf("unexpected registered-profile drop reward ground add: %+v want vid=%d", ground, expectedVID)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode registered-profile drop reward ownership: %v", err)
 	}
@@ -32250,7 +32257,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	if err != nil {
 		t.Fatalf("unexpected formula reward killing attack error: %v", err)
 	}
-	if len(killOut) != 6 {
+	if len(killOut) != 7 {
 		t.Fatalf("expected killing hit to return dead, clear target, experience, gold, ground-add, and ownership frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32263,21 +32270,21 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected formula reward killing hit to clear target, got %+v", clearTarget)
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode formula reward experience point change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 12 || experienceChange.Value != 42 {
 		t.Fatalf("unexpected formula reward experience point change: %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode formula reward gold point change: %v", err)
 	}
 	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 13 || goldChange.Value != 53 {
 		t.Fatalf("unexpected formula reward gold point change: %+v", goldChange)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil {
 		t.Fatalf("decode formula reward ground add: %v", err)
 	}
@@ -32285,7 +32292,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 	if ground.VID != expectedVID || ground.Vnum != 27004 || ground.X != killer.X || ground.Y != killer.Y {
 		t.Fatalf("unexpected formula reward ground add: %+v want vid=%d", ground, expectedVID)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil {
 		t.Fatalf("decode formula reward ownership: %v", err)
 	}
@@ -32366,17 +32373,17 @@ func TestNewGameSessionFactoryPrefersExplicitDeathRewardOverRegisteredProfileDef
 			t.Fatalf("unexpected attack error on explicit reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, explicit experience, and explicit gold frames, got %d", len(killOut))
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode explicit reward experience point change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 11 || experienceChange.Value != 111 {
 		t.Fatalf("expected explicit experience reward to override profile default, got %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode explicit reward gold point change: %v", err)
 	}
@@ -32471,7 +32478,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 	if err != nil {
 		t.Fatalf("unexpected formula reward killing-hit error: %v", err)
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, experience, and gold point-change frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32484,14 +32491,14 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected formula reward killing hit to clear target, got %+v", clearTarget)
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode formula reward experience point change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 55 || experienceChange.Value != 60 {
 		t.Fatalf("unexpected formula reward experience point change: %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode formula reward gold point change: %v", err)
 	}
@@ -32563,7 +32570,7 @@ func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *tes
 			t.Fatalf("unexpected attack error on experience reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 3 {
+	if len(killOut) != 4 {
 		t.Fatalf("expected killing hit to return dead, clear target, and experience point-change frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32576,7 +32583,7 @@ func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *tes
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected experience reward killing hit to clear target, got %+v", clearTarget)
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode experience reward point change: %v", err)
 	}
@@ -32645,7 +32652,7 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 			t.Fatalf("unexpected attack error on gold reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 3 {
+	if len(killOut) != 4 {
 		t.Fatalf("expected killing hit to return dead, clear target, and gold point-change frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32658,7 +32665,7 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected gold reward killing hit to clear target, got %+v", clearTarget)
 	}
-	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode gold reward point change: %v", err)
 	}
@@ -32732,7 +32739,7 @@ func TestNewGameSessionFactoryOmitsOverflowingScalarPracticeMobDeathReward(t *te
 			t.Fatalf("unexpected attack error on overflow reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected overflow reward killing hit to preserve dead and clear target frames only, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32818,7 +32825,7 @@ func TestNewGameSessionFactoryRollsBackScalarPracticeMobDeathRewardWhenAccountSa
 	if err != nil {
 		t.Fatalf("unexpected attack error on scalar reward save-failure killing hit: %v", err)
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected killing hit to preserve dead and clear target frames while omitting scalar point-changes after save failure, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32888,7 +32895,7 @@ func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *tes
 			t.Fatalf("unexpected attack error on multi-drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 6 {
+	if len(killOut) != 7 {
 		t.Fatalf("expected killing hit to return dead, clear target, and two ground-add/ownership pairs, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -32901,19 +32908,19 @@ func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *tes
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected multi-drop reward killing hit to clear target, got %+v", clearTarget)
 	}
-	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	firstGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode first multi-drop reward ground add: %v", err)
 	}
-	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	firstOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode first multi-drop reward ownership: %v", err)
 	}
-	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	secondGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil {
 		t.Fatalf("decode second multi-drop reward ground add: %v", err)
 	}
-	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	secondOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil {
 		t.Fatalf("decode second multi-drop reward ownership: %v", err)
 	}
@@ -33000,17 +33007,17 @@ func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *t
 			t.Fatalf("unexpected peer drop reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode killer peer drop reward ground add: %v", err)
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
 		t.Fatalf("unexpected killer peer drop reward ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode killer peer drop reward ownership: %v", err)
 	}
@@ -33019,8 +33026,8 @@ func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *t
 	}
 
 	watcherQueued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, killer.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before peer drop reward death fanout")
-	if len(watcherQueued) != 3 {
-		t.Fatalf("expected watcher to receive DEAD plus ground-add/ownership reward frames, got %d", len(watcherQueued))
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected watcher to receive DEAD plus damage-info plus ground-add/ownership reward frames, got %d", len(watcherQueued))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
 	if err != nil {
@@ -33029,14 +33036,15 @@ func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *t
 	if dead.VID != targetVID {
 		t.Fatalf("expected watcher dead frame for target vid %d, got %+v", targetVID, dead)
 	}
-	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherQueued[1]))
+	assertDamageInfoFrame(t, watcherQueued[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher peer drop reward killing-hit")
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherQueued[2]))
 	if err != nil {
 		t.Fatalf("decode watcher peer drop reward ground add: %v", err)
 	}
 	if peerGround != ground {
 		t.Fatalf("expected watcher ground reward to match killer frame, got peer=%+v self=%+v", peerGround, ground)
 	}
-	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherQueued[2]))
+	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherQueued[3]))
 	if err != nil {
 		t.Fatalf("decode watcher peer drop reward ownership: %v", err)
 	}
@@ -33107,13 +33115,13 @@ func TestNewGameSessionFactorySkipsPracticeMobDeathDropRewardForDeadVisiblePeer(
 			t.Fatalf("unexpected dead-peer drop reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2])); err != nil {
+	if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3])); err != nil {
 		t.Fatalf("decode killer dead-peer drop reward ground add: %v", err)
 	}
-	if _, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3])); err != nil {
+	if _, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4])); err != nil {
 		t.Fatalf("decode killer dead-peer drop reward ownership: %v", err)
 	}
 	if watcherQueued := flushServerFrames(t, watcherFlow); len(watcherQueued) != 0 {
@@ -33170,7 +33178,7 @@ func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t 
 			t.Fatalf("unexpected attack error on mixed reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 6 {
+	if len(killOut) != 7 {
 		t.Fatalf("expected killing hit to return dead, clear target, EXP/gold point changes, ground-add, and ownership frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -33183,28 +33191,28 @@ func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t 
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected mixed reward killing hit to clear target, got %+v", clearTarget)
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode mixed reward experience point-change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 75 || experienceChange.Value != 100 {
 		t.Fatalf("unexpected mixed reward experience point-change: %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode mixed reward gold point-change: %v", err)
 	}
 	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
 		t.Fatalf("unexpected mixed reward gold point-change: %+v", goldChange)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil {
 		t.Fatalf("decode mixed reward ground add: %v", err)
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
 		t.Fatalf("unexpected mixed reward ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil {
 		t.Fatalf("decode mixed reward ownership: %v", err)
 	}
@@ -33287,31 +33295,31 @@ func TestNewGameSessionFactoryAppliesAuthoredSpawnGroupPracticeMobDeathReward(t 
 			t.Fatalf("unexpected authored reward attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 6 {
+	if len(killOut) != 7 {
 		t.Fatalf("expected authored reward killing hit to return dead, clear target, EXP/gold point changes, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[2]))
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode authored reward experience point-change: %v", err)
 	}
 	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != 75 || experienceChange.Value != 100 {
 		t.Fatalf("unexpected authored reward experience point-change: %+v", experienceChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[3]))
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode authored reward gold point-change: %v", err)
 	}
 	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != 60 || goldChange.Value != 100 {
 		t.Fatalf("unexpected authored reward gold point-change: %+v", goldChange)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[4]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[5]))
 	if err != nil {
 		t.Fatalf("decode authored reward ground add: %v", err)
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
 		t.Fatalf("unexpected authored reward ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[5]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[6]))
 	if err != nil {
 		t.Fatalf("decode authored reward ownership: %v", err)
 	}
@@ -33387,7 +33395,7 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobScalarRewardS
 			t.Fatalf("unexpected attack error on scalar-save-fail reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected scalar reward save failure to preserve only dead + clear target frames, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
@@ -33482,7 +33490,7 @@ func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing
 			t.Fatalf("unexpected attack error on drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
 	if _, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil {
@@ -33495,14 +33503,14 @@ func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected drop reward killing hit to clear target, got %+v", clearTarget)
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode drop reward ground add: %v", err)
 	}
 	if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
 		t.Fatalf("unexpected drop reward ground add: %+v", ground)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode drop reward ownership: %v", err)
 	}
@@ -33616,10 +33624,10 @@ func TestGameRuntimeDropRewardQueuesVisibilityForLivePeer(t *testing.T) {
 			t.Fatalf("unexpected attack error on visible drop reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected visible drop reward killing hit to return dead, clear target, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	selfGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	selfGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode self visible drop reward ground add: %v", err)
 	}
@@ -33628,8 +33636,8 @@ func TestGameRuntimeDropRewardQueuesVisibilityForLivePeer(t *testing.T) {
 	}
 
 	watcherQueued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, killer.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before visible drop reward fanout")
-	if len(watcherQueued) != 3 {
-		t.Fatalf("expected watcher to receive dead plus ground-add and ownership frames for visible drop reward, got %d", len(watcherQueued))
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected watcher to receive dead plus damage-info plus ground-add and ownership frames for visible drop reward, got %d", len(watcherQueued))
 	}
 	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, watcherQueued[0]))
 	if err != nil {
@@ -33638,14 +33646,15 @@ func TestGameRuntimeDropRewardQueuesVisibilityForLivePeer(t *testing.T) {
 	if peerDead.VID != targetVID {
 		t.Fatalf("unexpected watcher visible drop reward dead frame: %+v", peerDead)
 	}
-	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherQueued[1]))
+	assertDamageInfoFrame(t, watcherQueued[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "watcher visible drop reward killing-hit")
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, watcherQueued[2]))
 	if err != nil {
 		t.Fatalf("decode watcher visible drop reward ground add: %v", err)
 	}
 	if peerGround != selfGround {
 		t.Fatalf("expected watcher to receive same reward ground add as killer, got %+v want %+v", peerGround, selfGround)
 	}
-	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherQueued[2]))
+	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, watcherQueued[3]))
 	if err != nil {
 		t.Fatalf("decode watcher visible drop reward ownership: %v", err)
 	}
@@ -33709,7 +33718,7 @@ func TestNewGameSessionFactoryRejectsPracticeMobDropRewardVIDCollisionWithoutGro
 			t.Fatalf("unexpected attack error on collision reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected collision reward killing hit to preserve dead, clear target, and non-colliding drop frames, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
@@ -33734,14 +33743,14 @@ func TestNewGameSessionFactoryRejectsPracticeMobDropRewardVIDCollisionWithoutGro
 	if len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected rejected collision reward not to mutate persisted inventory, got %#v", account.Characters[0].Inventory)
 	}
-	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	nonCollidingAdd, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil {
 		t.Fatalf("decode non-colliding collision reward ground add: %v", err)
 	}
 	if nonCollidingAdd.VID != secondVID || nonCollidingAdd.Vnum != 0x00050101 {
 		t.Fatalf("expected only second non-colliding reward ground add, got %+v", nonCollidingAdd)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil {
 		t.Fatalf("decode non-colliding collision reward ownership: %v", err)
 	}
@@ -33808,7 +33817,7 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescrip
 			t.Fatalf("unexpected attack error on unsupported reward hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 2 {
+	if len(killOut) != 3 {
 		t.Fatalf("expected unsupported reward killing hit to preserve dead + clear target frames only, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
@@ -41478,8 +41487,8 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	if err != nil {
 		t.Fatalf("unexpected combat attack error on zero-HP death hit: %v", err)
 	}
-	if len(finalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames on zero-HP hit, got %d", len(finalAttack))
+	if len(finalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames on zero-HP hit, got %d", len(finalAttack))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, finalAttack[0]))
 	if err != nil {
@@ -41495,6 +41504,7 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
 		t.Fatalf("expected zero-target clear after zero-HP death, got %+v", cleared)
 	}
+	assertDamageInfoFrame(t, finalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "zero-HP death hit")
 
 	postDeathAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
@@ -41562,7 +41572,7 @@ func TestNewGameSessionFactoryBootstrapsStillDeadTrainingDummyWithTrailingDeadRe
 		}
 		wantFrames := 2
 		if attackIndex == 9 {
-			wantFrames = 2
+			wantFrames = 3
 		}
 		if len(attackOut) != wantFrames {
 			t.Fatalf("expected %d attack frames on death hit %d, got %d", wantFrames, attackIndex+1, len(attackOut))
@@ -41682,12 +41692,12 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 	if err != nil {
 		t.Fatalf("unexpected combat attack error on visible-session zero-HP death hit: %v", err)
 	}
-	if len(finalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames for the killing hit, got %d", len(finalAttack))
+	if len(finalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames for the killing hit, got %d", len(finalAttack))
 	}
 	peerFrames := flushServerFrames(t, flowTwo)
-	if len(peerFrames) != 2 {
-		t.Fatalf("expected 2 queued death-transition frames for the other selected visible session, got %d", len(peerFrames))
+	if len(peerFrames) != 3 {
+		t.Fatalf("expected 3 queued death-transition frames for the other selected visible session, got %d", len(peerFrames))
 	}
 	peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerFrames[0]))
 	if err != nil {
@@ -41703,6 +41713,8 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 	if peerCleared.TargetVID != 0 || peerCleared.HPPercent != 0 {
 		t.Fatalf("expected zero-target clear for other selected visible session after zero-HP death, got %+v", peerCleared)
 	}
+	assertDamageInfoFrame(t, finalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "visible-session killing-hit self")
+	assertDamageInfoFrame(t, peerFrames[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "visible-session killing-hit peer")
 	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
 		t.Fatalf("expected no queued self frames for the killing session after zero-HP death, got %d", len(queued))
 	}
@@ -41781,9 +41793,10 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 	if err != nil {
 		t.Fatalf("unexpected combat attack error on respawn death hit: %v", err)
 	}
-	if len(finalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames before respawn, got %d", len(finalAttack))
+	if len(finalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames before respawn, got %d", len(finalAttack))
 	}
+	assertDamageInfoFrame(t, finalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "respawn death hit")
 
 	currentTime = currentTime.Add((2 * time.Second) - time.Millisecond)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
@@ -41948,8 +41961,8 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	if err != nil {
 		t.Fatalf("unexpected combat attack error on content practice-mob death hit: %v", err)
 	}
-	if len(finalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames before content practice-mob respawn, got %d", len(finalAttack))
+	if len(finalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames before content practice-mob respawn, got %d", len(finalAttack))
 	}
 	death, err := worldproto.DecodeDead(decodeSingleFrame(t, finalAttack[0]))
 	if err != nil {
@@ -41965,16 +41978,11 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
 		t.Fatalf("unexpected content practice-mob clear-target packet on death hit: %+v", cleared)
 	}
+	assertDamageInfoFrame(t, finalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "content practice-mob killing hit")
 	observerDeathFrames := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, observerFlow), targetVID, peer.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before content practice-mob respawn death fanout")
-	if len(observerDeathFrames) != 1 {
-		t.Fatalf("expected observer death fanout before content practice-mob respawn, got %d frames", len(observerDeathFrames))
-	}
-	observerDeath, err := worldproto.DecodeDead(decodeSingleFrame(t, observerDeathFrames[0]))
-	if err != nil {
-		t.Fatalf("decode observer content practice-mob death frame: %v", err)
-	}
-	if observerDeath.VID != targetVID {
-		t.Fatalf("unexpected observer content practice-mob death packet: %+v", observerDeath)
+	observerDeathFrames = stripTrainingDummyKillingHitPeerDeathPrefix(t, observerDeathFrames, targetVID, false, "content practice-mob observer death fanout")
+	if len(observerDeathFrames) != 0 {
+		t.Fatalf("expected observer death plus damage-info fanout before content practice-mob respawn, leftover %d frames", len(observerDeathFrames))
 	}
 
 	currentTime = currentTime.Add((2 * time.Second) - time.Millisecond)
@@ -42928,8 +42936,8 @@ func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRe
 			t.Fatalf("unexpected combat attack error on pending-retaliation cleanup hit %d: %v", attackIndex+1, err)
 		}
 		if attackIndex == int(worldruntime.TrainingDummyBootstrapMaxHP)-1 {
-			if len(attackOut) != 2 {
-				t.Fatalf("expected killing hit to keep death + clear choreography without retaliation point-change, got %d frames", len(attackOut))
+			if len(attackOut) != 3 {
+				t.Fatalf("expected killing hit to keep death + clear + damage-info choreography without retaliation point-change, got %d frames", len(attackOut))
 			}
 			death, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[0]))
 			if err != nil {
@@ -42945,6 +42953,7 @@ func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRe
 			if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
 				t.Fatalf("unexpected practice mob clear-target packet: %+v", cleared)
 			}
+			assertDamageInfoFrame(t, attackOut[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "pending-retaliation cleanup killing hit")
 			continue
 		}
 		if len(attackOut) != 4 {
@@ -50027,8 +50036,8 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 			t.Fatalf("expected live hit %d to return target refresh, immediate retaliation, and self damage-info, got %d frames", attackIndex+1, len(attackOut))
 		}
 	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing hit to emit mob DEAD plus target clear without extra retaliation, got %d frames", len(killingAttack))
+	if len(killingAttack) != 3 {
+		t.Fatalf("expected killing hit to emit mob DEAD, target clear, and damage-info without extra retaliation, got %d frames", len(killingAttack))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killingAttack[0]))
 	if err != nil {
@@ -50044,6 +50053,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if clearTarget.TargetVID != 0 || clearTarget.HPPercent != 0 {
 		t.Fatalf("expected mob-death hit to clear selected target before retaliation cleanup, got %+v", clearTarget)
 	}
+	assertDamageInfoFrame(t, killingAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "mob-death retaliation cleanup")
 
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop after mob death, got %d queued frames", len(queued))
@@ -50225,7 +50235,7 @@ func (c *plainTCPTestClient) readFrame(t *testing.T) frame.Frame {
 	}
 	buffer := make([]byte, 8192)
 	for {
-		if err := c.conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		if err := c.conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			t.Fatalf("set tcp read deadline: %v", err)
 		}
 		n, err := c.conn.Read(buffer)
@@ -50508,7 +50518,8 @@ func (h *practiceMobTCPHarness) attack(t *testing.T) []frame.Frame {
 		fourth := h.client.readFrame(t)
 		return []frame.Frame{first, second, third, fourth}
 	}
-	return []frame.Frame{first, second}
+	third := h.client.readFrame(t)
+	return []frame.Frame{first, second, third}
 }
 
 func assertTCPDamageInfo(t *testing.T, f frame.Frame, targetVID uint32, damage int32, context string) {
@@ -50617,6 +50628,7 @@ func TestGameSessionFlowPracticeMobDeathAndTargetClearOverPlainTCP(t *testing.T)
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp killing hit to clear target, got %+v", clear)
 	}
+	assertTCPDamageInfo(t, frames[2], h.targetID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "killing hit")
 }
 
 func TestGameSessionFlowPracticeMobRewardDeliveryOverPlainTCP(t *testing.T) {
@@ -50643,7 +50655,7 @@ func TestGameSessionFlowPracticeMobRewardDeliveryOverPlainTCP(t *testing.T) {
 		}
 		frames = h.attack(t)
 	}
-	for len(frames) < 6 {
+	for len(frames) < 7 {
 		frames = append(frames, h.client.readFrame(t))
 	}
 	dead, err := worldproto.DecodeDead(frames[0])
@@ -50660,28 +50672,29 @@ func TestGameSessionFlowPracticeMobRewardDeliveryOverPlainTCP(t *testing.T) {
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp reward killing hit to clear target, got %+v", clear)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(frames[2])
+	assertTCPDamageInfo(t, frames[2], h.targetID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "reward killing hit")
+	expChange, err := worldproto.DecodePlayerPointChange(frames[3])
 	if err != nil {
 		t.Fatalf("decode tcp reward EXP point-change: %v", err)
 	}
 	if expChange.VID != 0x02040131 || expChange.Type != bootstrapExperiencePointType || expChange.Amount != int32(rewardExperience) || expChange.Value != 917 {
 		t.Fatalf("expected tcp reward EXP point-change +%d to reach 917, got %+v", rewardExperience, expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(frames[3])
+	goldChange, err := worldproto.DecodePlayerPointChange(frames[4])
 	if err != nil {
 		t.Fatalf("decode tcp reward gold point-change: %v", err)
 	}
 	if goldChange.VID != 0x02040131 || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != int32(rewardGold) || goldChange.Value != int32(rewardGold) {
 		t.Fatalf("expected tcp reward gold point-change +%d, got %+v", rewardGold, goldChange)
 	}
-	groundAdd, err := itemproto.DecodeGroundAdd(frames[4])
+	groundAdd, err := itemproto.DecodeGroundAdd(frames[5])
 	if err != nil {
 		t.Fatalf("decode tcp reward ground add: %v", err)
 	}
 	if groundAdd.VID == 0 || groundAdd.Vnum != rewardDropVnum || groundAdd.X != 1100 || groundAdd.Y != 2100 {
 		t.Fatalf("expected tcp reward ground drop vnum %d at player position, got %+v", rewardDropVnum, groundAdd)
 	}
-	ownership, err := itemproto.DecodeOwnership(frames[5])
+	ownership, err := itemproto.DecodeOwnership(frames[6])
 	if err != nil {
 		t.Fatalf("decode tcp reward ownership: %v", err)
 	}
@@ -50749,7 +50762,7 @@ func TestGameSessionFlowPracticeMobFormulaProfileRewardDeliveryOverPlainTCP(t *t
 
 	h.advance(bootstrapNormalAttackCadenceWindow)
 	killingFrames := h.attack(t)
-	for len(killingFrames) < 6 {
+	for len(killingFrames) < 7 {
 		killingFrames = append(killingFrames, h.client.readFrame(t))
 	}
 	dead, err := worldproto.DecodeDead(killingFrames[0])
@@ -50766,28 +50779,29 @@ func TestGameSessionFlowPracticeMobFormulaProfileRewardDeliveryOverPlainTCP(t *t
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp custom-profile reward killing hit to clear target, got %+v", clear)
 	}
-	expChange, err := worldproto.DecodePlayerPointChange(killingFrames[2])
+	assertTCPDamageInfo(t, killingFrames[2], h.targetID, 2, "custom-profile reward killing hit")
+	expChange, err := worldproto.DecodePlayerPointChange(killingFrames[3])
 	if err != nil {
 		t.Fatalf("decode tcp custom-profile reward EXP point-change: %v", err)
 	}
 	if expChange.VID != 0x02040131 || expChange.Type != bootstrapExperiencePointType || expChange.Amount != int32(rewardExperience) || expChange.Value != 919 {
 		t.Fatalf("expected tcp custom-profile reward EXP point-change +%d to reach 919, got %+v", rewardExperience, expChange)
 	}
-	goldChange, err := worldproto.DecodePlayerPointChange(killingFrames[3])
+	goldChange, err := worldproto.DecodePlayerPointChange(killingFrames[4])
 	if err != nil {
 		t.Fatalf("decode tcp custom-profile reward gold point-change: %v", err)
 	}
 	if goldChange.VID != 0x02040131 || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != int32(rewardGold) || goldChange.Value != int32(rewardGold) {
 		t.Fatalf("expected tcp custom-profile reward gold point-change +%d, got %+v", rewardGold, goldChange)
 	}
-	groundAdd, err := itemproto.DecodeGroundAdd(killingFrames[4])
+	groundAdd, err := itemproto.DecodeGroundAdd(killingFrames[5])
 	if err != nil {
 		t.Fatalf("decode tcp custom-profile reward ground add: %v", err)
 	}
 	if groundAdd.VID == 0 || groundAdd.Vnum != rewardDropVnum || groundAdd.X != 1100 || groundAdd.Y != 2100 {
 		t.Fatalf("expected tcp custom-profile reward ground drop vnum %d at player position, got %+v", rewardDropVnum, groundAdd)
 	}
-	ownership, err := itemproto.DecodeOwnership(killingFrames[5])
+	ownership, err := itemproto.DecodeOwnership(killingFrames[6])
 	if err != nil {
 		t.Fatalf("decode tcp custom-profile reward ownership: %v", err)
 	}
@@ -50992,6 +51006,7 @@ func TestGameSessionFlowPracticeMobRespawnRebuildOverPlainTCP(t *testing.T) {
 	if clear.TargetVID != 0 || clear.HPPercent != 0 {
 		t.Fatalf("expected tcp pre-respawn killing hit to clear target, got %+v", clear)
 	}
+	assertTCPDamageInfo(t, killingFrames[2], h.targetID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "pre-respawn killing hit")
 	h.advance(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	respawnDelete, err := worldproto.DecodeCharacterDeleteNotice(h.client.readFrame(t))
 	if err != nil {
@@ -51289,9 +51304,10 @@ func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targ
 			t.Fatalf("expected live owner hit %d before %s to return target refresh, immediate retaliation, and self damage-info, got %d frames", attackIndex+1, context, len(attackOut))
 		}
 	}
-	if len(killingAttack) != 2 {
-		t.Fatalf("expected killing owner hit before %s to emit mob dead plus target clear, got %d frames", context, len(killingAttack))
+	if len(killingAttack) != 3 {
+		t.Fatalf("expected killing owner hit before %s to emit mob dead, target clear, and damage-info, got %d frames", context, len(killingAttack))
 	}
+	assertDamageInfoFrame(t, killingAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), context+" killing-hit")
 	return killingAttack
 }
 
@@ -51356,8 +51372,8 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before respawn reselect test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn reselect mob-death fanout"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before respawn reselect, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn reselect mob-death fanout"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info before respawn reselect, got %d", len(queued))
 	}
 	preRespawnSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
@@ -51503,11 +51519,11 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before respawn second-watcher block test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to watcher"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before respawn second-watcher block test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to watcher"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info frames before respawn second-watcher block test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to blocker"); len(queued) != 1 {
-		t.Fatalf("expected blocker to see exactly 1 mob-death frame before respawn second-watcher block test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before respawn second-watcher block mob-death fanout to blocker"); len(queued) != 2 {
+		t.Fatalf("expected blocker to see DEAD plus damage-info frames before respawn second-watcher block test, got %d", len(queued))
 	}
 
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
@@ -51645,11 +51661,11 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn movement release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to watcher"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn movement release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to watcher"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info frames before post-respawn movement release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to blocker"); len(queued) != 1 {
-		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn movement release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn movement release mob-death fanout to blocker"); len(queued) != 2 {
+		t.Fatalf("expected blocker to see DEAD plus damage-info frames before post-respawn movement release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	if ownerRespawn := flushServerFrames(t, ownerFlow); len(ownerRespawn) != 4 {
@@ -51787,11 +51803,11 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn logout release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to watcher"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn logout release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to watcher"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info frames before post-respawn logout release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to blocker"); len(queued) != 1 {
-		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn logout release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn logout release mob-death fanout to blocker"); len(queued) != 2 {
+		t.Fatalf("expected blocker to see DEAD plus damage-info frames before post-respawn logout release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	if ownerRespawn := flushServerFrames(t, ownerFlow); len(ownerRespawn) != 4 {
@@ -51943,11 +51959,11 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn quit release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to watcher"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn quit release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to watcher"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info frames before post-respawn quit release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to blocker"); len(queued) != 1 {
-		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn quit release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn quit release mob-death fanout to blocker"); len(queued) != 2 {
+		t.Fatalf("expected blocker to see DEAD plus damage-info frames before post-respawn quit release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	if ownerRespawn := flushServerFrames(t, ownerFlow); len(ownerRespawn) != 4 {
@@ -52113,11 +52129,11 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected no owner stale retaliation frames before post-respawn sync-position release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to watcher"); len(queued) != 1 {
-		t.Fatalf("expected watcher to see exactly 1 mob-death frame before post-respawn sync-position release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, watcherFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to watcher"); len(queued) != 2 {
+		t.Fatalf("expected watcher to see DEAD plus damage-info frames before post-respawn sync-position release test, got %d", len(queued))
 	}
-	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to blocker"); len(queued) != 1 {
-		t.Fatalf("expected blocker to see exactly 1 mob-death frame before post-respawn sync-position release test, got %d", len(queued))
+	if queued := stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t, flushServerFrames(t, blockerFlow), targetVID, owner.VID, int(worldruntime.TrainingDummyBootstrapMaxHP)-1, "before post-respawn sync-position release mob-death fanout to blocker"); len(queued) != 2 {
+		t.Fatalf("expected blocker to see DEAD plus damage-info frames before post-respawn sync-position release test, got %d", len(queued))
 	}
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	if ownerRespawn := flushServerFrames(t, ownerFlow); len(ownerRespawn) != 4 {
@@ -53582,13 +53598,15 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 	if err != nil {
 		t.Fatalf("unexpected combat attack error on visible-session respawn death hit: %v", err)
 	}
-	if len(finalAttack) != 2 {
-		t.Fatalf("expected 2 self-only death-transition frames for respawn-visible killing hit, got %d", len(finalAttack))
+	if len(finalAttack) != 3 {
+		t.Fatalf("expected 3 self-only death-transition frames for respawn-visible killing hit, got %d", len(finalAttack))
 	}
 	peerDeathFrames := flushServerFrames(t, flowTwo)
-	if len(peerDeathFrames) != 2 {
-		t.Fatalf("expected 2 queued death-transition frames for other visible session before respawn, got %d", len(peerDeathFrames))
+	if len(peerDeathFrames) != 3 {
+		t.Fatalf("expected 3 queued death-transition frames for other visible session before respawn, got %d", len(peerDeathFrames))
 	}
+	assertDamageInfoFrame(t, finalAttack[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "respawn-visible killing-hit self")
+	assertDamageInfoFrame(t, peerDeathFrames[2], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "respawn-visible killing-hit peer")
 
 	currentTime = currentTime.Add(2 * time.Second)
 	selfRespawnFrames := flushServerFrames(t, flowOne)
@@ -54685,6 +54703,70 @@ func stripSpawnBackedPracticeMobAttackPeerDamageInfoPrefix(t *testing.T, frames 
 		assertDamageInfoFrame(t, frames[2*i+1], ownerVID, -bootstrapPracticeMobRetaliationPointDelta, fmt.Sprintf("%s owner retaliation #%d", context, i+1))
 	}
 	return frames[need:]
+}
+
+func stripKillingHitDeathPrefix(t *testing.T, frames [][]byte, targetVID uint32, wantDamage int32, context string) [][]byte {
+	t.Helper()
+	if len(frames) < 3 {
+		t.Fatalf("expected at least 3 killing-hit death/clear/damage-info frames %s, got %d", context, len(frames))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode killing-hit dead frame %s: %v", context, err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected killing-hit dead packet %s: %+v", context, dead)
+	}
+	cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode killing-hit clear-target frame %s: %v", context, err)
+	}
+	if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+		t.Fatalf("expected zero-target clear after killing-hit death %s, got %+v", context, cleared)
+	}
+	assertDamageInfoFrame(t, frames[2], targetVID, wantDamage, context+" killing-hit damage-info")
+	return frames[3:]
+}
+
+func stripTrainingDummyKillingHitDeathPrefix(t *testing.T, frames [][]byte, targetVID uint32, context string) [][]byte {
+	t.Helper()
+	return stripKillingHitDeathPrefix(t, frames, targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), context)
+}
+
+func stripKillingHitPeerDeathPrefix(t *testing.T, frames [][]byte, targetVID uint32, selected bool, wantDamage int32, context string) [][]byte {
+	t.Helper()
+	need := 2
+	if selected {
+		need = 3
+	}
+	if len(frames) < need {
+		t.Fatalf("expected at least %d queued killing-hit death frames %s, got %d", need, context, len(frames))
+	}
+	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode queued killing-hit dead frame %s: %v", context, err)
+	}
+	if dead.VID != targetVID {
+		t.Fatalf("unexpected queued killing-hit dead packet %s: %+v", context, dead)
+	}
+	offset := 1
+	if selected {
+		cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[1]))
+		if err != nil {
+			t.Fatalf("decode queued killing-hit clear-target frame %s: %v", context, err)
+		}
+		if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+			t.Fatalf("expected queued zero-target clear after killing-hit death %s, got %+v", context, cleared)
+		}
+		offset = 2
+	}
+	assertDamageInfoFrame(t, frames[offset], targetVID, wantDamage, context+" killing-hit damage-info")
+	return frames[need:]
+}
+
+func stripTrainingDummyKillingHitPeerDeathPrefix(t *testing.T, frames [][]byte, targetVID uint32, selected bool, context string) [][]byte {
+	t.Helper()
+	return stripKillingHitPeerDeathPrefix(t, frames, targetVID, selected, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), context)
 }
 
 func assertDamageInfoFrame(t *testing.T, raw []byte, targetVID uint32, wantDamage int32, context string) combatproto.ServerDamageInfoPacket {

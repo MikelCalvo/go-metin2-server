@@ -365,7 +365,7 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 			t.Fatalf("unexpected kill quest attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) < 7 {
+	if len(killOut) < 8 {
 		t.Fatalf("expected killing hit to include death/reward frames plus quest chat, got %d", len(killOut))
 	}
 	dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0]))
@@ -444,12 +444,12 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 			t.Fatalf("unexpected mismatch kill attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) < 2 {
+	if len(killOut) < 3 {
 		t.Fatalf("expected mismatch kill to keep death/clear frames, got %d", len(killOut))
 	}
-	for idx, raw := range killOut[2:] {
+	for idx, raw := range killOut[3:] {
 		if _, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, raw)); err == nil {
-			t.Fatalf("expected mismatch kill to omit quest chat, found chat frame at offset %d", idx+2)
+			t.Fatalf("expected mismatch kill to omit quest chat, found chat frame at offset %d", idx+3)
 		}
 	}
 	loaded, err := runtime.questStateStore.Load()
@@ -518,10 +518,10 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 			t.Fatalf("unexpected empty-reward kill attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 3 {
+	if len(killOut) != 4 {
 		t.Fatalf("expected empty-reward kill to return dead, clear, and quest chat, got %d", len(killOut))
 	}
-	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, killOut[2]))
+	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, killOut[3]))
 	if err != nil || chat.Message != "Quest updated: first_steps.killed_qa_mob = 1." {
 		t.Fatalf("unexpected empty-reward kill quest chat: %+v err=%v", chat, err)
 	}

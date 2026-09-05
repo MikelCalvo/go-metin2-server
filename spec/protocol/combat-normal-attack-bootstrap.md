@@ -277,8 +277,8 @@ That hit-effect companion is intentionally separate from the authoritative comba
 - Standalone bootstrap combat-profile non-lethal normal hits append one self `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after that target refresh and queue the same hit-effect companion to currently visible live peers.
 - Spawn-backed practice-mob non-lethal normal hits now append one owner self `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` after the existing immediate retaliation `PLAYER_POINT_CHANGE` when the owner remains alive, then one owner self `DAMAGE_INFO(owner_vid, flag=0, damage=abs(retaliation_delta))`, and queue both the mob and owner retaliation hit-effect frames to currently visible live peers; peers do not receive the owner's self `TARGET` refresh or retaliation point-change.
 - Non-floor delayed server-origin retaliation beats now append the same owner self `DAMAGE_INFO(owner_vid, flag=0, damage=abs(retaliation_delta))` after their ordinary point-change and queue that same owner companion to currently visible live peers for both hit-armed and proximity-armed delayed cadences; owner-floor retaliation beats still omit that companion and keep `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`.
-- `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge, and the current damage-info slice deliberately does not append a synthetic final damage-info frame on killing hits or owner-floor beats.
-- Richer flag meanings, killing-hit damage-info, and broader hit-result policy remain later runtime emission policy.
+- `DEAD(vid)` plus `TARGET(0, 0)` still owns the zero-HP edge; accepted killing hits now also append one self plus visible-peer plain `DAMAGE_INFO(target_vid, flag=0, damage=applied_damage)` companion after that death/clear prefix and before any owned reward frames. Owner-floor retaliation beats still omit a final owner damage-info frame and keep `PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`.
+- Richer flag meanings and broader hit-result policy remain later runtime emission policy.
 
 ## Relationship to later HP / death work
 

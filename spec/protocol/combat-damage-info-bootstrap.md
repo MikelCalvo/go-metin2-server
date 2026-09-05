@@ -9,7 +9,7 @@ It sits next to, but does not replace:
 
 ## Scope
 
-This slice owns the packet codec, the internal damage descriptor, visible-peer fanout for standalone bootstrap combat-profile actors, the first self plus visible-peer emission for content-loaded spawn-backed practice-mob hits, and the owner self plus visible-peer hit-effect companion for non-floor practice-mob retaliation beats.
+This slice owns the packet codec, the internal damage descriptor, visible-peer fanout for standalone bootstrap combat-profile actors, the first self plus visible-peer emission for content-loaded spawn-backed practice-mob hits, the owner self plus visible-peer hit-effect companion for non-floor practice-mob retaliation beats, and the first killing-hit mob `DAMAGE_INFO` companion on the zero-HP death edge.
 
 The packet is:
 - name: `DAMAGE_INFO`
@@ -28,7 +28,7 @@ The current client-side rendering surface treats `vid` as the actor receiving th
 
 ## Relationship to current attack flow
 
-The current accepted normal-attack runtime still uses `GC TARGET(target_vid, hp_percent)` as the authoritative HP refresh and switches to `GC DEAD(vid)` plus `GC TARGET(0, 0)` at the zero-HP edge.
+The current accepted normal-attack runtime still uses `GC TARGET(target_vid, hp_percent)` as the authoritative HP refresh and switches to `GC DEAD(vid)` plus `GC TARGET(0, 0)` at the zero-HP edge, then one plain mob `DAMAGE_INFO` companion using the same authoritative damage descriptor as non-lethal hits.
 
 For standalone bootstrap combat-profile actors, an accepted non-lethal normal attack returns one self `DAMAGE_INFO` frame immediately after the authoritative self `GC TARGET(target_vid, hp_percent)` refresh:
 1. `GC TARGET(target_vid, updated_hp_percent)`
@@ -54,10 +54,13 @@ Delayed server-origin retaliation beats that leave the owner above the bootstrap
 
 That delayed owner companion applies to both hit-armed and proximity-armed delayed beats. Peers still do not receive the owner's delayed `PLAYER_POINT_CHANGE`; they receive only the owner retaliation `DAMAGE_INFO` companion. Focused shared-world coverage now freezes that proximity-armed peer path explicitly: walking into aggro radius without selecting or hitting still arms the delayed cadence, the engaged owner keeps no selected combat target, and a currently visible live peer receives only the owner `DAMAGE_INFO` companion when each non-floor delayed beat fires.
 
-Killing hits and owner-floor retaliation beats deliberately do **not** append `DAMAGE_INFO` in this slice. Mob killing hits keep the existing death-first choreography:
+Mob killing hits now append one plain mob `DAMAGE_INFO` companion after the existing death-first choreography. `DEAD(vid)` still owns the zero-HP edge, selected sessions still clear on `TARGET(0, 0)`, and the hit-effect companion reuses the same authoritative applied-damage descriptor as non-lethal hits:
 1. `GC DEAD(vid)`
-2. `GC TARGET(0, 0)` for the attacking session when that target was still selected
-3. any owned reward feedback after the death/clear pair
+2. `GC TARGET(0, 0)` for the attacking session, and for any other currently visible session whose active combat target was that same actor
+3. `GC DAMAGE_INFO(vid = target_vid, flag = 0, damage = applied_bootstrap_damage)`
+4. any owned reward feedback after that death / clear / hit-effect prefix
+
+Currently visible live peers receive that same killing-hit mob `DAMAGE_INFO` after `DEAD` (and after their own clear when they still had that actor selected). They still do not receive the attacker's self-only reward point-changes. Connected recipients already at the bootstrap `0`-HP floor remain skipped by the shared-world visibility gate. The killing hit still does **not** append owner retaliation `PLAYER_POINT_CHANGE` or owner retaliation `DAMAGE_INFO`.
 
 Owner-floor immediate or delayed retaliation beats keep the owned player-death ordering without a synthetic final owner damage-info frame:
 1. `GC PLAYER_POINT_CHANGE(owner_vid, HP, final_clamped_delta, value = 0)`
@@ -68,11 +71,11 @@ That floor ordering also covers proximity-armed delayed beats that reach `0` HP 
 
 The current client-visible response contract is therefore still conservative:
 - standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and carry one self hit-effect companion,
-- killing hits still use the existing death + clear-target choreography without a synthetic final damage-info frame,
-- visible live peers now receive the same standalone or spawn-backed mob hit-effect companion through the queued server-frame path,
+- killing hits keep `DEAD(vid)` plus selected-session `TARGET(0, 0)` as the zero-HP edge and now append one self plus visible-peer plain mob `DAMAGE_INFO` companion after that death/clear prefix, before any owned reward frames,
+- visible live peers now receive the same standalone or spawn-backed mob hit-effect companion through the queued server-frame path, including that killing-hit companion,
 - content-loaded spawn-backed practice mobs now append one owner self mob hit-effect companion plus one owner self retaliation hit-effect companion on accepted non-lethal owner-surviving hits after the existing target refresh plus retaliation point-change, and queue both companions to currently visible live peers,
 - non-floor delayed retaliation beats now also append one owner self retaliation hit-effect companion after their point-change and queue that same owner companion to currently visible live peers,
-- no killing-hit damage-info, owner-floor damage-info, critical/miss flag policy, or broader hit-result gameplay semantics are owned here.
+- no owner-floor damage-info, critical/miss flag policy, or broader hit-result gameplay semantics are owned here.
 
 ## Non-goals
 
@@ -81,7 +84,7 @@ This slice does not freeze:
 - critical, miss, block, poison, or special flag meanings,
 - player-vs-player damage info,
 - skill damage, projectile damage, or multi-target damage,
-- whether killing hits, owner-floor retaliation beats, skills, or player-vs-player hits should emit a damage info packet,
+- whether owner-floor retaliation beats, skills, or player-vs-player hits should emit a damage info packet,
 - whether peer damage-info fanout should widen beyond currently visible live peers for standalone or spawn-backed bootstrap combat-profile actors,
 - any replacement for `TARGET` as the current HP percentage carrier.
 
@@ -97,4 +100,5 @@ After this slice:
 - accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self plain-flag mob `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive, then one owner self plain-flag retaliation `DAMAGE_INFO(owner_vid, abs(delta))`, queue both the mob and owner retaliation plain-flag hit effects to currently visible live peers, and preserve that owner-side frame order over the plain legacy TCP listener,
 - non-floor delayed server-origin retaliation beats now append the same owner self plain-flag retaliation `DAMAGE_INFO` after their point-change and queue that same owner companion to currently visible live peers for both hit-armed and proximity-armed delayed cadences,
 - focused coverage now also freezes the shared-world `0`-HP recipient skip for those same spawn-backed peer `DAMAGE_INFO` paths: after immediate retaliation floors one owner and releases engagement, a later living peer's non-lethal accepted hit and that peer's later non-floor delayed retaliation beat still deliver mob/owner `DAMAGE_INFO` to living observers while the already-dead former owner receives none,
-- later runtime slices can broaden flag meanings, killing-hit or floor presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.
+- accepted bootstrap combat-profile killing hits now append one self plain-flag mob `DAMAGE_INFO` after `DEAD(vid)` plus selected-session `TARGET(0, 0)`, queue that same companion to currently visible live peers, keep owner-floor beats without a final owner damage-info frame, and still derive the number from the authoritative attack descriptor,
+- later runtime slices can broaden flag meanings, owner-floor presentation, or other hit-effect policy without re-discovering the packet layout or recomputing damage outside the authoritative attack seam.

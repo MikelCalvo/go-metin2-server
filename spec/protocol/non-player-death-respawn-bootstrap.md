@@ -100,8 +100,10 @@ The first owned visible clear companion remains:
 - meaning: no active combat target remains bound to that session
 
 When a dummy dies:
-- any session whose active combat target currently binds that dummy should receive one self-only `GC TARGET(0, 0)`
-- that clear should happen as part of the same death transition window rather than waiting for a later reconnect, movement, or reselection path
+- currently visible live sessions receive `GC DEAD(vid)`
+- any session whose active combat target currently binds that dummy should receive one self-only `GC TARGET(0, 0)` in that same death window
+- those same currently visible live sessions then receive one plain `GC DAMAGE_INFO(vid, flag = 0, damage = applied_bootstrap_damage)` companion after `DEAD` (and after their own clear when they still had that actor selected)
+- that death / clear / hit-effect prefix happens as part of the same death transition window rather than waiting for a later reconnect, movement, or reselection path
 - later attacks from that session must fail closed until a fresh post-respawn `TARGET` succeeds again
 
 This keeps death aligned with the already-owned combat target surface.
@@ -193,7 +195,6 @@ This document does not open any global broadcast rule for combat lifecycle.
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- killing-hit damage numbers or `DAMAGE_INFO` on the zero-HP death edge
 - reward behavior beyond the narrow deterministic EXP/gold/drop descriptor contract in `non-player-reward-bootstrap.md`
 - randomized loot, party distribution, quest credit, level-up choreography, public loot release, or broader reward fanout
 - corpse interaction or corpse pickup

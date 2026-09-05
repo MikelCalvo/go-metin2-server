@@ -1674,14 +1674,14 @@ Expected result:
 - [ ] On both sessions, select the same dummy and confirm the normal self-only `GC TARGET(target_vid, 100)` ack before any attacks
 - [ ] From the attacker, issue successive normal `ATTACK` requests until the dummy reaches its final accepted hit from `1` to `0`
 - [ ] Confirm non-lethal standalone `training_dummy` / runtime-registered practice-profile hits still use the normal self-only `GC TARGET(target_vid, hp_percent)` refresh path (`90`, `80`, ... , `10`) and append one self-only plain `GC DAMAGE_INFO(target_vid, damage)` hit-effect companion after the target refresh
-- [ ] Confirm the final zero-HP hit makes the attacker receive `GC DEAD(vid)` plus one self-only `GC TARGET(0, 0)` clear instead of a final `GC TARGET(..., 0)` refresh
-- [ ] If a second visible selected session is present, confirm it also receives `GC DEAD(vid)` and its own self-only `GC TARGET(0, 0)` clear during that same death window
+- [ ] Confirm the final zero-HP hit makes the attacker receive `GC DEAD(vid)` plus one self-only `GC TARGET(0, 0)` clear, then one self-only plain `GC DAMAGE_INFO(target_vid, damage)` companion, instead of a final `GC TARGET(..., 0)` refresh
+- [ ] If a second visible selected session is present, confirm it also receives `GC DEAD(vid)`, its own self-only `GC TARGET(0, 0)` clear, and the same plain `GC DAMAGE_INFO(target_vid, damage)` companion during that same death window
 - [ ] Without waiting for any future respawn slice, try one fresh `TARGET` and one `ATTACK` against that same dummy `VID`
 
 Expected result:
 - the zero-HP edge is now visibly owned: `GC DEAD(vid)` is emitted to visible sessions when the dummy dies
 - any session that still had that dummy selected receives the existing self-only clear-target companion immediately on death
-- the bootstrap combat loop does not send a synthetic `GC TARGET(..., 0)` refresh at death; it switches surfaces from HP refresh to death + clear
+- the bootstrap combat loop does not send a synthetic `GC TARGET(..., 0)` refresh at death; it switches surfaces from HP refresh to death + clear, then one plain `GC DAMAGE_INFO(target_vid, damage)` companion using the same applied-damage number as the live hits
 - fresh `TARGET` and `ATTACK` attempts fail closed while the dummy remains dead
 - the timed respawn/reset path is validated separately in 6.24; this step only proves death, clear, and dead-state rejection before the respawn window expires
 

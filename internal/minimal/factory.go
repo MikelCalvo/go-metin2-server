@@ -14209,6 +14209,13 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 			worldproto.EncodeDead(worldproto.DeadPacket{VID: activeTargetVID}),
 			combatproto.EncodeServerClearTarget(),
 		}
+		if staticActorKillingHitDamageInfoRuntimeEmissionOwned(attempt.Actor) {
+			resolution.Frames = append(resolution.Frames, combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
+				VID:    activeTargetVID,
+				Flag:   0,
+				Damage: int32(attempt.Damage),
+			}))
+		}
 		if attempt.Actor.SpawnGroupRef != "" {
 			_ = r.persistSpawnGroupCombatState(attempt.Actor.EntityID)
 		}
@@ -14252,6 +14259,10 @@ func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 	}
 	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatProfile)
 	return ok
+}
+
+func staticActorKillingHitDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
+	return staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(actor) || staticActorDamageInfoRuntimeEmissionOwned(actor)
 }
 
 func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {

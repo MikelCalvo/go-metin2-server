@@ -1860,14 +1860,14 @@ func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t
 			t.Fatalf("unexpected kill-reward restart attack error on hit %d: %v", hit, err)
 		}
 	}
-	if len(killOut) != 4 {
+	if len(killOut) != 5 {
 		t.Fatalf("expected killing hit to return dead, clear, ground-add, and ownership frames, got %d", len(killOut))
 	}
-	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[2]))
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3]))
 	if err != nil || ground.Vnum != 27001 {
 		t.Fatalf("unexpected kill-reward restart ground add: %+v err=%v", ground, err)
 	}
-	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[3]))
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4]))
 	if err != nil || ownership.VID != ground.VID || ownership.OwnerName != killer.Name {
 		t.Fatalf("unexpected kill-reward restart ownership: %+v err=%v", ownership, err)
 	}

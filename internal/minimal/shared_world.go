@@ -6308,6 +6308,14 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		r.releaseStaticActorCombatEngagementLocked(actor, true)
 		deadRaw := worldproto.EncodeDead(worldproto.DeadPacket{VID: requestedTargetVID})
 		clearRaw := combatproto.EncodeServerClearTarget()
+		var damageInfoRaw []byte
+		if staticActorKillingHitDamageInfoRuntimeEmissionOwned(staticActorSnapshot(r.topology, actor)) {
+			damageInfoRaw = combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
+				VID:    requestedTargetVID,
+				Flag:   0,
+				Damage: int32(damage),
+			})
+		}
 		targetedSessionIDs := make(map[uint64]struct{})
 		for entityID, targetVID := range r.sessionCombatTargets {
 			if targetVID != requestedTargetVID {
@@ -6329,6 +6337,9 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 			frames := [][]byte{deadRaw}
 			if _, ok := targetedSessionIDs[target.Entity.ID]; ok {
 				frames = append(frames, clearRaw)
+			}
+			if len(damageInfoRaw) != 0 {
+				frames = append(frames, damageInfoRaw)
 			}
 			r.enqueueToEntityLocked(target.Entity.ID, frames)
 		}
