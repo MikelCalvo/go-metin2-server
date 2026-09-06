@@ -354,6 +354,36 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before cube")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	warehouseCooldownOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
+	if err != nil {
+		t.Fatalf("unexpected warehouse interaction during reopen cooldown: %v", err)
+	}
+	if len(warehouseCooldownOut) != 2 {
+		t.Fatalf("expected chat + ShowMeSafeboxPassword during warehouse reopen cooldown, got %d", len(warehouseCooldownOut))
+	}
+	warehouseCooldownChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseCooldownOut[0]))
+	if err != nil || warehouseCooldownChat.Message != "The warehouse keeper unlocks the vault." {
+		t.Fatalf("unexpected warehouse cooldown chat: %+v err=%v", warehouseCooldownChat, err)
+	}
+	warehouseCooldownPrompt, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseCooldownOut[1]))
+	if err != nil || warehouseCooldownPrompt.Type != chatproto.ChatTypeCommand || warehouseCooldownPrompt.Message != safeboxShowPasswordCommandMessage {
+		t.Fatalf("unexpected warehouse cooldown password prompt: %+v err=%v", warehouseCooldownPrompt, err)
+	}
+	warehouseCooldownPasswordOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/safebox_password 000000",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected warehouse password during reopen cooldown: %v", err)
+	}
+	if len(warehouseCooldownPasswordOut) != 1 {
+		t.Fatalf("expected warehouse reopen-cooldown info chat, got %d", len(warehouseCooldownPasswordOut))
+	}
+	warehouseCooldownInfo, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseCooldownPasswordOut[0]))
+	if err != nil || warehouseCooldownInfo.Type != chatproto.ChatTypeInfo || warehouseCooldownInfo.VID != 0 || warehouseCooldownInfo.Message != safeboxReopenCooldownInfoMessage {
+		t.Fatalf("unexpected warehouse reopen-cooldown chat: %+v err=%v", warehouseCooldownInfo, err)
+	}
+
 	cubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: cubeVID})))
 	if err != nil {
 		t.Fatalf("unexpected unlocked cube interaction error: %v", err)
@@ -852,40 +882,48 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "merchant reopen after QuestGuide re-unlock")
 	_ = flushServerFrames(t, flow)
 
-	closeShopOut, err = flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	warehouseReopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
 	if err != nil {
-		t.Fatalf("unexpected merchant close before lab /open_safebox: %v", err)
+		t.Fatalf("unexpected warehouse interaction after QuestGuide re-unlock: %v", err)
 	}
-	if len(closeShopOut) != 1 {
-		t.Fatalf("expected 1 merchant close frame before lab /open_safebox, got %d", len(closeShopOut))
+	if len(warehouseReopenOut) != 3 {
+		t.Fatalf("expected merchant close plus chat + ShowMeSafeboxPassword after QuestGuide re-unlock, got %d", len(warehouseReopenOut))
 	}
-	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, closeShopOut[0])); err != nil {
-		t.Fatalf("decode merchant close before lab /open_safebox: %v", err)
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, warehouseReopenOut[0])); err != nil {
+		t.Fatalf("decode merchant close before authored warehouse password reopen: %v", err)
 	}
-
-	labOpenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+	warehouseReopenChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseReopenOut[1]))
+	if err != nil || warehouseReopenChat.Message != "The warehouse keeper unlocks the vault." {
+		t.Fatalf("unexpected authored warehouse reopen chat: %+v err=%v", warehouseReopenChat, err)
+	}
+	warehouseReopenPrompt, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, warehouseReopenOut[2]))
+	if err != nil || warehouseReopenPrompt.Type != chatproto.ChatTypeCommand || warehouseReopenPrompt.Message != safeboxShowPasswordCommandMessage {
+		t.Fatalf("unexpected authored warehouse reopen password prompt: %+v err=%v", warehouseReopenPrompt, err)
+	}
+	warehouseReopenOpenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
-		Message: "/open_safebox",
+		Message: "/safebox_password 000000",
 	})))
 	if err != nil {
-		t.Fatalf("unexpected lab /open_safebox after QuestGuide re-unlock: %v", err)
+		t.Fatalf("unexpected authored warehouse password reopen after QuestGuide re-unlock: %v", err)
 	}
-	if len(labOpenOut) != 2 {
-		t.Fatalf("expected SAFEBOX_SIZE and SAFEBOX_MONEY_CHANGE after lab /open_safebox, got %d", len(labOpenOut))
+	if len(warehouseReopenOpenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE and SAFEBOX_MONEY_CHANGE after authored warehouse password reopen, got %d", len(warehouseReopenOpenOut))
 	}
-	labSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, labOpenOut[0]))
+	warehouseReopenSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, warehouseReopenOpenOut[0]))
 	if err != nil {
-		t.Fatalf("decode lab /open_safebox SAFEBOX_SIZE: %v", err)
+		t.Fatalf("decode authored warehouse reopen SAFEBOX_SIZE: %v", err)
 	}
-	if labSize != (itemproto.SafeboxSizePacket{Size: 1}) {
-		t.Fatalf("unexpected lab /open_safebox SAFEBOX_SIZE: %+v", labSize)
+	if warehouseReopenSize != (itemproto.SafeboxSizePacket{Size: 2}) {
+		t.Fatalf("unexpected authored warehouse reopen SAFEBOX_SIZE: %+v", warehouseReopenSize)
 	}
-	labMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, labOpenOut[1]))
+	warehouseReopenMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, warehouseReopenOpenOut[1]))
 	if err != nil {
-		t.Fatalf("decode lab /open_safebox SAFEBOX_MONEY_CHANGE: %v", err)
+		t.Fatalf("decode authored warehouse reopen SAFEBOX_MONEY_CHANGE: %v", err)
 	}
-	if labMoney != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
-		t.Fatalf("unexpected lab /open_safebox SAFEBOX_MONEY_CHANGE: %+v", labMoney)
+	if warehouseReopenMoney != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected authored warehouse reopen SAFEBOX_MONEY_CHANGE: %+v", warehouseReopenMoney)
 	}
 
 	equippedCheckinOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
