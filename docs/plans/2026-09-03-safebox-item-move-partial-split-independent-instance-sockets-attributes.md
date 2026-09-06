@@ -51,15 +51,14 @@ policy, refine catalysts, and mall deferred.
 4. **Persistence**: durable same-account safebox FileStore cells after the
    successful move must round-trip presence-aware fields for both the
    remainder and the split (including explicit zero). Destination
-   independence is owned here; remainder pointer independence is frozen
+   independence is owned here; remainder pointer independence is owned
    separately in
    `docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`.
-5. **Source remainder**: the source cell keeps its existing presence pointers
+5. **Source remainder**: the source cell kept its existing presence pointers
    (count-only mutation) **in this destination-clone slice**; only the new
-   destination identity must clone here. Remainder independence is frozen
-   separately in
-   `docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`
-   and stays the next GREEN twin.
+   destination identity had to clone here. Remainder independence is now
+   owned in
+   `docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`.
 6. **Non-goals**: whole-stack relocate (already identity-preserving),
    compatible partial/whole merge attribute/socket policy (stays count-only),
    carried inventory `ITEM_MOVE` (already clones via `WithInventorySlot`),
@@ -101,6 +100,6 @@ GREEN on `lane/items`: partial empty-destination `SAFEBOX_ITEM_MOVE` clones
 presence-aware sockets/attributes (including explicit zero) onto the new
 destination identity so later source/destination writes cannot alias.
 Compatible merge stays count-only. Empty-destination split remainder
-independence is the next honesty seam
+independence is now owned
 (`docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 Stack-merge attribute/socket policy, refine catalysts, and mall remain deferred.

@@ -112,7 +112,8 @@ FileStore rematerialize, and same-session reopen, while the merged cell
 stays destination-wins count-only
 (`TestSafeboxPartialMergeRemainderItemClonesPresenceIndependently`,
 `TestGameRuntimeSafeboxItemMovePartialMergePreservesInstanceSocketsAndAttributes`).
-Empty-destination split remainder pointers stay the next honesty
-seam (`docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
-Full-stack source remove and destination-wins stay already owned. Refine
-catalysts / mall / party ownership remain deferred.
+Empty-destination split remainder clone is now owned
+(`docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
+Full-stack source remove and destination-wins stay already owned. Carried
+`ITEM_MOVE` split remainder pointers / refine catalysts / mall / party
+ownership remain deferred.

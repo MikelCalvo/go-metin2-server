@@ -8039,16 +8039,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					var sourceRemainder inventory.ItemInstance
 					var resultItem inventory.ItemInstance
 					if !destinationOccupied {
-						sourceRemainder = sourceItem
-						sourceRemainder.Count -= moveCount
-						if err := sourceRemainder.Validate(); err != nil {
+						var ok bool
+						sourceRemainder, ok = safeboxPartialSplitRemainderItem(sourceItem, moveCount)
+						if !ok {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
 						nextID := nextSafeboxSplitItemID(selectedPlayer, activeSafeboxItems)
 						if nextID == 0 {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
-						var ok bool
 						resultItem, ok = safeboxPartialSplitDestinationItem(sourceItem, nextID, moveCount, inventory.SlotIndex(destinationSlot))
 						if !ok {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
@@ -12288,11 +12287,28 @@ func safeboxPartialSplitDestinationItem(source inventory.ItemInstance, nextID ui
 	return destination, true
 }
 
+// safeboxPartialSplitRemainderItem builds the still-occupied source cell after a
+// counted empty-destination SAFEBOX_ITEM_MOVE split. Count is decremented in
+// place, and presence-aware sockets/attributes are cloned so later writes cannot
+// alias the pre-split open-presentation pointers.
+func safeboxPartialSplitRemainderItem(source inventory.ItemInstance, moveCount uint16) (inventory.ItemInstance, bool) {
+	if moveCount == 0 || moveCount >= source.Count {
+		return inventory.ItemInstance{}, false
+	}
+	remainder := source
+	remainder.Count -= moveCount
+	remainder.Sockets = source.CloneSockets()
+	remainder.Attributes = source.CloneAttributes()
+	if err := remainder.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return remainder, true
+}
+
 // safeboxPartialMergeRemainderItem builds the still-occupied source cell after a
 // compatible partial SAFEBOX_ITEM_MOVE merge. Count is decremented in place, and
 // presence-aware sockets/attributes are cloned so later writes cannot alias the
-// pre-merge open-presentation pointers. Empty-destination split remainder keeps
-// existing pointers by that already-owned contract.
+// pre-merge open-presentation pointers.
 func safeboxPartialMergeRemainderItem(source inventory.ItemInstance, moveCount uint16) (inventory.ItemInstance, bool) {
 	if moveCount == 0 || moveCount >= source.Count {
 		return inventory.ItemInstance{}, false

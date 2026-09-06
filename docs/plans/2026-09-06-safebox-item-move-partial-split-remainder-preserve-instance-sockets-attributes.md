@@ -17,13 +17,11 @@ Compatible partial-merge remainder clone stays already owned
 This slice only freezes source-remainder independence on the still-occupied
 source cell after an empty-destination partial split.
 
-Today `HandleSafeboxItemMove` copies the live source cell by value
-(`sourceRemainder = sourceItem`), decrements `Count`, and writes that same
-pointer-bearing struct back into `activeSafeboxItems` on the empty-
-destination branch. Encode already prefers `EffectiveSockets` /
-`EffectiveAttributes`, destination split already clones onto a fresh
-identity, and merge remainder already clones independently. Empty-destination
-split source remainder still aliases.
+Today `HandleSafeboxItemMove` decrements the live source cell through
+`safeboxPartialSplitRemainderItem` and writes that remainder back into
+`activeSafeboxItems` on the empty-destination branch. Encode already prefers
+`EffectiveSockets` / `EffectiveAttributes`, destination split already clones
+onto a fresh identity, and merge remainder already clones independently.
 
 The earlier split freeze explicitly kept remainder pointers as a non-goal
 so only the new destination identity had to clone. That remainder-pointer
@@ -117,12 +115,13 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/items` (docs/spec only): counted empty-destination
-`SAFEBOX_ITEM_MOVE` source remainder must keep an independent clone of
-pre-split presence (including explicit zero; omit→omit) while the
-destination stays a fresh identity plus its already-owned independent
-clone. Production still aliases (`sourceRemainder = sourceItem`). Focused
-remainder proofs stay the next GREEN twin. Do not claim the live split
-remainder clone is owned until those proofs land. Carried `ITEM_MOVE`
-split remainder pointers, refine catalysts / mall / party ownership remain
-deferred.
+GREEN on `lane/items`: counted empty-destination `SAFEBOX_ITEM_MOVE` keeps
+the source remainder as an independent clone of the pre-split
+open-presentation presence (including explicit zero; omit→omit with
+template encode fallback) through remainder `SAFEBOX_SET`, durable
+FileStore rematerialize, and same-session reopen, while the destination
+stays a fresh identity plus its already-owned independent clone
+(`TestSafeboxPartialSplitRemainderItemClonesPresenceIndependently`,
+`TestGameRuntimeSafeboxItemMovePartialSplitPreservesInstanceSocketsAndAttributes`).
+Carried `ITEM_MOVE` split remainder pointers stay the next honesty seam.
+Refine catalysts / mall / party ownership remain deferred.

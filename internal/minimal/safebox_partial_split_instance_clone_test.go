@@ -168,6 +168,87 @@ func TestSafeboxPartialSplitDestinationItemRejectsWholeStackOrZero(t *testing.T)
 	}
 }
 
+func TestSafeboxPartialSplitRemainderItemClonesPresenceIndependently(t *testing.T) {
+	activeSockets := inventory.SocketValues{7, 0, 9}
+	activeAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name       string
+		sockets    *inventory.SocketValues
+		attributes *inventory.AttributeValues
+	}{
+		{name: "active sockets and attributes", sockets: &activeSockets, attributes: &activeAttributes},
+		{name: "explicit zero sockets and attributes", sockets: &zeroSockets, attributes: &zeroAttributes},
+		{name: "omitted presence", sockets: nil, attributes: nil},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			source := inventory.ItemInstance{
+				ID:         820,
+				Vnum:       27001,
+				Count:      5,
+				Slot:       0,
+				Sockets:    tc.sockets,
+				Attributes: tc.attributes,
+			}
+			remainder, ok := safeboxPartialSplitRemainderItem(source, 2)
+			if !ok {
+				t.Fatal("expected partial-split remainder helper to succeed")
+			}
+			if remainder.ID != 820 || remainder.Vnum != 27001 || remainder.Count != 3 || remainder.Slot != 0 {
+				t.Fatalf("unexpected remainder identity: %+v", remainder)
+			}
+			if remainder.HasSockets() != source.HasSockets() {
+				t.Fatalf("remainder HasSockets=%v want %v", remainder.HasSockets(), source.HasSockets())
+			}
+			if remainder.HasAttributes() != source.HasAttributes() {
+				t.Fatalf("remainder HasAttributes=%v want %v", remainder.HasAttributes(), source.HasAttributes())
+			}
+			if source.HasSockets() {
+				if remainder.Sockets == source.Sockets {
+					t.Fatal("expected remainder sockets pointer to be independent of the pre-split source")
+				}
+				if *remainder.Sockets != *source.Sockets {
+					t.Fatalf("expected remainder sockets %+v, got %+v", *source.Sockets, *remainder.Sockets)
+				}
+				(*remainder.Sockets)[0] = 99
+				if (*source.Sockets)[0] == 99 {
+					t.Fatal("mutating remainder sockets aliased the pre-split source pointer")
+				}
+			} else if remainder.Sockets != nil {
+				t.Fatalf("expected omitted remainder sockets, got %#v", remainder.Sockets)
+			}
+			if source.HasAttributes() {
+				if remainder.Attributes == source.Attributes {
+					t.Fatal("expected remainder attributes pointer to be independent of the pre-split source")
+				}
+				if *remainder.Attributes != *source.Attributes {
+					t.Fatalf("expected remainder attributes %+v, got %+v", *source.Attributes, *remainder.Attributes)
+				}
+				(*remainder.Attributes)[0].Value = 99
+				if (*source.Attributes)[0].Value == 99 {
+					t.Fatal("mutating remainder attributes aliased the pre-split source pointer")
+				}
+			} else if remainder.Attributes != nil {
+				t.Fatalf("expected omitted remainder attributes, got %#v", remainder.Attributes)
+			}
+		})
+	}
+}
+
+func TestSafeboxPartialSplitRemainderItemRejectsWholeStackOrZero(t *testing.T) {
+	source := inventory.ItemInstance{ID: 820, Vnum: 27001, Count: 5, Slot: 0}
+	if _, ok := safeboxPartialSplitRemainderItem(source, 0); ok {
+		t.Fatal("expected zero-count split remainder helper to fail closed")
+	}
+	if _, ok := safeboxPartialSplitRemainderItem(source, 5); ok {
+		t.Fatal("expected whole-stack split remainder helper to fail closed")
+	}
+}
+
 func TestSafeboxPartialMergeRemainderItemClonesPresenceIndependently(t *testing.T) {
 	activeSockets := inventory.SocketValues{11, 0, -3}
 	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
