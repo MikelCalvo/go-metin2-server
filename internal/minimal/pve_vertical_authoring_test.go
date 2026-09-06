@@ -583,6 +583,68 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("decode post-turn-in merchant shop start: %v", err)
 	}
 	assertPveVerticalQuestState(t, runtime, wantAfterTurnIn, "post-turn-in merchant reopen")
+	_ = flushServerFrames(t, flow)
+
+	expensiveBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 1})))
+	if err != nil {
+		t.Fatalf("unexpected post-turn-in expensive merchant buy error: %v", err)
+	}
+	if len(expensiveBuyOut) != 1 {
+		t.Fatalf("expected 1 merchant not-enough-money frame for catalog slot 1, got %d", len(expensiveBuyOut))
+	}
+	if err := shopproto.DecodeServerNotEnoughMoney(decodeSingleFrame(t, expensiveBuyOut[0])); err != nil {
+		t.Fatalf("decode post-turn-in expensive merchant buy error frame: %v", err)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfter {
+		t.Fatalf("expected expensive merchant buy to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected expensive merchant buy to leave turn-in inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterTurnIn, "expensive merchant buy")
+
+	const pveVerticalMerchantPotionPrice = uint64(50)
+	const pveVerticalMerchantPotionVnum = uint32(27001)
+	wantGoldAfterBuy := wantGoldAfter - pveVerticalMerchantPotionPrice
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected post-turn-in affordable merchant buy error: %v", err)
+	}
+	if len(buyOut) != 1 {
+		t.Fatalf("expected 1 item refresh frame for catalog slot 0 merchant buy, got %d", len(buyOut))
+	}
+	boughtSet, err := itemproto.DecodeSet(decodeSingleFrame(t, buyOut[0]))
+	if err != nil {
+		t.Fatalf("decode post-turn-in affordable merchant buy item set: %v", err)
+	}
+	if boughtSet.Position != itemproto.InventoryPosition(1) || boughtSet.Vnum != pveVerticalMerchantPotionVnum || boughtSet.Count != 1 {
+		t.Fatalf("unexpected post-turn-in affordable merchant buy item set: %+v", boughtSet)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
+		t.Fatalf("expected live gold %d after affordable merchant buy, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 2 ||
+		inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 ||
+		inventorySnapshot.Inventory[1].Vnum != pveVerticalMerchantPotionVnum || inventorySnapshot.Inventory[1].Count != 1 || inventorySnapshot.Inventory[1].Slot != 1 {
+		t.Fatalf("expected live inventory after affordable merchant buy to keep turn-in sword and add potion in slot 1, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after affordable merchant buy: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfterBuy {
+		t.Fatalf("expected persisted gold %d after affordable merchant buy, got %d", wantGoldAfterBuy, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 2 ||
+		account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 0 ||
+		account.Characters[0].Inventory[1].Vnum != pveVerticalMerchantPotionVnum || account.Characters[0].Inventory[1].Count != 1 || account.Characters[0].Inventory[1].Slot != 1 {
+		t.Fatalf("expected persisted inventory after affordable merchant buy, got %+v", account.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterTurnIn, "affordable merchant buy")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	resetOut := interactPveVertical(t, flow, resetVID, "QuestResetGuide clear")
@@ -598,22 +660,26 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}}
 	assertPveVerticalQuestState(t, runtime, wantAfterReset, "QuestResetGuide clear")
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
-	if !ok || currencySnapshot.Gold != wantGoldAfter {
-		t.Fatalf("expected QuestResetGuide to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
+		t.Fatalf("expected QuestResetGuide to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
 	}
 	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
-	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
-		t.Fatalf("expected QuestResetGuide to leave turn-in inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	if !ok || len(inventorySnapshot.Inventory) != 2 ||
+		inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 ||
+		inventorySnapshot.Inventory[1].Vnum != pveVerticalMerchantPotionVnum || inventorySnapshot.Inventory[1].Count != 1 || inventorySnapshot.Inventory[1].Slot != 1 {
+		t.Fatalf("expected QuestResetGuide to leave post-buy inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 	account, err = accounts.Load("pve-vertical")
 	if err != nil {
 		t.Fatalf("load persisted PvE vertical account after QuestResetGuide: %v", err)
 	}
-	if account.Characters[0].Gold != wantGoldAfter {
-		t.Fatalf("expected persisted gold %d after QuestResetGuide, got %d", wantGoldAfter, account.Characters[0].Gold)
+	if account.Characters[0].Gold != wantGoldAfterBuy {
+		t.Fatalf("expected persisted gold %d after QuestResetGuide, got %d", wantGoldAfterBuy, account.Characters[0].Gold)
 	}
-	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 {
-		t.Fatalf("expected persisted inventory after QuestResetGuide to stay at turn-in reward, got %+v", account.Characters[0].Inventory)
+	if len(account.Characters[0].Inventory) != 2 ||
+		account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 ||
+		account.Characters[0].Inventory[1].Vnum != pveVerticalMerchantPotionVnum || account.Characters[0].Inventory[1].Count != 1 {
+		t.Fatalf("expected persisted inventory after QuestResetGuide to stay at post-buy snapshot, got %+v", account.Characters[0].Inventory)
 	}
 
 	staleBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
@@ -624,12 +690,12 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected packet shop buy to fail closed after QuestResetGuide closed the merchant, got %d frames", len(staleBuyOut))
 	}
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
-	if !ok || currencySnapshot.Gold != wantGoldAfter {
-		t.Fatalf("expected stale merchant buy to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
+		t.Fatalf("expected stale merchant buy to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
 	}
 	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
-	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 {
-		t.Fatalf("expected stale merchant buy to leave turn-in inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	if !ok || len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[1].Vnum != pveVerticalMerchantPotionVnum {
+		t.Fatalf("expected stale merchant buy to leave post-buy inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
