@@ -165,12 +165,13 @@ curl -sS http://127.0.0.1:6060/local/runtime-config \
       --build-info /tmp/build-info.json
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN. After backup/validate it prints a matching `backup-tree-status --require-stores-complete` redirect to `$BASE/backup-tree-status.json` and a matching `backup-tree-status-status --require-stores-complete` redirect to `$BASE/backup-tree-status-status.json` before aside-rename / restore. Re-inspect a retained tree later with:
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN. After backup/validate it prints a matching `backup-tree-status --require-stores-complete --require-no-crash-temps` redirect to `$BASE/backup-tree-status.json` and a matching `backup-tree-status-status --require-stores-complete --require-no-crash-temps` redirect to `$BASE/backup-tree-status-status.json` before aside-rename / restore. Re-inspect a retained tree later with:
 
 ```bash
 metin2-migrate backup-tree-status \
   --backup-tree /var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12> \
-  --require-stores-complete
+  --require-stores-complete \
+  --require-no-crash-temps
 ```
 
 See [CLI backup-tree-status](../plans/2026-09-06-cli-backup-tree-status-contract-freeze.md). Re-inspect a retained `backup-tree-status.json` later with:
@@ -178,10 +179,11 @@ See [CLI backup-tree-status](../plans/2026-09-06-cli-backup-tree-status-contract
 ```bash
 metin2-migrate backup-tree-status-status \
   --backup-tree-status /var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/backup-tree-status.json \
-  --require-stores-complete
+  --require-stores-complete \
+  --require-no-crash-temps
 ```
 
-See [CLI backup-tree-status-status](../plans/2026-09-06-cli-backup-tree-status-status-contract-freeze.md). Opt-in `--require-no-crash-temps` on those inspectors is frozen next — see [CLI backup-tree-status no-crash-temps require-gate](../plans/2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
+See [CLI backup-tree-status-status](../plans/2026-09-06-cli-backup-tree-status-status-contract-freeze.md) and [CLI backup-tree-status no-crash-temps require-gate](../plans/2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 

@@ -154,7 +154,7 @@ Follow-up owned separately and now GREEN: read-only `backup-tree-status` for ret
 
 Follow-up owned separately and now GREEN: read-only `backup-tree-status-status` for retained `backup-tree-status.json` — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 
-Follow-up owned separately: opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
+Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
 ## What this is not yet
 

@@ -28,8 +28,10 @@ func runBackupTreeStatusStatus(args []string, stdout io.Writer, stderr io.Writer
 	flags.SetOutput(stderr)
 	var backupTreeStatusPath string
 	var requireStoresComplete bool
+	var requireNoCrashTemps bool
 	flags.StringVar(&backupTreeStatusPath, "backup-tree-status", "", "path to a retained backup-tree-status JSON snapshot")
 	flags.BoolVar(&requireStoresComplete, "require-stores-complete", false, "fail closed unless inner stores_complete is true")
+	flags.BoolVar(&requireNoCrashTemps, "require-no-crash-temps", false, "fail closed unless every inner store has omitted or zero crash_temp_count")
 	flags.Usage = func() { printBackupTreeStatusStatusUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -51,7 +53,7 @@ func runBackupTreeStatusStatus(args []string, stdout io.Writer, stderr io.Writer
 		return exitError
 	}
 	if !present {
-		if err := enforceBackupTreeStatusRequireGates(backupTreeStatus{Present: false}, requireStoresComplete); err != nil {
+		if err := enforceBackupTreeStatusRequireGates(backupTreeStatus{Present: false}, requireStoresComplete, requireNoCrashTemps); err != nil {
 			fmt.Fprintf(stderr, "backup-tree-status-status: %v\n", err)
 			return exitError
 		}
@@ -70,7 +72,7 @@ func runBackupTreeStatusStatus(args []string, stdout io.Writer, stderr io.Writer
 		fmt.Fprintf(stderr, "backup-tree-status-status: %v\n", err)
 		return exitError
 	}
-	if err := enforceBackupTreeStatusRequireGates(inner, requireStoresComplete); err != nil {
+	if err := enforceBackupTreeStatusRequireGates(inner, requireStoresComplete, requireNoCrashTemps); err != nil {
 		fmt.Fprintf(stderr, "backup-tree-status-status: %v\n", err)
 		return exitError
 	}
@@ -287,5 +289,5 @@ func readOptionalBackupTreeStatusFile(path string, maxBytes int) ([]byte, bool, 
 
 func printBackupTreeStatusStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "backup-tree-status-status usage:")
-	fmt.Fprintln(w, "  metin2-migrate backup-tree-status-status --backup-tree-status <path> [--require-stores-complete]")
+	fmt.Fprintln(w, "  metin2-migrate backup-tree-status-status --backup-tree-status <path> [--require-stores-complete] [--require-no-crash-temps]")
 }

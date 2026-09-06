@@ -139,6 +139,7 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`echo '== backup-tree status =='`,
 		`metin2-migrate backup-tree-status --backup-tree "$BASE"`,
 		`--require-stores-complete`,
+		`--require-no-crash-temps`,
 		`> "$BASE/backup-tree-status.json"`,
 		`metin2-migrate backup-tree-status-status --backup-tree-status "$BASE/backup-tree-status.json"`,
 		`> "$BASE/backup-tree-status-status.json"`,

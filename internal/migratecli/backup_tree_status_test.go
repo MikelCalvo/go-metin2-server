@@ -204,6 +204,136 @@ func TestRunBackupTreeStatusAcceptsHiddenCrashTemps(t *testing.T) {
 	}
 }
 
+func TestRunBackupTreeStatusRequireNoCrashTempsRejectsHiddenCrashTemps(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	disableBackupTreeStatusDurableSync(t)
+	tree := filepath.Join(t.TempDir(), "backups", "20260906T151000Z-abcdef012345")
+	mustMaterializeCompleteBackupTree(t, tree, true)
+	if err := os.WriteFile(filepath.Join(tree, "accounts", ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write account crash temp: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"backup-tree-status", "--backup-tree", tree, "--require-no-crash-temps"}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected require-no-crash-temps crash-temp tree to exit %d, got exit=%d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on require-no-crash-temps crash-temp tree, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "require-no-crash-temps") || !strings.Contains(stderr.String(), "crash_temp_count") || !strings.Contains(stderr.String(), "accounts") {
+		t.Fatalf("expected require-no-crash-temps/crash_temp_count/accounts guidance, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), ".account-crashed.json") {
+		t.Fatalf("require-no-crash-temps must not expose crash-temp filenames, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("backup-tree-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunBackupTreeStatusRequireNoCrashTempsRejectsMissingTree(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	missing := filepath.Join(t.TempDir(), "missing-backup-tree")
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"backup-tree-status", "--backup-tree", missing, "--require-no-crash-temps"}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected require-no-crash-temps missing tree to exit %d, got exit=%d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on require-no-crash-temps miss, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "require-no-crash-temps") || !strings.Contains(stderr.String(), "absent") {
+		t.Fatalf("expected require-no-crash-temps/absent guidance, got %q", stderr.String())
+	}
+}
+
+func TestRunBackupTreeStatusRequireNoCrashTempsSucceedsOnCompleteCleanTree(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	disableBackupTreeStatusDurableSync(t)
+	tree := filepath.Join(t.TempDir(), "backups", "20260906T152000Z-abcdef012345")
+	mustMaterializeCompleteBackupTree(t, tree, true)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"backup-tree-status", "--backup-tree", tree, "--require-no-crash-temps"}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected require-no-crash-temps clean tree to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on require-no-crash-temps clean tree, got %q", stderr.String())
+	}
+	var got backupTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode require-no-crash-temps clean JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.StoresComplete == nil || !*got.StoresComplete || got.StorePresentCount != 8 {
+		t.Fatalf("unexpected require-no-crash-temps clean aggregates: %#v", got)
+	}
+	for _, entry := range got.Stores {
+		if entry.CrashTempCount != 0 {
+			t.Fatalf("expected omitted/zero crash_temp_count, got %#v", entry)
+		}
+	}
+}
+
+func TestRunBackupTreeStatusRequireNoCrashTempsAllowsIncompleteCleanTree(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	disableBackupTreeStatusDurableSync(t)
+	tree := filepath.Join(t.TempDir(), "backups", "20260906T153000Z-abcdef012345")
+	mustMaterializeCompleteBackupTree(t, tree, false)
+	if err := os.RemoveAll(filepath.Join(tree, "safebox")); err != nil {
+		t.Fatalf("remove safebox store: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"backup-tree-status", "--backup-tree", tree, "--require-no-crash-temps"}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected require-no-crash-temps incomplete clean tree to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	var got backupTreeStatus
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode incomplete clean JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if !got.Present || got.StorePresentCount != 7 || got.StoresComplete == nil || *got.StoresComplete {
+		t.Fatalf("unexpected incomplete clean aggregates: %#v", got)
+	}
+}
+
+func TestRunBackupTreeStatusBothRequireFlagsFailStoresCompleteFirst(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	disableBackupTreeStatusDurableSync(t)
+	tree := filepath.Join(t.TempDir(), "backups", "20260906T154000Z-abcdef012345")
+	mustMaterializeCompleteBackupTree(t, tree, false)
+	if err := os.RemoveAll(filepath.Join(tree, "quest-state")); err != nil {
+		t.Fatalf("remove quest-state store: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{
+		"backup-tree-status",
+		"--backup-tree", tree,
+		"--require-stores-complete",
+		"--require-no-crash-temps",
+	}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected combined require flags on incomplete tree to exit %d, got exit=%d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on combined require flags, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "require-stores-complete") || !strings.Contains(stderr.String(), "stores_complete") {
+		t.Fatalf("expected stores-complete to fail first, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "require-no-crash-temps") {
+		t.Fatalf("expected stores-complete reason without crash-temp gate, got %q", stderr.String())
+	}
+}
+
 func TestRunBackupTreeStatusRejectsInvalidPresentStores(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	disableBackupTreeStatusDurableSync(t)
@@ -399,6 +529,9 @@ func TestRunBackupTreeStatusUsageListsRequireFlag(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--require-stores-complete") {
 		t.Fatalf("expected usage to list --require-stores-complete, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "--require-no-crash-temps") {
+		t.Fatalf("expected usage to list --require-no-crash-temps, got %q", stderr.String())
 	}
 }
 

@@ -231,6 +231,82 @@ func TestRunBackupTreeStatusStatusRequireStoresCompleteFailClosedOnAbsentPathOrI
 	}
 }
 
+func TestRunBackupTreeStatusStatusRequireNoCrashTempsFailClosedOnAbsentPathOrInnerPresentFalse(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	missing := filepath.Join(t.TempDir(), "missing-backup-tree-status.json")
+	absentInner := mustCaptureBackupTreeStatusJSON(t, filepath.Join(t.TempDir(), "missing-backup-tree"))
+	absentPath := filepath.Join(t.TempDir(), "backup-tree-status.json")
+	mustWriteFile(t, absentPath, absentInner)
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "missing-path",
+			args: []string{"backup-tree-status-status", "--backup-tree-status", missing, "--require-no-crash-temps"},
+			want: "require-no-crash-temps",
+		},
+		{
+			name: "inner-absent",
+			args: []string{"backup-tree-status-status", "--backup-tree-status", absentPath, "--require-no-crash-temps"},
+			want: "require-no-crash-temps",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			code := Run(tc.args, nil, &stdout, &stderr)
+			if code != exitError {
+				t.Fatalf("expected require-no-crash-temps to fail closed, exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("expected no stdout on require-no-crash-temps failure, got %q", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.want) || !strings.Contains(stderr.String(), "absent") {
+				t.Fatalf("expected stderr to contain %q and absent, got %q", tc.want, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunBackupTreeStatusStatusRequireNoCrashTempsFailsAfterOriginalTreeDeleted(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	disableBackupTreeStatusDurableSync(t)
+	tree := filepath.Join(t.TempDir(), "backups", "20260906T182000Z-abcdef012345")
+	mustMaterializeCompleteBackupTree(t, tree, true)
+	if err := os.WriteFile(filepath.Join(tree, "accounts", ".account-crashed.json"), []byte(`{"not":"committed"}`), 0o644); err != nil {
+		t.Fatalf("write account crash temp: %v", err)
+	}
+	raw := mustCaptureBackupTreeStatusJSON(t, tree)
+	if err := os.RemoveAll(tree); err != nil {
+		t.Fatalf("remove original backup-tree: %v", err)
+	}
+	statusPath := filepath.Join(t.TempDir(), "backup-tree-status.json")
+	mustWriteFile(t, statusPath, raw)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"backup-tree-status-status", "--backup-tree-status", statusPath, "--require-no-crash-temps"}, nil, &stdout, &stderr)
+	if code != exitError {
+		t.Fatalf("expected retained crash-temp snapshot to fail closed, exit=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout on retained crash-temp require, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "require-no-crash-temps") || !strings.Contains(stderr.String(), "crash_temp_count") || !strings.Contains(stderr.String(), "accounts") {
+		t.Fatalf("expected require-no-crash-temps/crash_temp_count/accounts guidance, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), ".account-crashed.json") {
+		t.Fatalf("require-no-crash-temps must not expose crash-temp filenames, got %q", stderr.String())
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("backup-tree-status-status must not open a database target, got events %#v", events)
+	}
+}
+
 func TestRunBackupTreeStatusStatusRejectsSymlinkOversizedUnknownFieldAndWrongFormat(t *testing.T) {
 	_ = registerMigrateCLITestSQLDriver(t)
 	dir := t.TempDir()
@@ -322,6 +398,9 @@ func TestRunBackupTreeStatusStatusUsageListsRequireFlag(t *testing.T) {
 	if !strings.Contains(stderr.String(), "--require-stores-complete") {
 		t.Fatalf("expected usage to list --require-stores-complete, got %q", stderr.String())
 	}
+	if !strings.Contains(stderr.String(), "--require-no-crash-temps") {
+		t.Fatalf("expected usage to list --require-no-crash-temps, got %q", stderr.String())
+	}
 }
 
 func TestRunHelpListsBackupTreeStatusStatus(t *testing.T) {
@@ -391,6 +470,43 @@ func TestRunBackupRestoreDrillPrintsBackupTreeStatusStatusRedirect(t *testing.T)
 	}
 	if !(idxStatus < idxStatusStatus && idxStatusStatus < idxAside) {
 		t.Fatalf("expected backup-tree-status -> backup-tree-status-status -> aside-rename, got status=%d status-status=%d aside=%d", idxStatus, idxStatusStatus, idxAside)
+	}
+}
+
+func TestRunBackupRestoreDrillPrintsBackupTreeStatusRequireNoCrashTemps(t *testing.T) {
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{
+  "version": "v0.1.0",
+  "commit": "abcdef0123456789deadbeef",
+  "build_date": "2026-08-21T15:30:45Z"
+}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"backup-restore-drill",
+			"--runtime-config", "-",
+			"--build-info", buildInfoPath,
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--backup-base", "/var/metin2/backups",
+		},
+		strings.NewReader(validBackupRestoreRuntimeConfig()),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+
+	body := stdout.String()
+	wantFlagBlock := "  --require-stores-complete \\\n  --require-no-crash-temps \\"
+	if strings.Count(body, wantFlagBlock) != 2 {
+		t.Fatalf("expected --require-no-crash-temps immediately after --require-stores-complete on both status redirects, got:\n%s", body)
+	}
+	idxFlag := strings.Index(body, "--require-no-crash-temps")
+	idxAside := strings.Index(body, `mv "$ACCOUNT_STORE_DIR"`)
+	if idxFlag < 0 || idxAside < 0 || idxFlag > idxAside {
+		t.Fatalf("expected --require-no-crash-temps before aside-rename, got flag=%d aside=%d", idxFlag, idxAside)
 	}
 }
 

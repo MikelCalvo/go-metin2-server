@@ -124,8 +124,10 @@ func runBackupTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 	flags.SetOutput(stderr)
 	var backupTree string
 	var requireStoresComplete bool
+	var requireNoCrashTemps bool
 	flags.StringVar(&backupTree, "backup-tree", "", "absolute path to a retained backup-restore-drill tree")
 	flags.BoolVar(&requireStoresComplete, "require-stores-complete", false, "fail closed unless stores_complete is true")
+	flags.BoolVar(&requireNoCrashTemps, "require-no-crash-temps", false, "fail closed unless every store has omitted or zero crash_temp_count")
 	flags.Usage = func() { printBackupTreeStatusUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -146,22 +148,31 @@ func runBackupTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "backup-tree-status: %v\n", err)
 		return exitError
 	}
-	if err := enforceBackupTreeStatusRequireGates(status, requireStoresComplete); err != nil {
+	if err := enforceBackupTreeStatusRequireGates(status, requireStoresComplete, requireNoCrashTemps); err != nil {
 		fmt.Fprintf(stderr, "backup-tree-status: %v\n", err)
 		return exitError
 	}
 	return writeJSON(stdout, stderr, status)
 }
 
-func enforceBackupTreeStatusRequireGates(status backupTreeStatus, requireStoresComplete bool) error {
-	if !requireStoresComplete {
-		return nil
+func enforceBackupTreeStatusRequireGates(status backupTreeStatus, requireStoresComplete, requireNoCrashTemps bool) error {
+	if requireStoresComplete {
+		if !status.Present {
+			return fmt.Errorf("--require-stores-complete failed: backup-tree is absent")
+		}
+		if status.StoresComplete == nil || !*status.StoresComplete {
+			return fmt.Errorf("--require-stores-complete failed: stores_complete=false")
+		}
 	}
-	if !status.Present {
-		return fmt.Errorf("--require-stores-complete failed: backup-tree is absent")
-	}
-	if status.StoresComplete == nil || !*status.StoresComplete {
-		return fmt.Errorf("--require-stores-complete failed: stores_complete=false")
+	if requireNoCrashTemps {
+		if !status.Present {
+			return fmt.Errorf("--require-no-crash-temps failed: backup-tree is absent")
+		}
+		for _, entry := range status.Stores {
+			if entry.CrashTempCount > 0 {
+				return fmt.Errorf("--require-no-crash-temps failed: crash_temp_count>0 on %s", entry.Kind)
+			}
+		}
 	}
 	return nil
 }
@@ -325,5 +336,5 @@ func validateBackupTreeStore(spec backupTreeStoreSpec, storeDir string) (backupT
 
 func printBackupTreeStatusUsage(w io.Writer) {
 	fmt.Fprintln(w, "backup-tree-status usage:")
-	fmt.Fprintln(w, "  metin2-migrate backup-tree-status --backup-tree <absolute-path> [--require-stores-complete]")
+	fmt.Fprintln(w, "  metin2-migrate backup-tree-status --backup-tree <absolute-path> [--require-stores-complete] [--require-no-crash-temps]")
 }

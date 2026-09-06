@@ -249,10 +249,10 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze on `lane/persistence`. GREEN is follow-on: opt-in
-`--require-no-crash-temps` on live `backup-tree-status` and retained
-`backup-tree-status-status`, matching `backup-restore-drill` redirects, and
-hermetic HTTP proof kept green under the extra flags.
+GREEN on `lane/persistence`: opt-in `--require-no-crash-temps` on live
+`backup-tree-status` and retained `backup-tree-status-status`, matching
+`backup-restore-drill` redirects, and hermetic HTTP proof kept green under
+the extra flags.
 
 ## Exit criteria for this freeze
 
