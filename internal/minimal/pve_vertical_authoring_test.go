@@ -13,7 +13,6 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
-	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
@@ -51,7 +50,6 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
 	hero.Gold = 40
 	hero.Points[bootstrapExperiencePointType] = 40
-	hero.Inventory = []inventory.ItemInstance{{ID: 9001, Vnum: 27001, Count: 1, Slot: 0}}
 	issuePeerTicket(t, ticketStore, "pve-vertical", 0x60606060, hero)
 	accounts := accountstore.NewFileStore(t.TempDir())
 	if err := accounts.Save(accountstore.Account{Login: "pve-vertical", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
@@ -204,11 +202,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			assertPveVerticalFormulaFirstHitFrames(t, preGuideKillOut, mobVID, hero.VID, pveVerticalMobFormulaDamage, "pre-guide")
 		}
 	}
+	if len(preGuideKillOut) < 7 {
+		t.Fatalf("expected pre-guide killing hit to include death/reward frames, got %d", len(preGuideKillOut))
+	}
 	for _, frame := range preGuideKillOut {
 		if chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame)); err == nil {
 			t.Fatalf("expected no quest chat before guide unlock, got %+v", chat)
 		}
 	}
+	_ = decodePveVerticalAuthoredKillDrop(t, preGuideKillOut, hero, "pre-guide")
 	loaded, err := runtime.questStateStore.Load()
 	if err != nil {
 		t.Fatalf("load quest-state after pre-guide kill: %v", err)
@@ -402,9 +404,28 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			assertPveVerticalFormulaFirstHitFrames(t, postGuideKillOut, mobVID, hero.VID, pveVerticalMobFormulaDamage, "post-guide")
 		}
 	}
+	if len(postGuideKillOut) < 8 {
+		t.Fatalf("expected post-guide killing hit to include death/reward frames plus quest chat, got %d", len(postGuideKillOut))
+	}
 	killChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, postGuideKillOut[len(postGuideKillOut)-1]))
 	if err != nil || killChat.Message != "Quest updated: first_steps.killed_qa_mob = 1." {
 		t.Fatalf("unexpected post-guide kill quest chat: %+v err=%v", killChat, err)
+	}
+	postGuideGround := decodePveVerticalAuthoredKillDrop(t, postGuideKillOut, hero, "post-guide")
+	pickupPveVerticalAuthoredDrop(t, flow, postGuideGround.VID, "post-guide")
+	if runtime.sharedWorld.GroundItemExists(postGuideGround.VID) {
+		t.Fatalf("expected credited kill-drop pickup to clear ground handle %d", postGuideGround.VID)
+	}
+	beforeTurnInInventory, ok := runtime.InventorySnapshot(hero.Name)
+	if !ok || len(beforeTurnInInventory.Inventory) != 1 || beforeTurnInInventory.Inventory[0].Vnum != 27001 || beforeTurnInInventory.Inventory[0].Count != 1 || beforeTurnInInventory.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory to hold the credited kill drop before QuestHunter turn-in, got ok=%v snapshot=%+v", ok, beforeTurnInInventory)
+	}
+	account, err := accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after credited kill-drop pickup: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 0 {
+		t.Fatalf("expected persisted inventory to hold the credited kill drop before QuestHunter turn-in, got %+v", account.Characters[0].Inventory)
 	}
 	loaded, err = runtime.questStateStore.Load()
 	if err != nil {
@@ -497,7 +518,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
 		t.Fatalf("expected live inventory after QuestHunter consume+reward turn-in, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
-	account, err := accounts.Load("pve-vertical")
+	account, err = accounts.Load("pve-vertical")
 	if err != nil {
 		t.Fatalf("load persisted PvE vertical account after turn-in: %v", err)
 	}
@@ -599,6 +620,48 @@ func assertPveVerticalPersistedPosition(t *testing.T, accounts *accountstore.Fil
 	}
 	if len(account.Characters) != 1 || account.Characters[0].MapIndex != mapIndex || account.Characters[0].X != x || account.Characters[0].Y != y {
 		t.Fatalf("expected persisted %s position map=%d x=%d y=%d, got %+v", context, mapIndex, x, y, account.Characters)
+	}
+}
+
+func decodePveVerticalAuthoredKillDrop(t *testing.T, frames [][]byte, killer loginticket.Character, context string) itemproto.GroundAddPacket {
+	t.Helper()
+	for i := 0; i+1 < len(frames); i++ {
+		ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, frames[i]))
+		if err != nil {
+			continue
+		}
+		ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, frames[i+1]))
+		if err != nil {
+			t.Fatalf("expected %s GROUND_ADD to be followed by OWNERSHIP: %+v err=%v", context, ground, err)
+		}
+		if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
+			t.Fatalf("unexpected %s kill ground add: %+v", context, ground)
+		}
+		if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: killer.Name}) {
+			t.Fatalf("unexpected %s kill ownership: %+v", context, ownership)
+		}
+		return ground
+	}
+	t.Fatalf("expected %s killing hit to include GROUND_ADD + OWNERSHIP for vnum 27001, got %d frames", context, len(frames))
+	return itemproto.GroundAddPacket{}
+}
+
+func pickupPveVerticalAuthoredDrop(t *testing.T, flow service.SessionFlow, groundVID uint32, context string) {
+	t.Helper()
+	pickupOut := pickupGroundItem(t, flow, groundVID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected %s drop pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d", context, len(pickupOut))
+	}
+	if del, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || del.VID != groundVID {
+		t.Fatalf("unexpected %s pickup ground delete: del=%+v err=%v", context, del, err)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil || set.Position != itemproto.InventoryPosition(0) || set.Vnum != 27001 || set.Count != 1 {
+		t.Fatalf("unexpected %s pickup item set: %+v err=%v", context, set, err)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil || get.Vnum != 27001 || get.Count != 1 {
+		t.Fatalf("unexpected %s pickup item get: %+v err=%v", context, get, err)
 	}
 }
 
