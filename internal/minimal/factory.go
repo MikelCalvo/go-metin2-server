@@ -11435,7 +11435,7 @@ func contentPracticeMobRetaliationProfile(profile string) bool {
 }
 
 func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlayer *player.Runtime, actor StaticActorSnapshot, targetDied bool) (player.PointChangeResult, bool, bool) {
-	if selectedPlayer == nil || targetDied {
+	if selectedPlayer == nil {
 		return player.PointChangeResult{}, false, false
 	}
 	if actor.SpawnGroupRef == "" && runtime != nil {
@@ -11462,6 +11462,9 @@ func contentPracticeMobRetaliationPointChange(runtime *gameRuntime, selectedPlay
 		}
 	}
 	if pointDelta == 0 {
+		return player.PointChangeResult{}, false, false
+	}
+	if targetDied && currentPointValue+pointDelta > 0 {
 		return player.PointChangeResult{}, false, false
 	}
 	pointChange, ok := selectedPlayer.ApplyPointDelta(bootstrapPlayerPointType, bootstrapPlayerPointValueIndex, pointDelta)

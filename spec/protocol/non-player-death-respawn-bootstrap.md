@@ -105,6 +105,7 @@ When a dummy dies:
 - those same currently visible live sessions then receive one plain `GC DAMAGE_INFO(vid, flag = 0, damage = applied_bootstrap_damage)` companion after `DEAD` (and after their own clear when they still had that actor selected)
 - that death / clear / hit-effect prefix happens as part of the same death transition window rather than waiting for a later reconnect, movement, or reselection path
 - later attacks from that session must fail closed until a fresh post-respawn `TARGET` succeeds again
+- when that same accepted killing hit would also drive the engaged owner to the bootstrap `0`-HP floor through the ordinary immediate retaliation delta, dummy death still owns this first prefix and the owner-floor suffix (`PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)` -> owner `DAMAGE_INFO`) now follows in the same packet burst; a killing hit that leaves the owner above `0` still omits owner retaliation
 
 This keeps death aligned with the already-owned combat target surface.
 

@@ -52,6 +52,7 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobImmediate(OwnerFl
 ## What this is not yet
 
 - delayed / proximity-armed floors inventing a synthetic mob hit-effect
-- owner-floor hits that also kill the mob in one packet burst
 - skill / ranged / PvP `DAMAGE_INFO` policy
 - richer flag meanings (crit/miss/block)
+
+The combined last-hit (dummy dies and owner floors in one accepted `ATTACK`) is now owned by `TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsCombinedDeathBurst`.

@@ -49284,6 +49284,143 @@ func TestGameSessionFlowPracticeMobImmediateOwnerFloorHitEmitsMobAndOwnerDamageI
 	assertDamageInfoFrame(t, watcherQueued[2], owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "immediate owner-floor peer owner damage-info")
 }
 
+func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsCombinedDeathBurst(t *testing.T) {
+	const profile = "practice_combined_last_hit_mob"
+	const spawnRef = "practice.combined_last_hit_mob"
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 1,
+		DamagePerNormalAttack: 1,
+		AttackValue:           1,
+		DefenseValue:          0,
+		Level:                 worldruntime.TrainingDummyBootstrapLevel,
+		Rank:                  worldruntime.TrainingDummyBootstrapRank,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: worldruntime.PracticeMobBootstrapRetaliationPointDelta,
+	}) {
+		t.Fatalf("expected %q combined last-hit profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	watcher := peerVisibilityCharacter("PeerTwo", 0x01030102, 0x02040102, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	issuePeerTicket(t, store, "peer-two", 0x22222222, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "peer-one", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed combined last-hit owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 1,
+			DamagePerNormalAttack: 1,
+			AttackValue:           1,
+			DefenseValue:          0,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			Rank:                  worldruntime.TrainingDummyBootstrapRank,
+			RespawnDelayMs:        worldruntime.PracticeMobBootstrapRespawnDelay.Milliseconds(),
+			RetaliationPointDelta: worldruntime.PracticeMobBootstrapRetaliationPointDelta,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:           spawnRef,
+			Name:          "CombinedLastHitMob",
+			MapIndex:      bootstrapMapIndex,
+			X:             1200,
+			Y:             2200,
+			RaceNum:       101,
+			CombatProfile: profile,
+		}},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import combined last-hit spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-two", 0x22222222)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before combined last-hit: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before combined last-hit, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error on combined last-hit: %v", err)
+	}
+	if len(attackOut) != 7 {
+		t.Fatalf("expected dummy death/clear/damage-info then owner-floor point-change/dead/clear/damage-info on combined last-hit, got %d frames", len(attackOut))
+	}
+	remainingDeath := stripKillingHitDeathPrefix(t, attackOut, targetVID, 1, "combined last-hit dummy death")
+	next := assertOwnerFloorDeathSequence(t, remainingDeath, 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "combined last-hit owner-floor")
+	if next != 4 {
+		t.Fatalf("expected combined last-hit owner-floor suffix to consume 4 frames, got next=%d", next)
+	}
+
+	spawned, ok := runtime.SpawnGroupByRef(spawnRef)
+	if !ok || !spawned.Dead {
+		t.Fatalf("expected combined last-hit dummy to stay dead after the accepted hit, ok=%v snapshot=%+v", ok, spawned)
+	}
+	persisted, err := accounts.Load("peer-one")
+	if err != nil {
+		t.Fatalf("load persisted combined last-hit owner account: %v", err)
+	}
+	if len(persisted.Characters) != 1 || persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected combined last-hit to persist owner points[%d]=0, got %+v", bootstrapPlayerPointValueIndex, persisted.Characters)
+	}
+
+	staleAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale post-floor attack error after combined last-hit: %v", err)
+	}
+	if len(staleAttack) != 0 {
+		t.Fatalf("expected stale same-target ATTACK to fail closed after combined last-hit, got %d frames", len(staleAttack))
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 4 {
+		t.Fatalf("expected 4 queued visible-peer dummy DEAD + dummy damage-info + owner DEAD + owner damage-info frames on combined last-hit, got %d", len(watcherQueued))
+	}
+	remainingPeer := stripKillingHitPeerDeathPrefix(t, watcherQueued, targetVID, false, 1, "combined last-hit peer dummy death")
+	remainingPeer = assertOwnerFloorPeerDeadFanout(t, remainingPeer, owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "combined last-hit peer owner-floor")
+	if len(remainingPeer) != 0 {
+		t.Fatalf("expected no extra peer frames after combined last-hit dummy + owner death bursts, got %d", len(remainingPeer))
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
