@@ -6,11 +6,13 @@ It sits on top of:
 - `game-slash-command-bootstrap.md`
 - `player-death-bootstrap.md`
 - `transfer-rebootstrap-burst.md`
+- `item-drop-pickup-bootstrap.md`
 
 Those documents already freeze:
 - the existing slash-command ingress while a session is already in `GAME`
 - the retaliation-owned player-death floor at `0` HP, including self `DEAD(owner_vid)` + `TARGET(0, 0)` and the current post-floor denial gates
 - the reusable selected-character self bootstrap burst (`CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE` -> `PLAYER_POINT_CHANGE`)
+- the ordinary pending-ground rematerialize carrier (`ITEM_GROUND_ADD` + `ITEM_OWNERSHIP`) already used by EnterGame / transfer destination catch-up
 
 ## Question
 
@@ -68,15 +70,17 @@ When accepted, `/restart_here` now:
    - `CHARACTER_DEL(actor_vid)`
    - ordinary add/info/update state frames for the post-preflight actor snapshot
    - trailing `GC DEAD(actor_vid)` when that actor is still in the owned dead interval
-7. keep the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+7. appends one self-only catch-up for currently visible pending ground handles after that static/mob refresh, reusing the ordinary `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` carrier already owned by EnterGame / transfer destination rematerialize
+8. keep the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
 
-That catch-up exists because the already-owned zero-HP recipient skips intentionally withheld later practice-mob death/respawn and static-actor visibility frames from the still-connected dead owner. Same-socket `/restart_here` therefore has to resynchronize the recovered owner to the current server-owned non-player snapshot instead of leaving stale pre-death visuals while combat selection already observes the live runtime state.
+That catch-up exists because the already-owned zero-HP recipient skips intentionally withheld later practice-mob death/respawn, static-actor visibility, and pending ground-handle visibility frames from the still-connected dead owner. Same-socket `/restart_here` therefore has to resynchronize the recovered owner to the current server-owned non-player snapshot instead of leaving stale pre-death visuals while combat selection already observes the live runtime state.
 
 For this bootstrap slice, the self recovery rebuild is intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state plus an owned race create MaxHP restore for the bootstrap HP point
 - that recovery writes the restored live HP back into the selected-character account snapshot as part of the accepted restart
 - a still-live practice mob keeps its current runtime-owned HP and engagement reset rules
 - if that practice mob died and is still inside its server-owned dead interval when `/restart_here` is accepted — including the combined last-hit that also floors the owner — the catch-up refresh reuses the ordinary delete-plus-add/info/update burst plus one trailing `GC DEAD(actor_vid)` so the recovered owner does not silently see a live dummy (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUpStillDeadDummy`); later `TARGET` / `ATTACK` stay fail-closed until that dummy respawns, and the later due rebuild uses the ordinary live `CHARACTER_DEL` + add/info/update burst
+- if that same combined last-hit also registered an owned kill-reward ground handle, `/restart_here` rematerializes that pending handle with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` succeeds (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
 - if that practice mob died and its server-owned respawn became due while the owner was still at the zero-HP floor, the restart-here preflight rebuilds the mob first and the catch-up refresh shows the live post-respawn actor rather than a stale dead replay followed by a duplicate queued rebuild
 - if a still-live spawn-backed practice mob became `return_required` and its server-owned return-step deadline became due while the owner was still at the zero-HP floor, the restart-here preflight applies that due return step before catch-up so the recovered owner sees the stepped server-owned position rather than the pre-step displaced snapshot followed by a duplicate queued rebuild; actors that remain `return_required` after the stepped preflight stay non-targetable under the already-owned leash gate
 
@@ -113,6 +117,7 @@ After accepted `/restart_here`:
 - later owner-side `TARGET` may succeed again under the ordinary live combat rules
 - later owner-side `ATTACK` still requires a fresh accepted `TARGET`
 - if `/restart_here` recovered the owner while that practice mob was still inside its server-owned dead interval, later owner-side `TARGET` / `ATTACK` stay fail-closed until the dummy respawns; after the ordinary live rebuild, a fresh `TARGET` succeeds at full HP (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUpStillDeadDummy`)
+- if that recovery also rematerialized a still-pending kill-reward ground handle, later owner-side `ITEM_PICKUP` uses the ordinary owned pickup path (`ITEM_GROUND_DEL` + `ITEM_SET` + `ITEM_GET`) without waiting for dummy respawn (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
 - the previously engaged practice mob, if still alive, remains at its current runtime-owned HP rather than resetting because of the owner's recovery
 - once that fresh `TARGET` is accepted, ordinary normal `ATTACK` resumes against the still-live damaged practice mob (`TestGameSessionFlowPracticeMobRestartHereFreshTargetResumesNormalAttack`): the next accepted hit refreshes the selected target one HP step farther, applies one immediate owner-side retaliation point-change from recovered MaxHP, and emits the ordinary self plus visible-peer `DAMAGE_INFO` companions
 - the same fresh-`TARGET` then normal-`ATTACK` resume also holds after abrupt disconnect / reconnect while the owner was still at the persisted `0`-HP floor and then recovered with `/restart_here` on the new socket (`TestGameSessionFlowPracticeMobReconnectRestartHereFreshTargetResumesNormalAttack`)

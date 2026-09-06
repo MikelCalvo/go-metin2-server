@@ -46,6 +46,8 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- pickup / inventory mutation of that drop (items lane)
 - delayed / proximity-armed floors inventing kill rewards
 - party share, random loot tables, or level-up choreography
+
+Pickup after same-socket `/restart_here` rematerialize of that drop is now owned
+by `2026-09-06-combined-last-hit-restart-here-ground-catch-up.md`.

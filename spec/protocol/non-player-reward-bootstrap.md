@@ -192,6 +192,7 @@ The current runtime test coverage explicitly freezes the combined descriptor cas
 - the scalar EXP/gold account snapshot is saved before those scalar point-change frames are emitted
 - the player runtime's scalar reward helper intentionally ignores `reward_drop_vnums` while applying EXP/gold, so combined descriptors are not rejected merely because a separate drop channel is present
 - the drop is registered as a runtime ground item after the same accepted kill and remains non-persistent until pickup
+- when that same accepted killing hit also floors the owner, same-socket `/restart_here` rematerializes the still-pending drop with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` persists inventory (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
 
 This regression coverage matters because scalar persistence and drop registration use different runtime seams.
 A combined descriptor must not accidentally suppress one reward family just because the other family is present.
@@ -205,6 +206,7 @@ The repository can now say:
 - registered formula-only combat profiles can drive both deterministic HP mutation and profile-default EXP/gold reward payout on the same accepted death edge
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
 - a combined last-hit that also floors the owner still emits those reward frames before the owner-floor suffix and still persists scalar EXP/gold plus HP `0`
+- same-socket `/restart_here` after that combined last-hit rematerializes still-pending kill-reward ground handles with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` succeeds (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items only after the currently loaded item-template metadata allows that reward drop for the selected killer, and persist to inventory only through the normal pickup path

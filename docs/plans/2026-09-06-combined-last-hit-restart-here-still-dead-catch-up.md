@@ -48,6 +48,8 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- kill-reward ground-item catch-up on `/restart_here` (items/reward follow-up)
 - `/restart_town` still-dead dummy catch-up
 - reconnect / `/phase_select` still-dead dummy catch-up after combined last-hit
+
+Kill-reward ground-item catch-up on `/restart_here` is now owned by
+`2026-09-06-combined-last-hit-restart-here-ground-catch-up.md`.

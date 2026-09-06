@@ -51,3 +51,6 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 - same-socket `/restart_here` still-dead dummy catch-up after that combined
   last-hit (now owned by
   `2026-09-06-combined-last-hit-restart-here-still-dead-catch-up.md`)
+- same-socket `/restart_here` kill-reward ground rematerialize plus pickup
+  after that combined last-hit (now owned by
+  `2026-09-06-combined-last-hit-restart-here-ground-catch-up.md`)

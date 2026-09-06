@@ -7378,7 +7378,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							clearActiveMyShopOpen()
 							clearActiveGuestMyShopBrowse()
 							staticRefreshFrames := sharedWorld.VisibleStaticActorRefreshFrames(restartedLive)
+							groundRefreshFrames := sharedWorld.VisibleGroundItemFrames(restartedLive)
 							frames := append(append([][]byte(nil), bootstrapFrames...), staticRefreshFrames...)
+							frames = append(frames, groundRefreshFrames...)
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						case "restart_town":
 							selectedPlayer, ok := currentSelectedPlayer()

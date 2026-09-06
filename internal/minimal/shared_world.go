@@ -6120,6 +6120,10 @@ func (r *sharedWorldRegistry) VisibleStaticActorRefreshFrames(subject loginticke
 	return frames
 }
 
+// VisibleGroundItemFrames rebuilds currently visible pending ground handles for a
+// live subject as ITEM_GROUND_ADD + ITEM_OWNERSHIP catch-up. Same-socket
+// /restart_here uses this after static-actor catch-up so a recovered owner can
+// see kill-reward / player-drop handles that were skipped while at 0 HP.
 func (r *sharedWorldRegistry) VisibleGroundItemFrames(subject loginticket.Character) [][]byte {
 	if r == nil || len(r.groundItemsByVID) == 0 || characterAtBootstrapHPFloor(subject) {
 		return nil

@@ -70,6 +70,8 @@ After the relocated self burst, the moved player currently receives the transfer
    - one `ITEM_GROUND_DEL` for each source-scope pending ground handle that stops being visible
    - then one `ITEM_GROUND_ADD` plus `ITEM_OWNERSHIP` pair for each destination-scope pending ground handle that becomes visible
 
+Same-socket `/restart_here` reuses that add/ownership carrier as a self-only in-place catch-up after static/mob refresh, without source-map `ITEM_GROUND_DEL`, because recovery stays on the same map (`player-restart-here-bootstrap.md`).
+
 This keeps the moved player's own actor bootstrap deterministic while still reusing the existing player, static-actor, and temporary ground-item visibility packet families.
 
 ## Example: move from map 1 to map 42
