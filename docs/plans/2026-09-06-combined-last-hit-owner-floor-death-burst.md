@@ -46,3 +46,5 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 - delayed / proximity-armed floors inventing a synthetic mob hit-effect
 - skill / ranged / PvP `DAMAGE_INFO` policy
 - richer flag meanings (crit/miss/block)
+- authored EXP / gold / drop rewards on that same combined last-hit (now owned
+  by `2026-09-06-combined-last-hit-reward-then-floor.md`)

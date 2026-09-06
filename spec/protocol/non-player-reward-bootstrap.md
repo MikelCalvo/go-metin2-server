@@ -99,13 +99,16 @@ The killing hit keeps death choreography first.
 Reward frames are appended only after:
 1. `GC DEAD(target_vid)`
 2. `GC TARGET(0, 0)` for the killer if that target was still selected
+3. the killing-hit mob `DAMAGE_INFO` companion when that companion is owned
 
 After those frames, successful reward feedback is ordered as:
 1. optional EXP `GC PLAYER_POINT_CHANGE`
 2. optional gold `GC PLAYER_POINT_CHANGE`
 3. one `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` pair per configured drop, in normalized ascending drop-vnum order
 
-This ordering keeps combat lifecycle visible before reward side effects.
+When that same accepted killing hit would also drive the engaged owner to the bootstrap `0`-HP floor through the ordinary immediate retaliation delta, those reward frames stay after dummy death / clear / hit-effect and before the owner-floor suffix. Ground-item registration therefore still sees a live killer snapshot. Currently visible live peers receive dummy `DEAD` plus dummy `DAMAGE_INFO`, then the ground-add / ownership pair, then owner `DEAD` plus owner `DAMAGE_INFO`; they still do not receive the killer's self-only EXP/gold point-changes.
+
+This ordering keeps combat lifecycle visible before reward side effects, and keeps reward registration from racing the owner-floor live-owner guard.
 
 ## Scalar EXP and gold rewards
 
@@ -185,6 +188,7 @@ Current rules:
 The current runtime test coverage explicitly freezes the combined descriptor case as one kill-side transaction:
 - one accepted killing hit may carry EXP, gold, and fixed drop-vnum entries together
 - the self-visible frame order stays death/clear first, then EXP point-change, gold point-change, ground-add, and ownership
+- when that same accepted killing hit also floors the owner, those reward frames stay after dummy death/clear/hit-effect and before the owner-floor suffix so ground-item registration still sees a live killer snapshot
 - the scalar EXP/gold account snapshot is saved before those scalar point-change frames are emitted
 - the player runtime's scalar reward helper intentionally ignores `reward_drop_vnums` while applying EXP/gold, so combined descriptors are not rejected merely because a separate drop channel is present
 - the drop is registered as a runtime ground item after the same accepted kill and remains non-persistent until pickup
@@ -200,6 +204,7 @@ The repository can now say:
 - authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors directly or through authoring-only fixed reward tables that canonicalize into those same direct descriptor fields
 - registered formula-only combat profiles can drive both deterministic HP mutation and profile-default EXP/gold reward payout on the same accepted death edge
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
+- a combined last-hit that also floors the owner still emits those reward frames before the owner-floor suffix and still persists scalar EXP/gold plus HP `0`
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items only after the currently loaded item-template metadata allows that reward drop for the selected killer, and persist to inventory only through the normal pickup path

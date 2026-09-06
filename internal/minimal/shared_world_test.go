@@ -49421,6 +49421,212 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsCombinedDeathBu
 	}
 }
 
+func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsRewardsBeforeOwnerFloor(t *testing.T) {
+	const profile = "practice_combined_last_hit_reward_mob"
+	const spawnRef = "practice.combined_last_hit_reward_mob"
+	const rewardExperience uint64 = 75
+	const rewardGold uint64 = 60
+	const rewardDropVnum uint32 = 27001
+	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
+		MaxHP:                 1,
+		DamagePerNormalAttack: 1,
+		AttackValue:           1,
+		DefenseValue:          0,
+		Level:                 worldruntime.TrainingDummyBootstrapLevel,
+		Rank:                  worldruntime.TrainingDummyBootstrapRank,
+		RespawnDelay:          worldruntime.PracticeMobBootstrapRespawnDelay,
+		RetaliationPointDelta: worldruntime.PracticeMobBootstrapRetaliationPointDelta,
+	}) {
+		t.Fatalf("expected %q combined last-hit reward profile registration to succeed", profile)
+	}
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RewardOwner", 0x01030141, 0x02040141, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Points[bootstrapExperiencePointType] = 25
+	owner.Gold = 40
+	watcher := peerVisibilityCharacter("RewardWatch", 0x01030142, 0x02040142, 1300, 2300, 0, 102, 202)
+	issuePeerTicket(t, store, "clh-reward-owner", 0x41414141, owner)
+	issuePeerTicket(t, store, "clh-reward-watch", 0x42424242, watcher)
+	if err := accounts.Save(accountstore.Account{Login: "clh-reward-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed combined last-hit reward owner account: %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		store,
+		accounts,
+		staticstore.NewFileStore(t.TempDir()+"/static-actors.json"),
+		interactionstore.NewFileStore(t.TempDir()+"/interaction-definitions.json"),
+		itemcatalog.NewFileStore(t.TempDir()+"/item-templates.json"),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	bundle := contentbundle.Bundle{
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
+			Profile:               profile,
+			MaxHP:                 1,
+			DamagePerNormalAttack: 1,
+			AttackValue:           1,
+			DefenseValue:          0,
+			Level:                 worldruntime.TrainingDummyBootstrapLevel,
+			Rank:                  worldruntime.TrainingDummyBootstrapRank,
+			RespawnDelayMs:        worldruntime.PracticeMobBootstrapRespawnDelay.Milliseconds(),
+			RetaliationPointDelta: worldruntime.PracticeMobBootstrapRetaliationPointDelta,
+		}},
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              spawnRef,
+			Name:             "CombinedLastHitRewardMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          101,
+			CombatProfile:    profile,
+			RewardExperience: rewardExperience,
+			RewardGold:       rewardGold,
+			RewardDropVnums:  []uint32{rewardDropVnum},
+		}},
+		ItemTemplates: rewardDropItemTemplates(rewardDropVnum),
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import combined last-hit reward spawn-group bundle: %v", err)
+	}
+	actors := runtime.StaticActors()
+	if len(actors) != 1 {
+		t.Fatalf("expected 1 runtime practice-mob actor after import, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	ownerFlow, ownerEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "clh-reward-owner", 0x41414141)
+	if len(ownerEnter) != 8 {
+		t.Fatalf("expected 8 bootstrap frames for owner with visible content practice mob, got %d", len(ownerEnter))
+	}
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, watcherEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "clh-reward-watch", 0x42424242)
+	if len(watcherEnter) != 11 {
+		t.Fatalf("expected 11 bootstrap frames for watcher with visible owner and content practice mob, got %d", len(watcherEnter))
+	}
+	defer closeSessionFlow(t, watcherFlow)
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 3 {
+		t.Fatalf("expected 3 queued peer-visibility frames for owner after watcher joins, got %d", len(queued))
+	}
+
+	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected target-selection error before combined last-hit reward: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected 1 target-selection frame before combined last-hit reward, got %d", len(selectOut))
+	}
+
+	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected attack error on combined last-hit reward: %v", err)
+	}
+	if len(attackOut) != 11 {
+		t.Fatalf("expected dummy death/clear/damage-info, exp/gold/ground/ownership, then owner-floor point-change/dead/clear/damage-info on combined last-hit reward, got %d frames", len(attackOut))
+	}
+	remainingDeath := stripKillingHitDeathPrefix(t, attackOut, targetVID, 1, "combined last-hit reward dummy death")
+	if len(remainingDeath) != 8 {
+		t.Fatalf("expected 4 reward frames plus 4 owner-floor frames after dummy death prefix, got %d", len(remainingDeath))
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, remainingDeath[0]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward experience point-change: %v", err)
+	}
+	if experienceChange.VID != owner.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != int32(rewardExperience) || experienceChange.Value != 100 {
+		t.Fatalf("unexpected combined last-hit reward experience point-change: %+v", experienceChange)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, remainingDeath[1]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward gold point-change: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != int32(rewardGold) || goldChange.Value != 100 {
+		t.Fatalf("unexpected combined last-hit reward gold point-change: %+v", goldChange)
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, remainingDeath[2]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != rewardDropVnum || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected combined last-hit reward ground add: %+v", ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, remainingDeath[3]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward ownership: %v", err)
+	}
+	if ownership.VID != ground.VID || ownership.OwnerName != owner.Name {
+		t.Fatalf("unexpected combined last-hit reward ownership: %+v", ownership)
+	}
+	next := assertOwnerFloorDeathSequence(t, remainingDeath[4:], 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "combined last-hit reward owner-floor")
+	if next != 4 {
+		t.Fatalf("expected combined last-hit reward owner-floor suffix to consume 4 frames, got next=%d", next)
+	}
+	if !runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatal("expected combined last-hit reward drop to stay registered after owner-floor")
+	}
+
+	spawned, ok := runtime.SpawnGroupByRef(spawnRef)
+	if !ok || !spawned.Dead {
+		t.Fatalf("expected combined last-hit reward dummy to stay dead after the accepted hit, ok=%v snapshot=%+v", ok, spawned)
+	}
+	persisted, err := accounts.Load("clh-reward-owner")
+	if err != nil {
+		t.Fatalf("load persisted combined last-hit reward owner account: %v", err)
+	}
+	if len(persisted.Characters) != 1 ||
+		persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 ||
+		persisted.Characters[0].Points[bootstrapExperiencePointType] != 100 ||
+		persisted.Characters[0].Gold != 100 {
+		t.Fatalf("expected combined last-hit reward to persist owner hp=0 exp=100 gold=100, got %+v", persisted.Characters)
+	}
+
+	staleAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected stale post-floor attack error after combined last-hit reward: %v", err)
+	}
+	if len(staleAttack) != 0 {
+		t.Fatalf("expected stale same-target ATTACK to fail closed after combined last-hit reward, got %d frames", len(staleAttack))
+	}
+
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 6 {
+		t.Fatalf("expected 6 queued visible-peer dummy death/damage-info, ground-add/ownership, then owner death/damage-info frames on combined last-hit reward, got %d", len(watcherQueued))
+	}
+	remainingPeer := stripKillingHitPeerDeathPrefix(t, watcherQueued, targetVID, false, 1, "combined last-hit reward peer dummy death")
+	if len(remainingPeer) != 4 {
+		t.Fatalf("expected ground-add/ownership plus owner-floor peer frames after dummy death prefix, got %d", len(remainingPeer))
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, remainingPeer[0]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward watcher ground add: %v", err)
+	}
+	if peerGround.VID != ground.VID || peerGround.Vnum != ground.Vnum || peerGround.X != ground.X || peerGround.Y != ground.Y {
+		t.Fatalf("expected watcher ground add to mirror killer drop, got killer=%+v watcher=%+v", ground, peerGround)
+	}
+	peerOwnership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, remainingPeer[1]))
+	if err != nil {
+		t.Fatalf("decode combined last-hit reward watcher ownership: %v", err)
+	}
+	if peerOwnership.VID != ownership.VID || peerOwnership.OwnerName != ownership.OwnerName {
+		t.Fatalf("expected watcher ownership to mirror killer drop, got killer=%+v watcher=%+v", ownership, peerOwnership)
+	}
+	remainingPeer = assertOwnerFloorPeerDeadFanout(t, remainingPeer[2:], owner.VID, int32(-bootstrapPracticeMobRetaliationPointDelta), "combined last-hit reward peer owner-floor")
+	if len(remainingPeer) != 0 {
+		t.Fatalf("expected no extra peer frames after combined last-hit reward dummy death, drop, and owner death bursts, got %d", len(remainingPeer))
+	}
+}
+
 func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwnerHPFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
