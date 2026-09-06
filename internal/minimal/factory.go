@@ -8036,13 +8036,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
 					}
 
-					sourceRemainder := sourceItem
-					sourceRemainder.Count -= moveCount
-					if err := sourceRemainder.Validate(); err != nil {
-						return gameflow.SafeboxItemMoveResult{Accepted: false}
-					}
+					var sourceRemainder inventory.ItemInstance
 					var resultItem inventory.ItemInstance
 					if !destinationOccupied {
+						sourceRemainder = sourceItem
+						sourceRemainder.Count -= moveCount
+						if err := sourceRemainder.Validate(); err != nil {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
 						nextID := nextSafeboxSplitItemID(selectedPlayer, activeSafeboxItems)
 						if nextID == 0 {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
@@ -8053,6 +8054,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
 					} else {
+						var ok bool
+						sourceRemainder, ok = safeboxPartialMergeRemainderItem(sourceItem, moveCount)
+						if !ok {
+							return gameflow.SafeboxItemMoveResult{Accepted: false}
+						}
 						if destinationItem.Equipped || destinationItem.Locked || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 || destinationItem.Count > template.MaxCount {
 							return gameflow.SafeboxItemMoveResult{Accepted: false}
 						}
@@ -12280,6 +12286,25 @@ func safeboxPartialSplitDestinationItem(source inventory.ItemInstance, nextID ui
 		return inventory.ItemInstance{}, false
 	}
 	return destination, true
+}
+
+// safeboxPartialMergeRemainderItem builds the still-occupied source cell after a
+// compatible partial SAFEBOX_ITEM_MOVE merge. Count is decremented in place, and
+// presence-aware sockets/attributes are cloned so later writes cannot alias the
+// pre-merge open-presentation pointers. Empty-destination split remainder keeps
+// existing pointers by that already-owned contract.
+func safeboxPartialMergeRemainderItem(source inventory.ItemInstance, moveCount uint16) (inventory.ItemInstance, bool) {
+	if moveCount == 0 || moveCount >= source.Count {
+		return inventory.ItemInstance{}, false
+	}
+	remainder := source
+	remainder.Count -= moveCount
+	remainder.Sockets = source.CloneSockets()
+	remainder.Attributes = source.CloneAttributes()
+	if err := remainder.Validate(); err != nil {
+		return inventory.ItemInstance{}, false
+	}
+	return remainder, true
 }
 
 func encodeBootstrapSafeboxSetFrame(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {

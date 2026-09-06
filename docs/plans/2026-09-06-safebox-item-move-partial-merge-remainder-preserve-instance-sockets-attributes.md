@@ -104,10 +104,14 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/items` (docs/spec only): compatible partial
-`SAFEBOX_ITEM_MOVE` source remainder must keep an independent clone of
-pre-merge presence (including explicit zero; omit→omit) while the merged
-cell stays destination-wins. Production still aliases
-(`sourceRemainder := sourceItem`). Focused remainder proofs stay the next
-GREEN twin. Do not claim the live remainder clone is owned until those
-proofs land. Refine catalysts / mall / party ownership remain deferred.
+GREEN on `lane/items`: counted compatible partial `SAFEBOX_ITEM_MOVE`
+keeps the source remainder as an independent clone of the pre-merge
+open-presentation presence (including explicit zero; omit→omit with
+template encode fallback) through remainder `SAFEBOX_SET`, durable
+FileStore rematerialize, and same-session reopen, while the merged cell
+stays destination-wins count-only
+(`TestSafeboxPartialMergeRemainderItemClonesPresenceIndependently`,
+`TestGameRuntimeSafeboxItemMovePartialMergePreservesInstanceSocketsAndAttributes`).
+Empty-destination split remainder pointers, full-stack source remove, and
+destination-wins stay already owned. Refine catalysts / mall / party
+ownership remain deferred.
