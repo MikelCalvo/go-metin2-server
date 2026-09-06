@@ -519,7 +519,7 @@ func TestLocalContentBundleValidateEndpointAcceptsExampleBundle(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode example validation response: %v", err)
 	}
-	if len(got.StaticActors) != 9 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 2 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 9 {
+	if len(got.StaticActors) != 9 || len(got.SpawnGroups) != 1 || len(got.ItemTemplates) != 3 || len(got.CubeRecipes) != 1 || len(got.QuestState) != 1 || len(got.InteractionDefinitions) != 9 {
 		t.Fatalf("unexpected canonical example validation response: %+v", got)
 	}
 	wantSpawn := contentbundle.SpawnGroup{
@@ -1564,6 +1564,52 @@ func TestLocalContentBundleValidateEndpointRejectsMerchantCatalogItemMissingFrom
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d for checked-in merchant catalog item missing from item templates example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsCubeRecipesWithoutItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-cube-recipes-without-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid cube recipes without item templates example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for checked-in cube recipes without item templates example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+}
+
+func TestLocalContentBundleValidateEndpointRejectsCubeRecipeItemMissingFromItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate ops contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-cube-recipe-item-missing-from-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid cube recipe item missing from item templates example bundle: %v", err)
+	}
+	mux := RegisterLocalContentBundleValidateEndpoint(NewPprofMux("gamed"))
+
+	req := httptest.NewRequest(http.MethodPost, "/local/content-bundle/validate", bytes.NewReader(raw))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d for checked-in cube recipe item missing from item templates example, got %d body=%s", http.StatusBadRequest, rec.Code, rec.Body.String())
 	}
 }
 

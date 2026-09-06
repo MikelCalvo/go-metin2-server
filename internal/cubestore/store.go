@@ -259,6 +259,14 @@ func materialCountsCover(boundCounts, needCounts map[uint32]uint32) bool {
 	return true
 }
 
+func NormalizeSnapshot(snapshot Snapshot) Snapshot {
+	return normalizeSnapshot(snapshot)
+}
+
+func ValidSnapshot(snapshot Snapshot) bool {
+	return validateSnapshot(normalizeSnapshot(snapshot)) == nil
+}
+
 func normalizeSnapshot(snapshot Snapshot) Snapshot {
 	normalized := Snapshot{NPCs: cloneNPCRecipes(snapshot.NPCs)}
 	if normalized.NPCs == nil {

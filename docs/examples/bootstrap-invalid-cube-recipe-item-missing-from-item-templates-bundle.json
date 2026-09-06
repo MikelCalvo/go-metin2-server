@@ -1,0 +1,50 @@
+{
+  "static_actors": [
+    {
+      "name": "CubeMaster",
+      "map_index": 1,
+      "x": 469600,
+      "y": 964200,
+      "race_num": 20022,
+      "interaction_kind": "open_cube",
+      "interaction_ref": "npc:qa_cube"
+    }
+  ],
+  "item_templates": [
+    {
+      "vnum": 27001,
+      "name": "Small Red Potion",
+      "stackable": true,
+      "max_count": 200,
+      "shop_buy_price": 5
+    }
+  ],
+  "cube_recipes": [
+    {
+      "npc_vnum": 20022,
+      "recipes": [
+        {
+          "reward": {
+            "vnum": 27001,
+            "count": 1
+          },
+          "materials": [
+            {
+              "vnum": 27002,
+              "count": 2
+            }
+          ],
+          "gold": 100,
+          "percent": 100
+        }
+      ]
+    }
+  ],
+  "interaction_definitions": [
+    {
+      "kind": "open_cube",
+      "ref": "npc:qa_cube",
+      "text": "The craftsman lights the forge."
+    }
+  ]
+}

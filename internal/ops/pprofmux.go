@@ -129,6 +129,7 @@ type localContentBundleRequest struct {
 	DropTables             json.RawMessage `json:"drop_tables"`
 	CombatProfiles         json.RawMessage `json:"combat_profiles"`
 	ItemTemplates          json.RawMessage `json:"item_templates"`
+	CubeRecipes            json.RawMessage `json:"cube_recipes"`
 	QuestState             json.RawMessage `json:"quest_state"`
 	InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
 }
@@ -166,6 +167,9 @@ func (request localContentBundleRequest) bundle() (contentbundle.Bundle, bool) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.ItemTemplates, &bundle.ItemTemplates) {
+		return contentbundle.Bundle{}, false
+	}
+	if !decodeLocalContentBundleCollection(request.CubeRecipes, &bundle.CubeRecipes) {
 		return contentbundle.Bundle{}, false
 	}
 	if !decodeLocalContentBundleCollection(request.QuestState, &bundle.QuestState) {

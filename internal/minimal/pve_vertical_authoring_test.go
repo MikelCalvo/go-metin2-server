@@ -12,6 +12,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -105,6 +106,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
 	assertPveVerticalAuthoredUseAndEquipTemplates(t, imported.ItemTemplates, "imported PvE vertical authoring bundle")
+	if !reflect.DeepEqual(imported.CubeRecipes, cubestore.BootstrapSnapshot().NPCs) {
+		t.Fatalf("unexpected imported PvE vertical cube recipes: %#v", imported.CubeRecipes)
+	}
 
 	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
 	var foundPackMembers int
@@ -396,6 +400,28 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected unlocked cube chat: %+v err=%v", cubeChat, err)
 	}
 	assertCubeCommandChatFrame(t, cubeOut[1], "cube open 20022", "pve vertical unlocked cube open")
+	rInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored cube r_info error: %v", err)
+	}
+	if len(rInfoOut) != 1 {
+		t.Fatalf("expected authored cube r_info to emit one command chat frame, got %d", len(rInfoOut))
+	}
+	assertCubeCommandChatFrame(t, rInfoOut[0], "cube r_list 20022 1 27001,1", "pve vertical authored cube r_list")
+	mInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info 0",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored cube m_info error: %v", err)
+	}
+	if len(mInfoOut) != 1 {
+		t.Fatalf("expected authored cube m_info to emit one command chat frame, got %d", len(mInfoOut))
+	}
+	assertCubeCommandChatFrame(t, mInfoOut[0], "cube m_info 0 1 27002,2/100", "pve vertical authored cube m_info")
 	assertCloseCubeCommandChat(t, flow, "/close_cube", "pve vertical cube close before reconnect")
 
 	closeSessionFlow(t, flow)
@@ -1324,6 +1350,10 @@ func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []ite
 	wantEffect := &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}
 	if !reflect.DeepEqual(potion.UseEffect, wantEffect) {
 		t.Fatalf("unexpected %s 27001 use_effect: got %+v want %+v", context, potion.UseEffect, wantEffect)
+	}
+	material, ok := byVnum[27002]
+	if !ok || material.Name != "Small Blue Potion" || !material.Stackable || material.MaxCount != 200 {
+		t.Fatalf("expected %s 27002 to author cube material template, got %+v", context, material)
 	}
 }
 

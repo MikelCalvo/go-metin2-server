@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -101,6 +102,7 @@ type Bundle struct {
 	DropTables             []DropTable                                     `json:"drop_tables,omitempty"`
 	CombatProfiles         []worldruntime.StaticActorCombatProfileSnapshot `json:"combat_profiles,omitempty"`
 	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
+	CubeRecipes            []cubestore.NPCRecipes                          `json:"cube_recipes,omitempty"`
 	QuestState             []queststate.Flag                               `json:"quest_state,omitempty"`
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
@@ -122,6 +124,7 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		DropTables             json.RawMessage `json:"drop_tables"`
 		CombatProfiles         json.RawMessage `json:"combat_profiles"`
 		ItemTemplates          json.RawMessage `json:"item_templates"`
+		CubeRecipes            json.RawMessage `json:"cube_recipes"`
 		QuestState             json.RawMessage `json:"quest_state"`
 		InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
 	}
@@ -154,6 +157,9 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		return err
 	}
 	if err := decodeBundleCollection(jsonBundle.ItemTemplates, &decoded.ItemTemplates); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.CubeRecipes, &decoded.CubeRecipes); err != nil {
 		return err
 	}
 	if err := decodeBundleCollection(jsonBundle.QuestState, &decoded.QuestState); err != nil {
@@ -197,6 +203,7 @@ type Summary struct {
 	SpawnGroupCount                        int                                             `json:"spawn_group_count"`
 	CombatProfileCount                     int                                             `json:"combat_profile_count"`
 	ItemTemplateCount                      int                                             `json:"item_template_count"`
+	CubeRecipeNPCCount                     int                                             `json:"cube_recipe_npc_count,omitempty"`
 	QuestStateFlagCount                    int                                             `json:"quest_state_flag_count,omitempty"`
 	QuestStateCharacterCount               int                                             `json:"quest_state_character_count,omitempty"`
 	QuestStateQuestCount                   int                                             `json:"quest_state_quest_count,omitempty"`
@@ -284,6 +291,7 @@ type SummaryDeltas struct {
 	SpawnGroupCount                        SummaryCountDelta              `json:"spawn_group_count"`
 	CombatProfileCount                     SummaryCountDelta              `json:"combat_profile_count"`
 	ItemTemplateCount                      SummaryCountDelta              `json:"item_template_count"`
+	CubeRecipeNPCCount                     SummaryCountDelta              `json:"cube_recipe_npc_count,omitempty"`
 	QuestStateFlagCount                    SummaryCountDelta              `json:"quest_state_flag_count,omitempty"`
 	QuestStateCharacterCount               SummaryCountDelta              `json:"quest_state_character_count,omitempty"`
 	QuestStateQuestCount                   SummaryCountDelta              `json:"quest_state_quest_count,omitempty"`
@@ -889,6 +897,10 @@ func spawnGroupAuthoredPosition(actor staticstore.StaticActor) (uint32, int32, i
 }
 
 func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot, items itemcatalog.Snapshot) (Bundle, error) {
+	return FromSnapshotsWithItemsAndCubeRecipes(staticActors, interactions, items, cubestore.Snapshot{})
+}
+
+func FromSnapshotsWithItemsAndCubeRecipes(staticActors staticstore.Snapshot, interactions interactionstore.Snapshot, items itemcatalog.Snapshot, cubeRecipes cubestore.Snapshot) (Bundle, error) {
 	bundle := Bundle{
 		InteractionDefinitions: cloneDefinitions(interactions.Definitions),
 	}
@@ -935,7 +947,8 @@ func FromSnapshotsWithItems(staticActors staticstore.Snapshot, interactions inte
 	normalizedSpawnGroups := normalizeSpawnGroups(bundle.SpawnGroups, normalizedCombatProfiles, nil)
 	portableCombatProfiles := combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles)
 	bundle.CombatProfiles = portableCombatProfiles
-	bundle.ItemTemplates = filterReferencedItemTemplates(items.Templates, referencedItemTemplateVnums(bundle.InteractionDefinitions, normalizedSpawnGroups, portableCombatProfiles))
+	bundle.CubeRecipes = filterReferencedCubeRecipes(cubeRecipes.NPCs, openCubeRaceNums(normalizedStaticActors, bundle.InteractionDefinitions))
+	bundle.ItemTemplates = filterReferencedItemTemplates(items.Templates, referencedItemTemplateVnums(bundle.InteractionDefinitions, normalizedSpawnGroups, portableCombatProfiles, bundle.CubeRecipes))
 	return Canonicalize(bundle)
 }
 
@@ -983,6 +996,7 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		SpawnGroups:            normalizedSpawnGroups,
 		CombatProfiles:         combatProfilesForAuthoredActors(normalizedStaticActors, normalizedSpawnGroups, normalizedCombatProfiles),
 		ItemTemplates:          normalizeItemTemplates(bundle.ItemTemplates),
+		CubeRecipes:            normalizeCubeRecipes(bundle.CubeRecipes),
 		QuestState:             normalizeQuestStateFlags(bundle.QuestState),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
@@ -1089,6 +1103,7 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		SpawnGroupCount:                        summaryCountDelta(current.SpawnGroupCount, candidate.SpawnGroupCount),
 		CombatProfileCount:                     summaryCountDelta(current.CombatProfileCount, candidate.CombatProfileCount),
 		ItemTemplateCount:                      summaryCountDelta(current.ItemTemplateCount, candidate.ItemTemplateCount),
+		CubeRecipeNPCCount:                     summaryCountDelta(current.CubeRecipeNPCCount, candidate.CubeRecipeNPCCount),
 		QuestStateFlagCount:                    summaryCountDelta(current.QuestStateFlagCount, candidate.QuestStateFlagCount),
 		QuestStateCharacterCount:               summaryCountDelta(current.QuestStateCharacterCount, candidate.QuestStateCharacterCount),
 		QuestStateQuestCount:                   summaryCountDelta(current.QuestStateQuestCount, candidate.QuestStateQuestCount),
@@ -3001,6 +3016,7 @@ func Summarize(bundle Bundle) (Summary, error) {
 		CombatProfileCount:         len(normalized.CombatProfiles),
 		CombatProfiles:             cloneCombatProfileSnapshots(normalized.CombatProfiles),
 		ItemTemplateCount:          len(normalized.ItemTemplates),
+		CubeRecipeNPCCount:         len(normalized.CubeRecipes),
 		StaticActors:               cloneStaticActors(normalized.StaticActors),
 		InteractionDefinitionCount: len(normalized.InteractionDefinitions),
 	}
@@ -4207,11 +4223,14 @@ func validateBundle(bundle Bundle) error {
 		}
 		definitionsByKey[key] = struct{}{}
 	}
-	referencedItemVnums := referencedItemTemplateVnums(bundle.InteractionDefinitions, bundle.SpawnGroups, bundle.CombatProfiles)
+	referencedItemVnums := referencedItemTemplateVnums(bundle.InteractionDefinitions, bundle.SpawnGroups, bundle.CombatProfiles, bundle.CubeRecipes)
 	for vnum := range itemTemplatesByVnum {
 		if _, referenced := referencedItemVnums[vnum]; !referenced {
 			return ErrInvalidBundle
 		}
+	}
+	if !validCubeRecipes(bundle.CubeRecipes, bundle.StaticActors, itemTemplatesByVnum) {
+		return ErrInvalidBundle
 	}
 	spawnGroupsByRef := make(map[string]struct{}, len(bundle.SpawnGroups))
 	for _, spawnGroup := range bundle.SpawnGroups {
@@ -5143,6 +5162,87 @@ func normalizeItemTemplates(templates []itemcatalog.Template) []itemcatalog.Temp
 	return normalized
 }
 
+func normalizeCubeRecipes(npcs []cubestore.NPCRecipes) []cubestore.NPCRecipes {
+	normalized := cubestore.NormalizeSnapshot(cubestore.Snapshot{NPCs: npcs}).NPCs
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func filterReferencedCubeRecipes(npcs []cubestore.NPCRecipes, referenced map[uint32]struct{}) []cubestore.NPCRecipes {
+	if len(npcs) == 0 || len(referenced) == 0 {
+		return nil
+	}
+	filtered := make([]cubestore.NPCRecipes, 0, len(npcs))
+	for _, npc := range normalizeCubeRecipes(npcs) {
+		if _, ok := referenced[npc.NPCVnum]; ok {
+			filtered = append(filtered, npc)
+		}
+	}
+	return filtered
+}
+
+func openCubeRaceNums(actors []StaticActor, definitions []interactionstore.Definition) map[uint32]struct{} {
+	openCubeRefs := make(map[string]struct{})
+	for _, definition := range definitions {
+		definition = interactionstore.NormalizeDefinition(definition)
+		if definition.Kind != interactionstore.KindOpenCube {
+			continue
+		}
+		openCubeRefs[definition.Ref] = struct{}{}
+	}
+	referenced := make(map[uint32]struct{})
+	for _, actor := range actors {
+		if actor.RaceNum == 0 {
+			continue
+		}
+		if actor.InteractionKind != interactionstore.KindOpenCube {
+			continue
+		}
+		if _, ok := openCubeRefs[strings.TrimSpace(actor.InteractionRef)]; !ok {
+			continue
+		}
+		referenced[actor.RaceNum] = struct{}{}
+	}
+	return referenced
+}
+
+func validCubeRecipes(npcs []cubestore.NPCRecipes, actors []StaticActor, itemTemplatesByVnum map[uint32]itemcatalog.Template) bool {
+	if len(npcs) == 0 {
+		return true
+	}
+	if !cubestore.ValidSnapshot(cubestore.Snapshot{NPCs: npcs}) {
+		return false
+	}
+	openCubeNPCs := make(map[uint32]struct{})
+	for _, actor := range actors {
+		if actor.InteractionKind == interactionstore.KindOpenCube && actor.RaceNum != 0 {
+			openCubeNPCs[actor.RaceNum] = struct{}{}
+		}
+	}
+	for _, npc := range npcs {
+		if _, ok := openCubeNPCs[npc.NPCVnum]; !ok {
+			return false
+		}
+		for _, recipe := range npc.Recipes {
+			if recipe.Reward.Vnum != 0 {
+				if _, ok := itemTemplatesByVnum[recipe.Reward.Vnum]; !ok {
+					return false
+				}
+			}
+			for _, material := range recipe.Materials {
+				if material.Vnum != 0 {
+					if _, ok := itemTemplatesByVnum[material.Vnum]; !ok {
+						return false
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
 func filterReferencedItemTemplates(templates []itemcatalog.Template, referenced map[uint32]struct{}) []itemcatalog.Template {
 	if len(templates) == 0 || len(referenced) == 0 {
 		return nil
@@ -5176,7 +5276,7 @@ func cloneRewardItemEntries(entries []interactionstore.RewardItemEntry) []intera
 	return cloned
 }
 
-func referencedItemTemplateVnums(definitions []interactionstore.Definition, spawnGroups []SpawnGroup, combatProfiles []worldruntime.StaticActorCombatProfileSnapshot) map[uint32]struct{} {
+func referencedItemTemplateVnums(definitions []interactionstore.Definition, spawnGroups []SpawnGroup, combatProfiles []worldruntime.StaticActorCombatProfileSnapshot, cubeRecipes []cubestore.NPCRecipes) map[uint32]struct{} {
 	referenced := make(map[uint32]struct{})
 	for _, definition := range definitions {
 		definition = interactionstore.NormalizeDefinition(definition)
@@ -5211,6 +5311,18 @@ func referencedItemTemplateVnums(definitions []interactionstore.Definition, spaw
 		for _, vnum := range profile.DeathReward.DropVnums {
 			if vnum != 0 {
 				referenced[vnum] = struct{}{}
+			}
+		}
+	}
+	for _, npc := range cubeRecipes {
+		for _, recipe := range npc.Recipes {
+			if recipe.Reward.Vnum != 0 {
+				referenced[recipe.Reward.Vnum] = struct{}{}
+			}
+			for _, material := range recipe.Materials {
+				if material.Vnum != 0 {
+					referenced[material.Vnum] = struct{}{}
+				}
 			}
 		}
 	}

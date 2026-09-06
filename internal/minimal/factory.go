@@ -584,6 +584,7 @@ type gameRuntime struct {
 	safeboxPersistMu        sync.Mutex
 	cubeStore               cubestore.Store
 	cubeRecipes             cubestore.Snapshot
+	cubeRecipesAuthored     bool
 	itemTemplates           map[uint32]itemcatalog.Template
 	itemTemplatesAuthored   bool
 	liveCharacterMu         sync.RWMutex
@@ -4175,10 +4176,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
 	}
 	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
-	// Cube recipes stay hermetic MemoryStore + bootstrap fallback until a later
-	// slice wires an explicit CubeRecipeStorePath / FileStore config knob.
+	// Cube recipes stay hermetic MemoryStore + in-memory bootstrap fallback
+	// until a later slice wires an explicit CubeRecipeStorePath / FileStore
+	// config knob. Do not Save the lab snapshot here: a committed store row
+	// would look authored on export even when no bundle cube_recipes exist.
 	cubeRecipes := cubestore.NewMemoryStore()
-	_ = cubeRecipes.Save(cubestore.BootstrapSnapshot())
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:            sharedWorld,
@@ -13039,21 +13041,25 @@ func (r *gameRuntime) loadCubeRecipes() error {
 	}
 	if r.cubeStore == nil {
 		r.cubeRecipes = cubestore.BootstrapSnapshot()
+		r.cubeRecipesAuthored = false
 		return nil
 	}
 	snapshot, err := r.cubeStore.Load()
 	if err != nil {
 		if errors.Is(err, cubestore.ErrSnapshotNotFound) {
 			r.cubeRecipes = cubestore.BootstrapSnapshot()
+			r.cubeRecipesAuthored = false
 			return nil
 		}
 		return err
 	}
 	if len(snapshot.NPCs) == 0 {
 		r.cubeRecipes = cubestore.BootstrapSnapshot()
+		r.cubeRecipesAuthored = false
 		return nil
 	}
 	r.cubeRecipes = snapshot
+	r.cubeRecipesAuthored = true
 	return nil
 }
 
@@ -13066,6 +13072,39 @@ func (r *gameRuntime) buildItemTemplateSnapshot() itemcatalog.Snapshot {
 		templates = append(templates, template)
 	}
 	return itemcatalog.NormalizeSnapshot(itemcatalog.Snapshot{Templates: templates})
+}
+
+func (r *gameRuntime) buildCubeRecipeSnapshot() cubestore.Snapshot {
+	if r == nil || !r.cubeRecipesAuthored {
+		return cubestore.Snapshot{}
+	}
+	return cubestore.NormalizeSnapshot(r.cubeRecipes)
+}
+
+func (r *gameRuntime) replaceCubeRecipes(snapshot cubestore.Snapshot) error {
+	if r == nil {
+		return ErrContentBundleUnavailable
+	}
+	normalized := cubestore.NormalizeSnapshot(snapshot)
+	if len(normalized.NPCs) == 0 {
+		r.cubeRecipes = cubestore.BootstrapSnapshot()
+		r.cubeRecipesAuthored = false
+		if clearer, ok := r.cubeStore.(interface{ Clear() }); ok {
+			clearer.Clear()
+		}
+		return nil
+	}
+	if !cubestore.ValidSnapshot(normalized) {
+		return cubestore.ErrInvalidSnapshot
+	}
+	if r.cubeStore != nil {
+		if err := r.cubeStore.Save(normalized); err != nil {
+			return err
+		}
+	}
+	r.cubeRecipes = normalized
+	r.cubeRecipesAuthored = true
+	return nil
 }
 
 func (r *gameRuntime) replaceItemTemplates(snapshot itemcatalog.Snapshot) error {
@@ -13487,7 +13526,7 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	if r == nil || r.staticStore == nil || r.interactionStore == nil {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
-	bundle, err := contentbundle.FromSnapshotsWithItems(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot())
+	bundle, err := contentbundle.FromSnapshotsWithItemsAndCubeRecipes(buildStaticActorStoreSnapshot(r.StaticActors()), buildInteractionDefinitionSnapshot(r.interactionDefinitions), r.buildItemTemplateSnapshot(), r.buildCubeRecipeSnapshot())
 	if err != nil {
 		return contentbundle.Bundle{}, err
 	}
@@ -13579,8 +13618,14 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
+	if err := r.replaceCubeRecipes(cubestore.Snapshot{NPCs: normalized.CubeRecipes}); err != nil {
+		_ = r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
+		rollbackProfiles()
+		return contentbundle.Bundle{}, err
+	}
 	if err := r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: normalized.InteractionDefinitions}); err != nil {
 		_ = r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
+		_ = r.replaceCubeRecipes(cubestore.Snapshot{NPCs: previousBundle.CubeRecipes})
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
@@ -13600,6 +13645,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 			r.sharedWorld.clearStaticActorsForContentImportRollback()
 		}
 		rollbackErr := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
+		rollbackErr = errors.Join(rollbackErr, r.replaceCubeRecipes(cubestore.Snapshot{NPCs: previousBundle.CubeRecipes}))
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {

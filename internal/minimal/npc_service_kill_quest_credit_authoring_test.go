@@ -11,6 +11,7 @@ import (
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -143,8 +144,8 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if len(authored.DropTables) != 0 || len(authored.RegenSpawns) != 0 {
 		t.Fatalf("expected NPC service example to be runtime-shaped without authoring-only collections, got regen=%+v drop_tables=%+v", authored.RegenSpawns, authored.DropTables)
 	}
-	if len(authored.StaticActors) != 9 || len(authored.SpawnGroups) != 1 || len(authored.InteractionDefinitions) != 9 || len(authored.ItemTemplates) != 2 || len(authored.QuestState) != 1 {
-		t.Fatalf("unexpected authored NPC service example shape: static=%d spawn=%d interactions=%d items=%d quest_state=%d", len(authored.StaticActors), len(authored.SpawnGroups), len(authored.InteractionDefinitions), len(authored.ItemTemplates), len(authored.QuestState))
+	if len(authored.StaticActors) != 9 || len(authored.SpawnGroups) != 1 || len(authored.InteractionDefinitions) != 9 || len(authored.ItemTemplates) != 3 || len(authored.CubeRecipes) != 1 || len(authored.QuestState) != 1 {
+		t.Fatalf("unexpected authored NPC service example shape: static=%d spawn=%d interactions=%d items=%d cube_recipes=%d quest_state=%d", len(authored.StaticActors), len(authored.SpawnGroups), len(authored.InteractionDefinitions), len(authored.ItemTemplates), len(authored.CubeRecipes), len(authored.QuestState))
 	}
 
 	imported, err := runtime.ImportContentBundle(authored)
@@ -206,7 +207,7 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	}}) {
 		t.Fatalf("unexpected imported NPC service quest state: %#v", imported.QuestState)
 	}
-	wantItemVnums := []uint32{11200, 27001}
+	wantItemVnums := []uint32{11200, 27001, 27002}
 	gotItemVnums := make([]uint32, 0, len(imported.ItemTemplates))
 	for _, template := range imported.ItemTemplates {
 		gotItemVnums = append(gotItemVnums, template.Vnum)
@@ -225,6 +226,12 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	wantPotionEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}
 	if byVnum[27001].EquipSlot != "" || !reflect.DeepEqual(byVnum[27001].UseEffect, wantPotionEffect) {
 		t.Fatalf("expected imported NPC service 27001 to author use_effect, got %+v", byVnum[27001])
+	}
+	if byVnum[27002].Name != "Small Blue Potion" || !byVnum[27002].Stackable || byVnum[27002].MaxCount != 200 {
+		t.Fatalf("expected imported NPC service 27002 to author cube material template, got %+v", byVnum[27002])
+	}
+	if !reflect.DeepEqual(imported.CubeRecipes, cubestore.BootstrapSnapshot().NPCs) {
+		t.Fatalf("unexpected imported NPC service cube recipes: %#v", imported.CubeRecipes)
 	}
 
 	actors := runtime.StaticActors()

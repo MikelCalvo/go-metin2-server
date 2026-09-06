@@ -127,6 +127,33 @@
         "point_delta": 50,
         "message": "consume:27001:+50"
       }
+    },
+    {
+      "vnum": 27002,
+      "name": "Small Blue Potion",
+      "stackable": true,
+      "max_count": 200
+    }
+  ],
+  "cube_recipes": [
+    {
+      "npc_vnum": 20022,
+      "recipes": [
+        {
+          "reward": {
+            "vnum": 27001,
+            "count": 1
+          },
+          "materials": [
+            {
+              "vnum": 27002,
+              "count": 2
+            }
+          ],
+          "gold": 100,
+          "percent": 100
+        }
+      ]
     }
   ],
   "quest_state": [

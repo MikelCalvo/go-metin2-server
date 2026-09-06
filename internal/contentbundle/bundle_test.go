@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
@@ -40,6 +41,37 @@ func testMerchantItemTemplates() []itemcatalog.Template {
 	return []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+	}
+}
+
+func testLabCubeMasterActor() StaticActor {
+	return StaticActor{
+		Name:            "CubeMaster",
+		MapIndex:        1,
+		X:               469600,
+		Y:               964200,
+		RaceNum:         cubestore.BootstrapDefaultNPCVnum,
+		InteractionKind: interactionstore.KindOpenCube,
+		InteractionRef:  "npc:qa_cube",
+	}
+}
+
+func testLabCubeMasterDefinition() interactionstore.Definition {
+	return interactionstore.Definition{
+		Kind: interactionstore.KindOpenCube,
+		Ref:  "npc:qa_cube",
+		Text: "The craftsman lights the forge.",
+	}
+}
+
+func testLabCubeRecipes() []cubestore.NPCRecipes {
+	return cubestore.BootstrapSnapshot().NPCs
+}
+
+func testLabCubeItemTemplates() []itemcatalog.Template {
+	return []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
 	}
 }
 
@@ -4014,6 +4046,61 @@ func TestCanonicalizeRejectsMerchantCatalogRefMissingFromBundledItemTemplates(t 
 	}
 }
 
+func TestCanonicalizeNormalizesCubeRecipesReferencedByOpenCubeActor(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		StaticActors:           []StaticActor{testLabCubeMasterActor()},
+		ItemTemplates:          testLabCubeItemTemplates(),
+		CubeRecipes:            testLabCubeRecipes(),
+		InteractionDefinitions: []interactionstore.Definition{testLabCubeMasterDefinition()},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize cube-recipe bundle: %v", err)
+	}
+	want := Bundle{
+		StaticActors:           []StaticActor{testLabCubeMasterActor()},
+		ItemTemplates:          testLabCubeItemTemplates(),
+		CubeRecipes:            testLabCubeRecipes(),
+		InteractionDefinitions: []interactionstore.Definition{testLabCubeMasterDefinition()},
+	}
+	if !reflect.DeepEqual(bundle, want) {
+		t.Fatalf("unexpected canonical cube-recipe bundle:\n got: %#v\nwant: %#v", bundle, want)
+	}
+}
+
+func TestCanonicalizeRejectsCubeRecipesWithoutBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors:           []StaticActor{testLabCubeMasterActor()},
+		CubeRecipes:            testLabCubeRecipes(),
+		InteractionDefinitions: []interactionstore.Definition{testLabCubeMasterDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for cube recipes without bundled item templates, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCubeRecipeItemMissingFromBundledItemTemplates(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		StaticActors:           []StaticActor{testLabCubeMasterActor()},
+		ItemTemplates:          []itemcatalog.Template{{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5}},
+		CubeRecipes:            testLabCubeRecipes(),
+		InteractionDefinitions: []interactionstore.Definition{testLabCubeMasterDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for cube recipe item missing from bundled item templates, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCubeRecipesWithoutOpenCubeActor(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		ItemTemplates:          testLabCubeItemTemplates(),
+		CubeRecipes:            testLabCubeRecipes(),
+		InteractionDefinitions: []interactionstore.Definition{testLabCubeMasterDefinition()},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for cube recipes without an open_cube actor, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsUnreferencedItemTemplate(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		ItemTemplates:          append(testMerchantItemTemplates(), itemcatalog.Template{Vnum: 70001, Name: "Unused Relic", Stackable: false, MaxCount: 1}),
@@ -5473,6 +5560,44 @@ func TestCanonicalizeRejectsCheckedInMerchantCatalogItemMissingFromItemTemplates
 	}
 }
 
+func TestCanonicalizeRejectsCheckedInCubeRecipesWithoutItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-cube-recipes-without-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid cube recipes without item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid cube recipes without item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in cube recipes without item templates example, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsCheckedInCubeRecipeItemMissingFromItemTemplatesExample(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate contentbundle test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-invalid-cube-recipe-item-missing-from-item-templates-bundle.json"))
+	if err != nil {
+		t.Fatalf("read invalid cube recipe item missing from item templates example bundle: %v", err)
+	}
+	var bundle Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode invalid cube recipe item missing from item templates example bundle: %v", err)
+	}
+	if _, err := Canonicalize(bundle); !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for checked-in cube recipe item missing from item templates example, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsCheckedInMerchantCatalogCountAboveStackLimitExample(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {
@@ -6401,9 +6526,13 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	wantTemplates := []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
 	}
 	if !reflect.DeepEqual(canonical.ItemTemplates, wantTemplates) {
 		t.Fatalf("unexpected canonical PvE vertical item templates:\n got: %#v\nwant: %#v", canonical.ItemTemplates, wantTemplates)
+	}
+	if !reflect.DeepEqual(canonical.CubeRecipes, cubestore.BootstrapSnapshot().NPCs) {
+		t.Fatalf("unexpected canonical PvE vertical cube recipes:\n got: %#v\nwant: %#v", canonical.CubeRecipes, cubestore.BootstrapSnapshot().NPCs)
 	}
 	summary, err := Summarize(canonical)
 	if err != nil {
@@ -6448,6 +6577,9 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	}
 	if summary.OpenCubeRouteCount != 1 {
 		t.Fatalf("expected 1 open_cube route in PvE vertical authoring example, got %d", summary.OpenCubeRouteCount)
+	}
+	if summary.CubeRecipeNPCCount != 1 {
+		t.Fatalf("expected 1 cube-recipe NPC in PvE vertical authoring example, got %d", summary.CubeRecipeNPCCount)
 	}
 	wantCube := OpenCubeRouteSummary{
 		ActorName:      "CubeMaster",

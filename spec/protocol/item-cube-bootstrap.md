@@ -83,8 +83,12 @@ Fail-closed (no frames / no mutation):
 
 Authored bootstrap recipes are keyed by NPC vnum through `internal/cubestore`.
 Runtime boot falls back to a deterministic lab snapshot for default NPC `20022`
-(`reward {27001,1}`, materials `{27002,2}`, gold `100`, `percent: 100`) until an
-explicit FileStore path is wired.
+(`reward {27001,1}`, materials `{27002,2}`, gold `100`, `percent: 100`) when no
+authored `cube_recipes` collection is present. Content bundles may carry
+portable `cube_recipes` so importing `CubeMaster` also owns the following
+`r_list` / `m_info` rows instead of silently leaning on that lab snapshot.
+See `spec/protocol/static-actor-interaction-authoring.md` and
+`docs/plans/2026-09-06-pve-vertical-authored-cube-recipes.md`.
 
 Successful `/open_cube` remembers `activeCubeNPCVnum` beside the busy flag so
 `r_list` / `m_info` can echo that NPC's authored rows. The remembered vnum

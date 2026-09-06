@@ -181,6 +181,7 @@ Frozen target behavior:
 - if the resolved actor has `RaceNum == 0`, the interaction fails closed with no outgoing frames
 - slash `/open_cube [npcVnum]` remains the lab/debug harness and still opens immediately without an authored static actor
 - recipe list / material info / craft binding / make / close continue on the already-owned cube slash helpers once the presentation is open
+- content bundles may carry portable `cube_recipes` keyed by NPC `npc_vnum`; importing `CubeMaster` with that collection owns the following `/cube r_info` `r_list` / `m_info` rows instead of silently leaning on `cubestore.BootstrapSnapshot()`. Recipe reward / material vnums must be backed by bundled `item_templates`. Omitting `cube_recipes` stays legal and restores the lab fallback. Preferred `/local/content-bundle/validate` dry-runs: `docs/examples/bootstrap-invalid-cube-recipes-without-item-templates-bundle.json` and `docs/examples/bootstrap-invalid-cube-recipe-item-missing-from-item-templates-bundle.json`. The composed PvE / NPC-service fixtures now author the lab CubeMaster row plus material template `27002`
 
 Current owned `open_cube` failure semantics:
 - if an optional quest gate is present and the selected character's current flag value does not match `quest_from`, the player receives one self-only `CHAT_TYPE_INFO` message: `Quest requirements are not met.` and no cube presentation opens

@@ -38,6 +38,10 @@ cube craft smoke beside warehouse / merchant / warp / quest turn-in.
 - binary cube headers / OR-materials
 - branching craft dialog trees
 - pack AI / synchronized respawn / random rectangle placement
+- FileStore `CubeRecipeStorePath` config knob (still MemoryStore + import)
+
+Authored portable `cube_recipes` for CubeMaster are now owned by
+[authored cube recipes](2026-09-06-pve-vertical-authored-cube-recipes.md).
 
 Related checked-in negative dry-run for illegal `open_cube` warehouse `size`:
 [invalid open-cube foreign size fixture](2026-08-30-invalid-open-cube-foreign-size-fixture.md).
