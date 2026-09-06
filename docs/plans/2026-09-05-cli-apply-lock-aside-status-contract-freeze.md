@@ -304,7 +304,22 @@ this slice unless leftover-lock aside coverage is added later.
 
 ## Status
 
-Freeze on `lane/persistence`. GREEN is the next slice.
+GREEN on `lane/persistence`.
+
+- Read-only `metin2-migrate apply-lock-aside-status --aside <path>
+  [--require-aside-path-exists] [--require-lock-file-absent]` re-validates
+  retained `apply-lock-aside.json` without opening a database, renaming a
+  lock, or re-running live PID / hostname / build / age probes.
+- Outer envelope is `go-metin2-migration-apply-lock-aside-status-v1`; missing
+  path is ungated `present: false`; present files re-check inner
+  `aside_path` / `renamed_at` destination, lock object, historical triage
+  fields, and `manual_clear_candidate=true`, then report local
+  `aside_path_exists` / `lock_file_exists` bits.
+- `migration-run-retention` (forward + rollback) leftover-lock triage echoes
+  a matching `apply-lock-aside-status --aside` hint beside the existing
+  confirmation-gated aside-rename echo and still does **not** auto-run
+  aside-rename or aside-status under `set -eu`.
+- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 ## Exit criteria for this freeze
 
@@ -325,3 +340,4 @@ Freeze on `lane/persistence`. GREEN is the next slice.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
 - Do not list `apply-lock-aside-status.json` in lab topology or add a
   working CLI example until GREEN actually produces the command.
+  GREEN now owns that listing and the leftover-lock inspect hint.

@@ -148,7 +148,7 @@ git diff --check
 
 Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). Printed-script SQLite proofs retain `migration-catalog-status.json` beside the catalog file.
 
-Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` is frozen next — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md). GREEN should keep successful-apply SQLite proofs free of auto-run aside-status files.
+Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` is now GREEN — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md). Successful-apply SQLite proofs still expect no auto-run `apply-lock-aside-status.json`.
 
 ## Anti-goals / ordering constraints
 

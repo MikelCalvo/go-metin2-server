@@ -38,7 +38,7 @@ const (
 // Run executes the small migration preflight CLI and returns a process-style exit
 // code. The catalog, catalog-status, status, empty-ledger-snapshot, ledger-snapshot,
 // ledger-snapshot-status, plan, plan-artifact, plan-artifact-status,
-// apply-preflight, apply-preflight-status, apply-lock-status, apply-audit-status,
+// apply-preflight, apply-preflight-status, apply-lock-status, apply-lock-aside-status, apply-audit-status,
 // import-export-status, export-tree-status, export-tree-status-status, quarantine-export, synthesize-wipe-export,
 // synthesize-wipe-export-status, export-quarantine-drill,
 // backup-restore-drill, migration-run-retention, and artifact-retention-gc
@@ -105,6 +105,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApplyLockStatus(args[1:], stdout, stderr)
 	case "apply-lock-aside":
 		return runApplyLockAside(args[1:], stdout, stderr)
+	case "apply-lock-aside-status":
+		return runApplyLockAsideStatus(args[1:], stdout, stderr)
 	case "apply-audit-status":
 		return runApplyAuditStatus(args[1:], stdout, stderr)
 	case "empty-ledger-snapshot":
@@ -2153,6 +2155,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-preflight-status inspect a migration apply preflight file without mutating it")
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply-lock-aside       confirmation-gated lab aside-rename for a stale apply lock")
+	fmt.Fprintln(w, "  apply-lock-aside-status inspect a retained apply-lock-aside artifact without mutating it")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
@@ -2195,6 +2198,8 @@ func printUsage(w io.Writer) {
 	printApplyLockStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyLockAsideUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyLockAsideStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")

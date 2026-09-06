@@ -28,7 +28,8 @@ Keep these files together for each migration run:
 - `apply-preflight-status.json` — optional `go-metin2-migration-apply-preflight-status-v1` output from re-validating a retained preflight artifact before handoff review, release evidence collection, or incident triage;
 - `migration-apply.lock` — an operator-chosen local lock path that should not already exist; while reserved, it contains metadata-only `go-metin2-migration-apply-lock-v1` JSON with the local PID, hostname, stamped build identity, target version, plan checksum, and ledger-snapshot checksum, but never the DSN or executable SQL;
 - `apply-lock-status.json` — optional `go-metin2-migration-apply-lock-status-v1` output from inspecting an existing lock before any stale-lock decision;
-- `apply-lock-aside.json` — optional `go-metin2-migration-apply-lock-aside-v1` output from confirmation-gated lab aside-rename when recovering a leftover lock; re-inspection is frozen next as read-only `apply-lock-aside-status` — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md);
+- `apply-lock-aside.json` — optional `go-metin2-migration-apply-lock-aside-v1` output from confirmation-gated lab aside-rename when recovering a leftover lock;
+- `apply-lock-aside-status.json` — optional `go-metin2-migration-apply-lock-aside-status-v1` output from re-validating a retained aside JSON without opening a database or renaming another lock — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md);
 - `migration-apply-audit.json` — exclusive metadata-only audit output written after a successful non-empty apply;
 - `apply-audit-status.json` — optional `go-metin2-migration-apply-audit-status-v1` output from re-validating a retained apply audit during release evidence review or incident triage;
 - deployment-specific DB backup evidence, kept outside this repo.
@@ -204,7 +205,7 @@ Do not use this runbook to justify:
 - DB-backed runtime claims for account, character, item, quest, content, login-ticket, or world state;
 - stale-lock or stale-audit auto-removal without following [lab stale-lock recovery](lab-stale-lock-recovery.md) on the single-host lab topology (and never from the CLI/daemons themselves);
 - treating `apply-lock-status` or `manual_clear_candidate=true` as authorization to delete an existing lock; status is inspection-only, and lab recovery uses confirmation-gated `apply-lock-aside` (aside-rename, never `rm`) after operator judgment.
-- treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; re-inspection is frozen next as read-only `apply-lock-aside-status` — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
+- treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; `apply-lock-aside-status` validates a retained aside artifact only — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 - treating `apply-audit-status` as proof that a database is currently migrated; it validates a retained metadata artifact only.
 - treating `ledger-snapshot-status` as proof that a live database still matches the retained snapshot; it validates a retained offline artifact against the embedded catalog only.
 - treating `catalog-status` as proof that a live database is migrated; it validates a retained catalog JSON against the inspecting binary only.

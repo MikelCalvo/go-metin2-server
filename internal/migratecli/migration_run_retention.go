@@ -441,6 +441,7 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString(`  echo "Leftover lock retained at $RUN/$LOCK_FILE; inspect apply-lock-status.json."` + "\n")
 	b.WriteString(`  echo "Operator-run aside-rename after lab_stale_lock_policy_v1 judgment:"` + "\n")
 	b.WriteString(`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""` + "\n")
+	b.WriteString(`  echo "  metin2-migrate apply-lock-aside-status --aside \"$RUN/apply-lock-aside.json\" > \"$RUN/apply-lock-aside-status.json\""` + "\n")
 	b.WriteString(`else` + "\n")
 	b.WriteString(`  echo "No leftover lock at $RUN/$LOCK_FILE (expected after successful apply)."` + "\n")
 	b.WriteString(`fi` + "\n")

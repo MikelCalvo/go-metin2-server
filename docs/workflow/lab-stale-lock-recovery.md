@@ -55,7 +55,13 @@ metin2-migrate apply-lock-aside \
   > apply-lock-aside.json
 ```
 
-The helper recomputes the lab gate immediately before renaming, writes `<path>.stale-<UTC>` (for example `.stale-20260821T153045Z`), refuses destination collisions, never unlinks the lock, and never opens the DB target. Retain `apply-lock-aside.json` beside `apply-lock-status.json` in the migration-runs tree.
+The helper recomputes the lab gate immediately before renaming, writes `<path>.stale-<UTC>` (for example `.stale-20260821T153045Z`), refuses destination collisions, never unlinks the lock, and never opens the DB target. Retain `apply-lock-aside.json` beside `apply-lock-status.json` in the migration-runs tree, then re-inspect it:
+
+```bash
+metin2-migrate apply-lock-aside-status \
+  --aside apply-lock-aside.json \
+  > apply-lock-aside-status.json
+```
 
 If the CLI binary is unavailable and an operator must fall back to a manual rename after the same review, keep the same destination naming:
 
@@ -64,7 +70,7 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 mv -- "<path>" "<path>.stale-${ts}"
 ```
 
-5. Retain the renamed lock beside `apply-lock-status.json` / `apply-lock-aside.json` in the migration-runs tree.
+5. Retain the renamed lock beside `apply-lock-status.json` / `apply-lock-aside.json` / `apply-lock-aside-status.json` in the migration-runs tree.
 6. Re-run `apply-lock-status` and confirm `present: false` before starting a fresh `apply --lock-file` with a new lock path or the original path now free.
 7. Re-validate the reviewed plan/preflight boundary before opening the DB again (`plan-artifact-status` / `apply-preflight-status` as appropriate).
 
@@ -92,4 +98,4 @@ Do **not**:
 - multi-host unlock coordination
 - a claim that leftover locks prove a migration succeeded or failed
 - treating `manual_clear_candidate=true` alone as permission to mutate without confirmation / operator judgment
-- treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; re-inspection is frozen next as read-only `apply-lock-aside-status` — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md)
+- treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; `apply-lock-aside-status` validates a retained aside artifact only — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md)

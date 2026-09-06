@@ -97,6 +97,7 @@ Keep operator evidence outside live data trees:
     apply-preflight-status.json
     apply-lock-status.json
     apply-lock-aside.json
+    apply-lock-aside-status.json
     migration-apply.lock.stale-<UTC>
     migration-apply-audit.json
     apply-audit-status.json

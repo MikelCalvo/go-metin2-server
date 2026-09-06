@@ -68,4 +68,4 @@ Validation for this slice:
 2. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 3. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 4. ~~Optional migration-runs retention printer for aside locks remains deferred; naming stays documented in the lab topology/runbook.~~ Done: see [CLI migration-run retention](2026-08-21-cli-migration-run-retention.md).
-5. Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` is frozen next — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md). GREEN should add an echoed leftover-lock inspect hint beside the existing aside-rename echo; do not auto-run aside-rename.
+5. ~~Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json`.~~ Done — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md). Leftover-lock triage now echoes a matching `--aside` inspect hint beside the existing aside-rename echo and still does not auto-run aside-rename.

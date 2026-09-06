@@ -148,7 +148,7 @@ Follow-up owned separately and now GREEN: read-only `export-tree-status-status` 
 
 Follow-up owned separately and now GREEN: read-only `catalog-status` for retained `migration-catalog.json` — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md).
 
-Follow-up owned separately: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
+Follow-up owned separately and now GREEN: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 
 ## What this is not yet
 

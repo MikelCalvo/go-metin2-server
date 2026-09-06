@@ -113,6 +113,9 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 	if _, err := os.Lstat(filepath.Join(runDir, "apply-lock-status.json")); !os.IsNotExist(err) {
 		t.Fatalf("expected no apply-lock-status.json on successful path, lstat err=%v", err)
 	}
+	if _, err := os.Lstat(filepath.Join(runDir, "apply-lock-aside-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no apply-lock-aside-status.json on successful path, lstat err=%v", err)
+	}
 
 	assertSQLiteLedgerAtCatalogTip(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), catalogTipVersion(t))
@@ -210,6 +213,9 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 	}
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-rollback.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful rollback to remove lock file, lstat err=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "apply-lock-aside-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no apply-lock-aside-status.json on successful path, lstat err=%v", err)
 	}
 
 	assertSQLiteLedgerEmpty(t, dsn)
@@ -313,6 +319,9 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-apply.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful apply to remove lock file, lstat err=%v", err)
 	}
+	if _, err := os.Lstat(filepath.Join(runDir, "apply-lock-aside-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no apply-lock-aside-status.json on successful path, lstat err=%v", err)
+	}
 
 	assertSQLiteLedgerAtVersion(t, dsn, 7, "auth_login_ticket_handoff")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), 7)
@@ -410,6 +419,9 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 	}
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-rollback.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful rollback to remove lock file, lstat err=%v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "apply-lock-aside-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected no apply-lock-aside-status.json on successful path, lstat err=%v", err)
 	}
 
 	assertSQLiteLedgerAtVersion(t, dsn, 8, "static_actor_content_state")

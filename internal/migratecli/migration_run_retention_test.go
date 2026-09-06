@@ -86,6 +86,7 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
 		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
+		`  echo "  metin2-migrate apply-lock-aside-status --aside \"$RUN/apply-lock-aside.json\" > \"$RUN/apply-lock-aside-status.json\""`,
 		`  echo "No leftover lock at $RUN/$LOCK_FILE (expected after successful apply)."`,
 		`# Successful apply removes the lock; do not fail the runbook script on that path.`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
@@ -98,6 +99,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	}
 	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside --lock-file") {
 		t.Fatalf("successful-path printer must not auto-run apply-lock-aside under set -eu, got:\n%s", body)
+	}
+	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside-status --aside") {
+		t.Fatalf("successful-path printer must not auto-run apply-lock-aside-status under set -eu, got:\n%s", body)
 	}
 	if strings.Contains(body, "CREATE TABLE") || strings.Contains(body, "DROP TABLE") || strings.Contains(body, "password=") || strings.Contains(body, "memory://") {
 		t.Fatalf("migration-run-retention must not expose SQL or concrete DSN text, got %s", body)
@@ -412,6 +416,7 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
 		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
+		`  echo "  metin2-migrate apply-lock-aside-status --aside \"$RUN/apply-lock-aside.json\" > \"$RUN/apply-lock-aside-status.json\""`,
 		`  echo "No leftover lock at $RUN/$LOCK_FILE (expected after successful apply)."`,
 		`# Successful apply removes the lock; do not fail the runbook script on that path.`,
 		`# require operator-exported DRIVER/DSN; printer never embeds a DSN`,
@@ -423,6 +428,9 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 	}
 	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside --lock-file") {
 		t.Fatalf("successful-path printer must not auto-run apply-lock-aside under set -eu, got:\n%s", body)
+	}
+	if strings.Contains(body, "\nmetin2-migrate apply-lock-aside-status --aside") {
+		t.Fatalf("successful-path printer must not auto-run apply-lock-aside-status under set -eu, got:\n%s", body)
 	}
 	for _, banned := range []string{
 		`> "$RUN/migration-plan-artifact.json"`,
