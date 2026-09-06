@@ -910,6 +910,10 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 		return r.moveInventoryItemFullStack(from, to, result)
 	}
 	sourceRemainder.Count -= count
+	// Remainder must keep an independent presence clone so later writes cannot
+	// alias the pre-split / pre-merge live inventory sockets/attributes pointers.
+	sourceRemainder.Sockets = sourceItem.CloneSockets()
+	sourceRemainder.Attributes = sourceItem.CloneAttributes()
 	if toIndex >= 0 {
 		destinationItem := r.liveInventory[toIndex]
 		if destinationItem.Locked || destinationItem.ID == sourceItem.ID || destinationItem.Vnum != sourceItem.Vnum || destinationItem.Count == 0 {
@@ -920,11 +924,6 @@ func (r *Runtime) MoveInventoryItemCountBounded(from inventory.SlotIndex, to inv
 			return inventory.MoveResult{}, false
 		}
 		destinationItem.Count = uint16(mergedCount)
-		// Remainder must keep an independent presence clone so later writes cannot
-		// alias the pre-merge live inventory sockets/attributes pointers.
-		// Empty-destination split below keeps the already-owned remainder pointers.
-		sourceRemainder.Sockets = sourceItem.CloneSockets()
-		sourceRemainder.Attributes = sourceItem.CloneAttributes()
 		if err := sourceRemainder.Validate(); err != nil {
 			return inventory.MoveResult{}, false
 		}

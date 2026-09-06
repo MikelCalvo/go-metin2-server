@@ -73,8 +73,9 @@ merge-remainder clone, or destination-wins contracts.
    (already identity-preserving clone), destination-wins merge, refine
    catalysts / mall / party ownership notices, or changing locked /
    anti-stack / over-count / closed-presentation rejects already owned.
-   Carried `ITEM_MOVE` empty-destination split remainder pointers stay on
-   their existing split contract until a later freeze names that twin.
+   Carried `ITEM_MOVE` empty-destination split remainder independence is
+   now owned
+   (`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 
 ## Proof shape (RED → GREEN)
 
@@ -123,7 +124,6 @@ FileStore rematerialize, and same-session reopen, while the destination
 stays a fresh identity plus its already-owned independent clone
 (`TestSafeboxPartialSplitRemainderItemClonesPresenceIndependently`,
 `TestGameRuntimeSafeboxItemMovePartialSplitPreservesInstanceSocketsAndAttributes`).
-Carried `ITEM_MOVE` split remainder independence is frozen as the next
-honesty seam
+Carried `ITEM_MOVE` split remainder independence is now owned
 (`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 Refine catalysts / mall / party ownership remain deferred.

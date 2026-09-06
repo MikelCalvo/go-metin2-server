@@ -114,7 +114,7 @@ stays destination-wins count-only
 `TestGameRuntimeSafeboxItemMovePartialMergePreservesInstanceSocketsAndAttributes`).
 Empty-destination split remainder clone is now owned
 (`docs/plans/2026-09-06-safebox-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
-Carried `ITEM_MOVE` split remainder pointers stay the next honesty seam
+Carried `ITEM_MOVE` split remainder independence is now owned
 (`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 Full-stack source remove and destination-wins stay already owned. Refine
 catalysts / mall / party ownership remain deferred.

@@ -20,10 +20,10 @@ source cell after an empty-destination partial split.
 Today `MoveInventoryItemCountBounded` copies the live source cell by value
 (`sourceRemainder := sourceItem`), decrements `Count`, and writes that same
 pointer-bearing struct back into `liveInventory` on the empty-destination
-branch. Encode already prefers `EffectiveSockets` / `EffectiveAttributes`,
-destination split already clones onto a fresh identity via
-`WithInventorySlot`, and merge remainder already clones independently.
-Empty-destination split source remainder still aliases.
+branch unless the remainder also clones presence. Encode already prefers
+`EffectiveSockets` / `EffectiveAttributes`, destination split already clones
+onto a fresh identity via `WithInventorySlot`, and merge remainder already
+clones independently. Empty-destination split source remainder must clone too.
 
 The earlier carried split freeze explicitly kept remainder pointers as a
 non-goal so only the new destination identity had to clone. That
@@ -116,12 +116,13 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/items` (docs/spec only): counted empty-destination
-`ITEM_MOVE` / `MoveInventoryItemCount` source remainder must keep an
-independent clone of pre-split presence (including explicit zero;
-omit→omit) while the destination stays a fresh identity plus its
-already-owned independent clone. Production still aliases
-(`sourceRemainder := sourceItem`). Focused remainder proofs stay the next
-GREEN twin. Do not claim the live split remainder clone is owned until
-those proofs land. Refine catalysts / mall / party ownership remain
-deferred.
+GREEN on `lane/items`: counted empty-destination `ITEM_MOVE` /
+`MoveInventoryItemCount` keeps the source remainder as an independent
+clone of the pre-split live inventory presence (including explicit zero;
+omit→omit with template encode fallback) through remainder `ITEM_SET` +
+account snapshot, while the destination stays a fresh identity plus its
+already-owned independent clone
+(`TestRuntimeMoveInventoryItemCountPartialSplitRemainderPreservesInstancePresenceIndependently`,
+`TestGameRuntimeItemMoveCountedPartialSplitPreservesInstanceSocketsAndAttributes`).
+Destination-split clone and compatible merge remainder clone stay already
+owned. Refine catalysts / mall / party ownership remain deferred.

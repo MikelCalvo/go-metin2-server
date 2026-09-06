@@ -108,7 +108,7 @@ encode fallback) through remainder `ITEM_UPDATE` + account snapshot, while
 the merged cell stays destination-wins count-only
 (`TestRuntimeMoveInventoryItemPartialMergePreservesInstancePresenceIndependently`,
 `TestGameRuntimeItemMovePartialMergePreservesInstanceSocketsAndAttributes`).
-Empty-destination split remainder pointers stay the next honesty seam
+Empty-destination split remainder independence is now owned
 (`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 Full-stack source remove and destination-wins stay already owned. Refine
 catalysts / mall / party ownership remain deferred.
