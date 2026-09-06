@@ -163,7 +163,7 @@ curl -sS http://127.0.0.1:6060/local/runtime-config \
       --build-info /tmp/build-info.json
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN.
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json` / `persistence-status-*.json`, a `notes.md` stub, and uses the lab store subdirectory names above. It never executes backup/restore, never opens a database, and never embeds a DSN. Retained backup trees re-inspection is frozen next as read-only `backup-tree-status` — see [CLI backup-tree-status](../plans/2026-09-06-cli-backup-tree-status-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 

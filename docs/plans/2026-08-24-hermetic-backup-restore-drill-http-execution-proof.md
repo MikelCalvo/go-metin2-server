@@ -86,3 +86,4 @@ Validation for this slice:
 6. ~~Optional later: extract a shared gamed ops registration helper so `cmd/gamed`
    and the hermetic drill proof stop duplicating endpoint wiring.~~ Done: see
    [gamed file-store persistence ops registration helper](2026-08-24-gamed-file-store-persistence-ops-registration-helper.md).
+7. Read-only `backup-tree-status` for retained backup-restore trees is frozen next — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md). GREEN must put `metin2-migrate` on `PATH` for the printed-script proof.

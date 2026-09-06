@@ -150,6 +150,8 @@ Follow-up owned separately and now GREEN: read-only `catalog-status` for retaine
 
 Follow-up owned separately and now GREEN: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 
+Follow-up owned separately: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace
