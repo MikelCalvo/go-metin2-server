@@ -104,7 +104,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
 
-	var guideVID, hunterVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
+	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
 	var foundPackMembers int
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
@@ -112,6 +112,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			guideVID = uint32(actor.EntityID)
 		case "QuestHunter":
 			hunterVID = uint32(actor.EntityID)
+		case "QuestResetGuide":
+			resetVID = uint32(actor.EntityID)
 		case "Merchant":
 			merchantVID = uint32(actor.EntityID)
 		case "Warehouse":
@@ -130,8 +132,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			foundPackMembers++
 		}
 	}
-	if guideVID == 0 || hunterVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 || talkVID == 0 || infoVID == 0 || teleporterVID == 0 {
-		t.Fatalf("expected guide/hunter/merchant/warehouse/cube/mob/talk/info/teleporter actors after import, got %+v", runtime.StaticActors())
+	if guideVID == 0 || hunterVID == 0 || resetVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 || talkVID == 0 || infoVID == 0 || teleporterVID == 0 {
+		t.Fatalf("expected guide/hunter/reset/merchant/warehouse/cube/mob/talk/info/teleporter actors after import, got %+v", runtime.StaticActors())
 	}
 	if foundPackMembers != 2 {
 		t.Fatalf("expected denser multi-count pack members QAPveVerticalPack 1/2 after import, found=%d actors=%+v", foundPackMembers, runtime.StaticActors())
@@ -177,6 +179,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected gated cube mismatch chat: %+v err=%v", cubeMismatchChat, err)
 	}
 
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, resetVID, "QuestResetGuide clear")
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	assertPveVerticalGatedMismatch(t, flow, talkVID, "VillageGuide talk")
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -566,6 +570,102 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected mismatch path to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
 	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	resumeShopOut, err = flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
+	if err != nil {
+		t.Fatalf("unexpected post-turn-in merchant interaction error: %v", err)
+	}
+	if len(resumeShopOut) != 1 {
+		t.Fatalf("expected 1 merchant shop-open frame after QuestHunter turn-in, got %d", len(resumeShopOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, resumeShopOut[0])); err != nil {
+		t.Fatalf("decode post-turn-in merchant shop start: %v", err)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterTurnIn, "post-turn-in merchant reopen")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	resetOut := interactPveVertical(t, flow, resetVID, "QuestResetGuide clear")
+	if len(resetOut) != 2 {
+		t.Fatalf("expected merchant close plus QuestResetGuide clear chat, got %d", len(resetOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, resetOut[0])); err != nil {
+		t.Fatalf("decode merchant close before QuestResetGuide clear: %v", err)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, resetOut[1:], "Quest cleared: first_steps.met_guide = 0.", "QuestResetGuide clear")
+	wantAfterReset := queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: "QuestHero", QuestRef: "quest:first_steps", Name: "step", Value: 1},
+	}}
+	assertPveVerticalQuestState(t, runtime, wantAfterReset, "QuestResetGuide clear")
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfter {
+		t.Fatalf("expected QuestResetGuide to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected QuestResetGuide to leave turn-in inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after QuestResetGuide: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfter {
+		t.Fatalf("expected persisted gold %d after QuestResetGuide, got %d", wantGoldAfter, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Count != 1 {
+		t.Fatalf("expected persisted inventory after QuestResetGuide to stay at turn-in reward, got %+v", account.Characters[0].Inventory)
+	}
+
+	staleBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected packet shop buy after QuestResetGuide: %v", err)
+	}
+	if len(staleBuyOut) != 0 {
+		t.Fatalf("expected packet shop buy to fail closed after QuestResetGuide closed the merchant, got %d frames", len(staleBuyOut))
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfter {
+		t.Fatalf("expected stale merchant buy to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 11200 {
+		t.Fatalf("expected stale merchant buy to leave turn-in inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, merchantVID, "revoked Merchant")
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, talkVID, "revoked VillageGuide talk")
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	assertPveVerticalGatedMismatch(t, flow, resetVID, "repeat QuestResetGuide")
+	assertPveVerticalQuestState(t, runtime, wantAfterReset, "revoked services after QuestResetGuide")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	guideOut, err = flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: guideVID})))
+	if err != nil {
+		t.Fatalf("unexpected QuestGuide re-unlock interaction error: %v", err)
+	}
+	if len(guideOut) != 1 {
+		t.Fatalf("expected 1 self-only QuestGuide re-unlock frame, got %d", len(guideOut))
+	}
+	guideChat, err = chatproto.DecodeChatDelivery(decodeSingleFrame(t, guideOut[0]))
+	if err != nil || guideChat.Message != "Quest updated: first_steps.met_guide = 1." {
+		t.Fatalf("unexpected QuestGuide re-unlock chat delivery: %+v err=%v", guideChat, err)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "QuestGuide re-unlock")
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	resumeShopOut, err = flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
+	if err != nil {
+		t.Fatalf("unexpected merchant interaction error after QuestGuide re-unlock: %v", err)
+	}
+	if len(resumeShopOut) != 1 {
+		t.Fatalf("expected 1 merchant shop-open frame after QuestGuide re-unlock, got %d", len(resumeShopOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, resumeShopOut[0])); err != nil {
+		t.Fatalf("decode merchant shop start after QuestGuide re-unlock: %v", err)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "merchant reopen after QuestGuide re-unlock")
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {

@@ -6407,16 +6407,19 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	}
 	foundGuide := false
 	foundHunter := false
+	foundReset := false
 	for _, route := range summary.QuestFlagRoutes {
 		switch {
 		case route.ActorName == "QuestGuide" && route.Ref == "quest:first_steps":
 			foundGuide = true
 		case route.ActorName == "QuestHunter" && route.Ref == "quest:first_steps_kill_turnin":
 			foundHunter = true
+		case route.ActorName == "QuestResetGuide" && route.Ref == "quest:first_steps_reset":
+			foundReset = true
 		}
 	}
-	if !foundGuide || !foundHunter {
-		t.Fatalf("expected QuestGuide and QuestHunter quest-flag routes, got %+v", summary.QuestFlagRoutes)
+	if !foundGuide || !foundHunter || !foundReset {
+		t.Fatalf("expected QuestGuide, QuestHunter, and QuestResetGuide quest-flag routes, got %+v", summary.QuestFlagRoutes)
 	}
 	if summary.OpenSafeboxRouteCount != 1 {
 		t.Fatalf("expected 1 open_safebox route in PvE vertical authoring example, got %d", summary.OpenSafeboxRouteCount)
