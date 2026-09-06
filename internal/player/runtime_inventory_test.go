@@ -3562,6 +3562,22 @@ func TestMerchantSellCreditPrefersAuthoredShopSellPrice(t *testing.T) {
 	}
 }
 
+func TestMerchantSellCreditPrefersAuthoredWoodenSwordShopSellPrice(t *testing.T) {
+	template := itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: inventory.EquipmentSlotWeapon.String()}
+	credit, ok := MerchantSellCredit(template, 1)
+	if !ok {
+		t.Fatal("expected authored wooden-sword shop-sell price to resolve")
+	}
+	if credit != 100 {
+		t.Fatalf("expected authored wooden-sword shop-sell price credit 100, not a derived /5 tax credit, got %d", credit)
+	}
+
+	_, ok = MerchantSellCredit(itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()}, 1)
+	if ok {
+		t.Fatal("expected wooden sword without shop_sell_price or shop_buy_price to fail closed")
+	}
+}
+
 func TestMerchantSellCreditForCountPerGoldTemplateUsesLegacyCountDivision(t *testing.T) {
 	credit, ok := MerchantSellCredit(itemcatalog.Template{Vnum: 80001, Name: "Bundle", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, SellCountPerGold: true, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 1, Message: "metadata"}}, 25)
 	if !ok {

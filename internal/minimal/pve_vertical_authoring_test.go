@@ -850,6 +850,113 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("decode merchant shop start after QuestGuide re-unlock: %v", err)
 	}
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "merchant reopen after QuestGuide re-unlock")
+	_ = flushServerFrames(t, flow)
+
+	equippedSellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected SHOP SELL while sword is still equipped: %v", err)
+	}
+	if len(equippedSellOut) != 1 {
+		t.Fatalf("expected 1 INVALID_POS frame for SHOP SELL while sword is equipped, got %d", len(equippedSellOut))
+	}
+	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, equippedSellOut[0])); err != nil {
+		t.Fatalf("decode equipped-sword SHOP SELL invalid-pos: %v", err)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
+		t.Fatalf("expected equipped-sword SHOP SELL to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
+	}
+	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != swordID || equipmentSnapshot.Equipment[0].Vnum != 11200 {
+		t.Fatalf("expected equipped-sword SHOP SELL to leave weapon worn, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+
+	weaponPosition, err = itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build weapon equipment position for authored unequip: %v", err)
+	}
+	unequipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      weaponPosition,
+		Destination: itemproto.InventoryPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword ITEM_MOVE unequip: %v", err)
+	}
+	if len(unequipOut) != 3 {
+		t.Fatalf("expected ITEM_DEL, carried ITEM_SET, and CHARACTER_UPDATE for authored sword unequip, got %d", len(unequipOut))
+	}
+	unequipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, unequipOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword unequip ITEM_DEL: %v", err)
+	}
+	if unequipDel.Position != weaponPosition {
+		t.Fatalf("unexpected authored sword unequip ITEM_DEL: %+v", unequipDel)
+	}
+	unequipSet, err := itemproto.DecodeSet(decodeSingleFrame(t, unequipOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword unequip ITEM_SET: %v", err)
+	}
+	if unequipSet.Position != itemproto.InventoryPosition(0) || unequipSet.Vnum != 11200 || unequipSet.Count != 1 {
+		t.Fatalf("unexpected authored sword unequip ITEM_SET: %+v", unequipSet)
+	}
+	unequipAppearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword unequip CHARACTER_UPDATE: %v", err)
+	}
+	if unequipAppearance.VID != hero.VID || unequipAppearance.Parts[1] != 0 {
+		t.Fatalf("expected authored sword unequip to clear weapon appearance, got %+v", unequipAppearance)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != swordID || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory to hold unequipped sword, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 0 {
+		t.Fatalf("expected live equipment empty after authored sword unequip, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+
+	const pveVerticalSwordSellPrice = int32(100)
+	wantGoldAfterSell := wantGoldAfterBuy + uint64(pveVerticalSwordSellPrice)
+	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword SHOP SELL: %v", err)
+	}
+	if len(sellOut) != 2 {
+		t.Fatalf("expected ITEM_DEL and gold PLAYER_POINT_CHANGE for authored sword SHOP SELL, got %d", len(sellOut))
+	}
+	sellDel, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword SHOP SELL ITEM_DEL: %v", err)
+	}
+	if sellDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored sword SHOP SELL ITEM_DEL: %+v", sellDel)
+	}
+	sellGold, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, sellOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword SHOP SELL gold point-change: %v", err)
+	}
+	if sellGold.VID != hero.VID || sellGold.Type != bootstrapGoldPointType || sellGold.Amount != pveVerticalSwordSellPrice || uint64(sellGold.Value) != wantGoldAfterSell {
+		t.Fatalf("unexpected authored sword SHOP SELL gold point-change: %+v want amount=%d value=%d", sellGold, pveVerticalSwordSellPrice, wantGoldAfterSell)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterSell {
+		t.Fatalf("expected live gold %d after authored sword SHOP SELL, got ok=%v snapshot=%+v", wantGoldAfterSell, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected live inventory empty after authored sword SHOP SELL, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored sword SHOP SELL: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfterSell {
+		t.Fatalf("expected persisted gold %d after authored sword SHOP SELL, got %d", wantGoldAfterSell, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted inventory/equipment empty after authored sword SHOP SELL, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored sword SHOP SELL")
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {
