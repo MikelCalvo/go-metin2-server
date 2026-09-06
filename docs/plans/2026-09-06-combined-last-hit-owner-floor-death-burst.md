@@ -48,3 +48,6 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 - richer flag meanings (crit/miss/block)
 - authored EXP / gold / drop rewards on that same combined last-hit (now owned
   by `2026-09-06-combined-last-hit-reward-then-floor.md`)
+- same-socket `/restart_here` still-dead dummy catch-up after that combined
+  last-hit (now owned by
+  `2026-09-06-combined-last-hit-restart-here-still-dead-catch-up.md`)

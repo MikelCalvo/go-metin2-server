@@ -158,6 +158,7 @@ The repo now also owns one narrower connected recovery seam on that same retalia
 - currently visible live peers receive one queued alive-again refresh for that owner as `CHARACTER_DEL` -> `CHARACTER_ADD` -> `CHAR_ADDITIONAL_INFO` -> `CHARACTER_UPDATE`
 - the owner still has to send a fresh `TARGET` after `/restart_here` before `ATTACK` can resume; the earlier selected practice-mob target does not survive that recovery seam
 - the already-live practice mob stays asymmetric here too: if it survived, it keeps its current runtime-owned HP and current engagement-reset rules instead of resetting because the owner used `/restart_here`
+- if that same accepted last hit also killed the dummy, same-socket `/restart_here` while the dummy is still inside its server-owned dead interval now catch-up-refreshes that dummy with trailing `GC DEAD(dummy_vid)` instead of presenting it as live; later owner-side `TARGET` / `ATTACK` stay fail-closed until the dummy respawns (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUpStillDeadDummy`)
 - `/restart_here` stays narrow and honest in this slice: it fails closed while the owner is still alive, it keeps reusing existing bootstrap / visibility packet families instead of inventing a dedicated revive opcode, and the separate town-return follow-up is now frozen in `player-restart-town-bootstrap.md`
 
 ## Why freeze this separately
