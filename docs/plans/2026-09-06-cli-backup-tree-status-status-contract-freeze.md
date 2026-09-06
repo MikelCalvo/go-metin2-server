@@ -282,7 +282,7 @@ add a working CLI example until GREEN actually produces the command.
 - claiming inner `stores_complete` proves live gamed FileStores currently
   match the tree (operators still compare `/local/persistence/status`
   after restore)
-- `--require-no-crash-temps` (follow-up, not this freeze)
+- `--require-no-crash-temps` (follow-up, frozen separately — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md))
 - changing default (ungated) missing-file outer `present: false` exit `0`
 - broad README churn
 
@@ -348,6 +348,10 @@ git diff --check
 GREEN on `lane/persistence`: read-only `backup-tree-status-status`,
 matching `backup-restore-drill` redirect, and hermetic
 `$BASE/backup-tree-status-status.json` assertion.
+
+- Follow-up owned separately: opt-in `--require-no-crash-temps` on live
+  `backup-tree-status` and retained `backup-tree-status-status` — see
+  [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

@@ -58,3 +58,4 @@ Focused coverage:
 2. ~~Add deployment topology / artifact retention docs once production hosts are known.~~ Done: see [lab deployment topology](../workflow/lab-deployment-topology.md) and [production observability](../workflow/production-observability.md).
 3. ~~Align the printed backup tree with the lab `YYYYMMDDTHHMMSSZ-<commit12>` retention contract.~~ Done: see [CLI Backup-Restore Drill Lab Retention](2026-08-21-cli-backup-run-lab-retention.md).
 4. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
+5. Opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` is a separate inspector require-gate, not another printed live-store `crash-temps/cleanup` curl — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).

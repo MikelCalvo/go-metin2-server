@@ -291,7 +291,7 @@ add a working CLI example until GREEN actually produces the command.
 - claiming `stores_complete` proves live gamed FileStores currently
   match the tree (operators still compare `/local/persistence/status`
   after restore)
-- `--require-no-crash-temps` (follow-up, not this freeze)
+- `--require-no-crash-temps` (follow-up, frozen separately — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md))
 - a `backup-tree-status-status` inspector for the retained JSON
   (follow-up, not this freeze)
 - broad README churn
@@ -366,11 +366,13 @@ GREEN on `lane/persistence`.
   aside-rename / restore.
 - Hermetic `/bin/sh` backup-restore drill HTTP proof now puts
   `metin2-migrate` on `PATH` and asserts that retained JSON.
-- Upsert / auto-run / stock production driver / cascade-delete /
-  `--require-no-crash-temps` remain deferred.
+- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 - Follow-up owned separately and now GREEN: read-only
   `backup-tree-status-status` for retained `backup-tree-status.json` —
   see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
+- Follow-up owned separately: opt-in `--require-no-crash-temps` on live
+  `backup-tree-status` and retained `backup-tree-status-status` — see
+  [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

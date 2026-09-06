@@ -181,7 +181,7 @@ metin2-migrate backup-tree-status-status \
   --require-stores-complete
 ```
 
-See [CLI backup-tree-status-status](../plans/2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
+See [CLI backup-tree-status-status](../plans/2026-09-06-cli-backup-tree-status-status-contract-freeze.md). Opt-in `--require-no-crash-temps` on those inspectors is frozen next — see [CLI backup-tree-status no-crash-temps require-gate](../plans/2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 
