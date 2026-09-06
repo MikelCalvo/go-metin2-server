@@ -49318,6 +49318,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsCombinedDeathBu
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	runtime.now = func() time.Time { return time.Unix(1700001400, 0) }
 	bundle := contentbundle.Bundle{
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
@@ -49466,6 +49467,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsRewardsBeforeOw
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	runtime.now = func() time.Time { return time.Unix(1700001401, 0) }
 	bundle := contentbundle.Bundle{
 		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{
 			Profile:               profile,
