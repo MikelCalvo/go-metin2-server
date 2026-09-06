@@ -269,6 +269,7 @@ GREEN on `lane/persistence`.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 - Follow-up owned separately and now GREEN: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 - Follow-up owned separately and now GREEN: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
+- Follow-up owned separately: read-only `backup-tree-status-status` for retained `backup-tree-status.json` — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

@@ -152,6 +152,8 @@ Follow-up owned separately and now GREEN: read-only `apply-lock-aside-status` fo
 
 Follow-up owned separately and now GREEN: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
 
+Follow-up owned separately: read-only `backup-tree-status-status` for retained `backup-tree-status.json` — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

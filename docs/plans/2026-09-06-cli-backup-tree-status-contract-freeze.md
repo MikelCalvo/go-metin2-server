@@ -367,7 +367,10 @@ GREEN on `lane/persistence`.
 - Hermetic `/bin/sh` backup-restore drill HTTP proof now puts
   `metin2-migrate` on `PATH` and asserts that retained JSON.
 - Upsert / auto-run / stock production driver / cascade-delete /
-  `backup-tree-status-status` / `--require-no-crash-temps` remain deferred.
+  `--require-no-crash-temps` remain deferred.
+- Follow-up owned separately: read-only `backup-tree-status-status` for
+  retained `backup-tree-status.json` — see [CLI backup-tree-status-status
+  contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

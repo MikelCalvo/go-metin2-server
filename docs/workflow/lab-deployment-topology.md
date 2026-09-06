@@ -172,7 +172,7 @@ metin2-migrate backup-tree-status \
   --require-stores-complete
 ```
 
-See [CLI backup-tree-status](../plans/2026-09-06-cli-backup-tree-status-contract-freeze.md).
+See [CLI backup-tree-status](../plans/2026-09-06-cli-backup-tree-status-contract-freeze.md). Retained `backup-tree-status.json` re-inspection is frozen next as read-only `backup-tree-status-status` — see [CLI backup-tree-status-status](../plans/2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 
