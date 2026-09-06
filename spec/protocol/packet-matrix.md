@@ -104,8 +104,8 @@ Planned rows may temporarily use `Header = TBD` when the project freezes the fam
 There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab cube traffic is owned as talking-chat / `CHAT_TYPE_COMMAND` companions documented in `spec/protocol/item-cube-bootstrap.md`:
 
 - owned: `/open_cube` / `/close_cube` → `cube open <npcVnum>` / `cube close`, plus open-cube busy rejects for exchange / MYSHOP / safebox / refine
-- owned: `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` from remembered open NPC + authored `cubestore` recipes (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`)
-- owned: `/cube r_info <index> [count]` → `cube m_info <startIndex> <requestCount> <infoText[@...]>` from authored materials/gold (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`)
+- owned: `/cube r_info` → `cube r_list <npcVnum> <resultCount> <vnum,count/...>` from remembered open NPC + authored `cubestore` recipes (`docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`); composed PvE `CubeMaster` now also proves bootstrap `cube r_list 20022 1 27001,1` with no gold/inventory mutation (`docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`)
+- owned: `/cube r_info <index> [count]` → `cube m_info <startIndex> <requestCount> <infoText[@...]>` from authored materials/gold (`docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`); composed PvE `CubeMaster` now also proves bootstrap `cube m_info 0 1 27002,2/100`, then silent closed-cube `/cube r_info`
 - owned: `/cube add <cubeIndex> <invenIndex>` / `/cube del <cubeIndex>` → `cube info <gold> 0 0` craft-slot binding without inventory mutation (`docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`)
 - owned: `/cube make` deterministic `percent = 100` success → material/gold consume + `cube success <vnum> <count>` (`docs/plans/2026-08-25-cube-make-percent-100-implementation.md`)
 - owned: `/cube make` injected-roll `percent` in `1..99` → success (`cube success`) or fail info + `cube fail` (`docs/plans/2026-08-26-cube-make-percent-1-99-injected-roll.md`)

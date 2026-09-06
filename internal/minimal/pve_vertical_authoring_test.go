@@ -400,29 +400,83 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected unlocked cube chat: %+v err=%v", cubeChat, err)
 	}
 	assertCubeCommandChatFrame(t, cubeOut[1], "cube open 20022", "pve vertical unlocked cube open")
-	rInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+	cubeGold, ok := runtime.CurrencySnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected gold snapshot before authored cube r_info")
+	}
+	cubeInventory, ok := runtime.InventorySnapshot(hero.Name)
+	if !ok || len(cubeInventory.Inventory) != 0 {
+		t.Fatalf("expected empty inventory before authored cube r_info, got ok=%v snapshot=%+v", ok, cubeInventory)
+	}
+	cubeAccount, err := accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account before authored cube r_info: %v", err)
+	}
+	if cubeAccount.Characters[0].Gold != cubeGold.Gold {
+		t.Fatalf("expected persisted gold %d to match live gold before authored cube r_info, got %d", cubeGold.Gold, cubeAccount.Characters[0].Gold)
+	}
+	if len(cubeAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory empty before authored cube r_info, got %+v", cubeAccount.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "unlocked CubeMaster open")
+
+	cubeRInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
 		Message: "/cube r_info",
 	})))
 	if err != nil {
-		t.Fatalf("unexpected authored cube r_info error: %v", err)
+		t.Fatalf("unexpected authored cube r_info: %v", err)
 	}
-	if len(rInfoOut) != 1 {
-		t.Fatalf("expected authored cube r_info to emit one command chat frame, got %d", len(rInfoOut))
+	if len(cubeRInfoOut) != 1 {
+		t.Fatalf("expected 1 cube r_list frame after authored CubeMaster open, got %d", len(cubeRInfoOut))
 	}
-	assertCubeCommandChatFrame(t, rInfoOut[0], "cube r_list 20022 1 27001,1", "pve vertical authored cube r_list")
-	mInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+	assertCubeCommandChatFrame(t, cubeRInfoOut[0], "cube r_list 20022 1 27001,1", "pve vertical authored cube r_list")
+
+	cubeMInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
 		Message: "/cube r_info 0",
 	})))
 	if err != nil {
-		t.Fatalf("unexpected authored cube m_info error: %v", err)
+		t.Fatalf("unexpected authored cube r_info 0: %v", err)
 	}
-	if len(mInfoOut) != 1 {
-		t.Fatalf("expected authored cube m_info to emit one command chat frame, got %d", len(mInfoOut))
+	if len(cubeMInfoOut) != 1 {
+		t.Fatalf("expected 1 cube m_info frame after authored CubeMaster open, got %d", len(cubeMInfoOut))
 	}
-	assertCubeCommandChatFrame(t, mInfoOut[0], "cube m_info 0 1 27002,2/100", "pve vertical authored cube m_info")
+	assertCubeCommandChatFrame(t, cubeMInfoOut[0], "cube m_info 0 1 27002,2/100", "pve vertical authored cube m_info")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected authored cube r_info/m_info to queue no peer frames, got %d", len(queued))
+	}
+	afterCubeGold, ok := runtime.CurrencySnapshot(hero.Name)
+	if !ok || afterCubeGold.Gold != cubeGold.Gold {
+		t.Fatalf("expected gold %d after authored cube r_info/m_info, got ok=%v snapshot=%+v", cubeGold.Gold, ok, afterCubeGold)
+	}
+	cubeInventory, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(cubeInventory.Inventory) != 0 {
+		t.Fatalf("expected empty inventory after authored cube r_info/m_info, got ok=%v snapshot=%+v", ok, cubeInventory)
+	}
+	cubeAccount, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored cube r_info/m_info: %v", err)
+	}
+	if cubeAccount.Characters[0].Gold != cubeGold.Gold {
+		t.Fatalf("expected persisted gold %d after authored cube r_info/m_info, got %d", cubeGold.Gold, cubeAccount.Characters[0].Gold)
+	}
+	if len(cubeAccount.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory empty after authored cube r_info/m_info, got %+v", cubeAccount.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube r_info/m_info")
+
 	assertCloseCubeCommandChat(t, flow, "/close_cube", "pve vertical cube close before reconnect")
+	closedCubeRInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed-cube r_info after authored CubeMaster close: %v", err)
+	}
+	if len(closedCubeRInfoOut) != 0 {
+		t.Fatalf("expected closed-cube r_info to emit no frames, got %d", len(closedCubeRInfoOut))
+	}
 
 	closeSessionFlow(t, flow)
 	flow, _ = enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)

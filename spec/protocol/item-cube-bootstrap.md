@@ -94,6 +94,11 @@ Successful `/open_cube` remembers `activeCubeNPCVnum` beside the busy flag so
 `r_list` / `m_info` can echo that NPC's authored rows. The remembered vnum
 clears with the busy flag.
 
+The composed PvE vertical gameplay proof now also requests that same
+bootstrap result list after authored `CubeMaster` `INTERACT` (`cube open
+20022`) and asserts `cube r_list 20022 1 27001,1` with no gold/inventory
+mutation (`docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`).
+
 See `docs/plans/2026-08-25-cube-r-info-result-list-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-r-info-result-list-implementation.md`.
 
@@ -118,6 +123,10 @@ Fail-closed (no frames / no mutation):
 - empty materials / empty encoded window
 - oversize encoded entry text (`CHAT_MAX_LEN` + overhead reserve)
 - non-digit index/count or unexpected arity
+
+The same composed PvE CubeMaster window then requests `/cube r_info 0` and
+asserts `cube m_info 0 1 27002,2/100` with no gold/inventory mutation;
+`/cube r_info` after `/close_cube` stays silent.
 
 See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`.
@@ -228,7 +237,8 @@ interaction distance gate, optional non-mutating quest gates, and
 content-bundle open-cube route summaries are already owned on the NPC/content
 surface (`spec/protocol/npc-service-interactions-bootstrap.md`,
 `docs/plans/2026-08-30-open-cube-npc-service.md`,
-`docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`). This note
+`docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`,
+`docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`). This note
 keeps only the remaining craft-protocol gaps deferred.
 
 ## Related docs
@@ -248,6 +258,7 @@ keeps only the remaining craft-protocol gaps deferred.
 - `docs/plans/2026-08-26-cube-list-cancel.md`
 - `docs/plans/2026-08-30-open-cube-npc-service.md`
 - `docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`
+- `docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)
