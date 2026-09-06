@@ -2,6 +2,8 @@ package minimal
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
@@ -206,12 +208,14 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"persistence-status-after.json",
 		"notes.md",
 		"backup-tree-status.json",
+		"backup-tree-status-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
 	assertRegularFileExists(t, filepath.Join(retentionTree, "accounts", accountstore.BackupManifestFilename))
 	assertRegularFileExists(t, filepath.Join(retentionTree, "safebox", safeboxstore.BackupManifestFilename))
 	assertBackupTreeStatusComplete(t, retentionTree)
+	assertBackupTreeStatusStatusComplete(t, retentionTree)
 
 	assertDirExists(t, accountDir+".aside-"+retentionTreeTimestamp(t, retentionTree))
 	assertDirExists(t, filepath.Dir(safeboxPath)+".aside-"+retentionTreeTimestamp(t, retentionTree))
@@ -341,6 +345,47 @@ func assertBackupTreeStatusComplete(t *testing.T, retentionTree string) {
 	for _, forbidden := range []string{"drill-owner", "DrillHero", "CREATE TABLE", "postgres://", "mysql://", "DSN=", `"logins"`, `"login_keys"`} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("backup-tree-status.json must not expose %q, got %s", forbidden, body)
+		}
+	}
+}
+
+func assertBackupTreeStatusStatusComplete(t *testing.T, retentionTree string) {
+	t.Helper()
+	statusPath := filepath.Join(retentionTree, "backup-tree-status.json")
+	statusRaw, err := os.ReadFile(statusPath)
+	if err != nil {
+		t.Fatalf("read backup-tree-status.json: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(retentionTree, "backup-tree-status-status.json"))
+	if err != nil {
+		t.Fatalf("read backup-tree-status-status.json: %v", err)
+	}
+	var got struct {
+		Format                 string `json:"format"`
+		Present                bool   `json:"present"`
+		BackupTreeStatusSHA256 string `json:"backup_tree_status_sha256"`
+		Status                 *struct {
+			Format         string `json:"format"`
+			Present        bool   `json:"present"`
+			StoresComplete bool   `json:"stores_complete"`
+			StoreCount     int    `json:"store_count"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode backup-tree-status-status.json: %v\nbody:\n%s", err, raw)
+	}
+	sum := sha256.Sum256(statusRaw)
+	wantSHA := hex.EncodeToString(sum[:])
+	if got.Format != "go-metin2-backup-tree-status-status-v1" || !got.Present || got.Status == nil || got.BackupTreeStatusSHA256 != wantSHA {
+		t.Fatalf("unexpected backup-tree-status-status.json envelope: %#v", got)
+	}
+	if got.Status.Format != "go-metin2-backup-tree-status-v1" || !got.Status.Present || !got.Status.StoresComplete || got.Status.StoreCount != 8 {
+		t.Fatalf("unexpected inner backup-tree-status in status-status.json: %#v", got.Status)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"drill-owner", "DrillHero", "CREATE TABLE", "postgres://", "mysql://", "DSN=", `"logins"`, `"login_keys"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("backup-tree-status-status.json must not expose %q, got %s", forbidden, body)
 		}
 	}
 }

@@ -345,7 +345,9 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/persistence` (docs/spec only). GREEN is the next slice.
+GREEN on `lane/persistence`: read-only `backup-tree-status-status`,
+matching `backup-restore-drill` redirect, and hermetic
+`$BASE/backup-tree-status-status.json` assertion.
 
 ## Exit criteria for this freeze
 

@@ -77,4 +77,4 @@ Validation for this slice:
 4. ~~Optional backup-restore drill correlation checklist (both-daemon build-info + `notes.md`) remains deferred.~~ Done: see [CLI backup-restore drill correlation](2026-08-21-cli-backup-restore-drill-correlation.md).
 5. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
 6. ~~Read-only `backup-tree-status` for retained backup-restore trees.~~ Done — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
-7. Read-only `backup-tree-status-status` for retained `backup-tree-status.json` is frozen next — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
+7. ~~Read-only `backup-tree-status-status` for retained `backup-tree-status.json`.~~ Done — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).

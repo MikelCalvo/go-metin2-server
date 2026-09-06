@@ -140,6 +140,8 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`metin2-migrate backup-tree-status --backup-tree "$BASE"`,
 		`--require-stores-complete`,
 		`> "$BASE/backup-tree-status.json"`,
+		`metin2-migrate backup-tree-status-status --backup-tree-status "$BASE/backup-tree-status.json"`,
+		`> "$BASE/backup-tree-status-status.json"`,
 		`"$OPS/local/item-templates/restore"`,
 		`"$OPS/local/ground-item-store/restore"`,
 		`"$OPS/local/safebox-store/restore"`,

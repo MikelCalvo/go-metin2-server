@@ -41,7 +41,7 @@ const (
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-lock-aside-status, apply-audit-status,
 // import-export-status, export-tree-status, export-tree-status-status, quarantine-export, synthesize-wipe-export,
 // synthesize-wipe-export-status, export-quarantine-drill,
-// backup-restore-drill, backup-tree-status, migration-run-retention, and artifact-retention-gc
+// backup-restore-drill, backup-tree-status, backup-tree-status-status, migration-run-retention, and artifact-retention-gc
 // commands are read-only/print-only.
 // artifact-gc-aside-purge is a confirmation-gated print-only companion that emits
 // a shell script for deleting aged .gc-aside-* trees; the CLI still never executes
@@ -139,6 +139,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runBackupRestoreDrill(args[1:], stdin, stdout, stderr)
 	case "backup-tree-status":
 		return runBackupTreeStatus(args[1:], stdout, stderr)
+	case "backup-tree-status-status":
+		return runBackupTreeStatusStatus(args[1:], stdout, stderr)
 	case "migration-run-retention":
 		return runMigrationRunRetention(args[1:], stdin, stdout, stderr)
 	case "artifact-retention-gc":
@@ -2171,6 +2173,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  export-quarantine-drill print path-aware lab export retention + offline quarantine-export commands from build-info")
 	fmt.Fprintln(w, "  backup-restore-drill   print path-aware lab backup retention + file-store drill commands from runtime-config and build-info")
 	fmt.Fprintln(w, "  backup-tree-status     inspect a retained backup-restore tree without restoring it")
+	fmt.Fprintln(w, "  backup-tree-status-status inspect a retained backup-tree-status snapshot without walking the original tree")
 	fmt.Fprintln(w, "  migration-run-retention print path-aware migration-runs retention + correlation checklist commands from build-info")
 	fmt.Fprintln(w, "  artifact-retention-gc  print path-aware lab retention aside-rename triage for aged YYYYMMDDTHHMMSSZ-<commit12> trees")
 	fmt.Fprintln(w, "  artifact-gc-aside-purge print confirmation-gated lab purge script for aged .gc-aside-* retention trees")
@@ -2229,6 +2232,8 @@ func printUsage(w io.Writer) {
 	printBackupRestoreDrillUsage(w)
 	fmt.Fprintln(w, "")
 	printBackupTreeStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printBackupTreeStatusStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printMigrationRunRetentionUsage(w)
 	fmt.Fprintln(w, "")

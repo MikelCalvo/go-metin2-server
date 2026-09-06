@@ -146,17 +146,24 @@ func runBackupTreeStatus(args []string, stdout io.Writer, stderr io.Writer) int 
 		fmt.Fprintf(stderr, "backup-tree-status: %v\n", err)
 		return exitError
 	}
-	if requireStoresComplete {
-		if !status.Present {
-			fmt.Fprintln(stderr, "backup-tree-status: --require-stores-complete failed: backup-tree is absent")
-			return exitError
-		}
-		if status.StoresComplete == nil || !*status.StoresComplete {
-			fmt.Fprintln(stderr, "backup-tree-status: --require-stores-complete failed: stores_complete=false")
-			return exitError
-		}
+	if err := enforceBackupTreeStatusRequireGates(status, requireStoresComplete); err != nil {
+		fmt.Fprintf(stderr, "backup-tree-status: %v\n", err)
+		return exitError
 	}
 	return writeJSON(stdout, stderr, status)
+}
+
+func enforceBackupTreeStatusRequireGates(status backupTreeStatus, requireStoresComplete bool) error {
+	if !requireStoresComplete {
+		return nil
+	}
+	if !status.Present {
+		return fmt.Errorf("--require-stores-complete failed: backup-tree is absent")
+	}
+	if status.StoresComplete == nil || !*status.StoresComplete {
+		return fmt.Errorf("--require-stores-complete failed: stores_complete=false")
+	}
+	return nil
 }
 
 func inspectBackupTreeStatus(backupTree string) (backupTreeStatus, error) {
