@@ -53,7 +53,11 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- `/restart_town` still-dead dummy catch-up or destination-map ground
-  rematerialize after combined last-hit
-- reconnect / `/phase_select` still-dead dummy catch-up after combined last-hit
+- reconnect / `/phase_select` still-dead dummy catch-up or kill-reward
+  rematerialize after combined last-hit (Leave still deletes currently owned
+  ground handles)
 - party share, random loot tables, or level-up choreography
+
+`/restart_town` still-dead dummy teardown plus source-map relocate rematerialize
+is now owned by
+[combined last-hit `/restart_town` ground catch-up](2026-09-06-combined-last-hit-restart-town-ground-catch-up.md).

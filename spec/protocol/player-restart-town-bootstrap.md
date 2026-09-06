@@ -92,12 +92,15 @@ When accepted, `/restart_town`:
    - destination visible peers enter through the ordinary add/info/update burst
    - source and destination static-actor visibility still reuse the ordinary transfer/static-actor delta families already frozen elsewhere, using the post-preflight mob/spawn lifecycle snapshot
 7. when the source map contains a still-visible practice mob and the restart moves the player to a different town map, the same socket also receives the ordinary source-map non-player visibility teardown (`CHARACTER_DEL(mob_vid)`) after the self bootstrap burst
-8. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
+8. when that same combined last-hit also registered an owned kill-reward ground handle, `/restart_town` reuses the ordinary transfer ground teardown (`ITEM_GROUND_DEL`) for the source-map handle after that dummy delete and does **not** rematerialize it on the town map; the pending handle stays registered on the source map because town restart is transfer, not Leave (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartTownRematerializesKillRewardDropOnSourceMapReselect`)
+9. keeps the already-owned post-death rule that a fresh `TARGET` is required before later `ATTACK`
 
 For this bootstrap slice, the recovery stays intentionally asymmetric with the engaged practice mob:
 - the player rebuilds from persisted player state and moves to the owned town-return target
 - that persisted player state must be a usable live snapshot; if it is itself already at `0` HP, the town restart fails closed before persisting new town-return coordinates or queuing visibility deltas
 - a still-live practice mob keeps its current runtime-owned HP and its current engagement-reset rules instead of resetting because the owner used `/restart_town`
+- if that practice mob died and is still inside its server-owned dead interval when `/restart_town` is accepted — including the combined last-hit that also floors the owner — the town-return burst uses ordinary source-map dummy `CHARACTER_DEL` teardown rather than a town-map trailing `GC DEAD` replay, because the recovered owner left that source visibility
+- if that same combined last-hit also registered an owned kill-reward ground handle, town-side `ITEM_PICKUP` fails closed until the recovered owner relocates back into source-map visibility
 - source-map live sessions that still see that practice mob after the restarting owner leaves can reselect it and observe the current runtime-owned HP percentage instead of a full-HP reset
 
 ## Peer-visible result
@@ -135,6 +138,7 @@ After accepted `/restart_town`:
 - if the recovered owner later returns into source-map visibility of that still-live practice mob, a fresh owner-side `TARGET` preserves the current runtime-owned HP percentage and the next ordinary normal `ATTACK` resumes (`TestGameSessionFlowPracticeMobRestartTownSourceMapReselectResumesNormalAttack`): the next accepted hit refreshes that source target one HP step farther, applies one immediate owner-side retaliation point-change from recovered MaxHP, and emits the ordinary self plus visible source-peer `DAMAGE_INFO` companions
 - the same source-map relocate/return fresh-`TARGET` then normal-`ATTACK` resume also holds after abrupt disconnect / reconnect while the owner was still at the persisted `0`-HP floor and then recovered with `/restart_town` on the new socket before relocating back into source visibility (`TestGameSessionFlowPracticeMobReconnectRestartTownSourceMapReselectResumesNormalAttack`)
 - the same source-map relocate/return fresh-`TARGET` then normal-`ATTACK` resume also holds after same-socket `/phase_select` → fresh `SELECT`/`ENTERGAME` while the owner was still at the persisted `0`-HP floor and then recovered with `/restart_town` on that same socket before relocating back into source visibility (`TestGameSessionFlowPracticeMobPhaseSelectRestartTownSourceMapReselectResumesNormalAttack`)
+- if `/restart_town` recovered the owner while that practice mob was still inside its server-owned dead interval after a combined last-hit, later owner-side `TARGET` / `ATTACK` stay fail-closed on the town map and after relocate-back until the dummy respawns; relocate-back rematerializes the still-dead dummy with ordinary add/info/update plus trailing `GC DEAD(dummy_vid)`, then rematerializes the still-pending kill-reward handle with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP`, and ordinary owner `ITEM_PICKUP` succeeds while the dummy is still dead (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartTownRematerializesKillRewardDropOnSourceMapReselect`)
 
 ## Post-restart busy-window / exchange recovery
 

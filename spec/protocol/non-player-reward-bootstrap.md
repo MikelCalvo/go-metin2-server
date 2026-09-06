@@ -193,6 +193,7 @@ The current runtime test coverage explicitly freezes the combined descriptor cas
 - the player runtime's scalar reward helper intentionally ignores `reward_drop_vnums` while applying EXP/gold, so combined descriptors are not rejected merely because a separate drop channel is present
 - the drop is registered as a runtime ground item after the same accepted kill and remains non-persistent until pickup
 - when that same accepted killing hit also floors the owner, same-socket `/restart_here` rematerializes the still-pending drop with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` persists inventory (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
+- the same combined last-hit also keeps that pending source-map handle registered across same-socket `/restart_town` (transfer, not Leave): town recovery tears it down with `ITEM_GROUND_DEL` and rematerializes `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` only after relocate-back into source visibility, then ordinary owner `ITEM_PICKUP` persists inventory (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartTownRematerializesKillRewardDropOnSourceMapReselect`)
 
 This regression coverage matters because scalar persistence and drop registration use different runtime seams.
 A combined descriptor must not accidentally suppress one reward family just because the other family is present.
@@ -207,6 +208,7 @@ The repository can now say:
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
 - a combined last-hit that also floors the owner still emits those reward frames before the owner-floor suffix and still persists scalar EXP/gold plus HP `0`
 - same-socket `/restart_here` after that combined last-hit rematerializes still-pending kill-reward ground handles with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` succeeds (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
+- same-socket `/restart_town` after that combined last-hit keeps the source-map handle registered, tears it down from town visibility, rematerializes it on source-map relocate-back, then ordinary owner `ITEM_PICKUP` succeeds (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartTownRematerializesKillRewardDropOnSourceMapReselect`)
 - accepted non-player death is preserved even when reward application fails
 - scalar rewards persist before their point-change frames are emitted
 - item drops become owned ground items only after the currently loaded item-template metadata allows that reward drop for the selected killer, and persist to inventory only through the normal pickup path
