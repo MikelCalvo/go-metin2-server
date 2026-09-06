@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,6 +52,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	groundItemPath := filepath.Join(root, "ground-items", "ground-items.json")
 	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
 	backupBase := filepath.Join(root, "backups")
+	binDir := filepath.Join(root, "bin")
 	mustMkdirAll(t, accountDir)
 	mustMkdirAll(t, loginTicketDir)
 	mustMkdirAll(t, filepath.Dir(staticActorPath))
@@ -62,6 +62,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	mustMkdirAll(t, filepath.Dir(groundItemPath))
 	mustMkdirAll(t, filepath.Dir(safeboxPath))
 	mustMkdirAll(t, backupBase)
+	mustMkdirAll(t, binDir)
 
 	accounts := accountstore.NewFileStore(accountDir)
 	if err := accounts.Save(accountstore.Account{
@@ -139,6 +140,8 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	}
 	mustWriteFile(t, buildInfoPath, buildInfoRaw)
 
+	migrateBin := mustBuildMetin2Migrate(t, binDir)
+
 	var printerOut bytes.Buffer
 	var printerErr bytes.Buffer
 	code := migratecli.Run(
@@ -172,7 +175,12 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		}
 	}
 
-	stdout, stderr, exitCode := runPrintedShellScript(t, script)
+	pathEnv := filepath.Dir(migrateBin) + string(os.PathListSeparator) + "/usr/local/bin:/usr/bin:/bin"
+	stdout, stderr, exitCode := runPrintedShellScriptWithEnv(t, script, []string{
+		"PATH=" + pathEnv,
+		"HOME=" + root,
+		"TMPDIR=" + root,
+	})
 	if exitCode != 0 {
 		t.Fatalf("expected printed drill script exit 0, got %d stdout=%q stderr=%q", exitCode, stdout, stderr)
 	}
@@ -197,11 +205,13 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"persistence-status-before.json",
 		"persistence-status-after.json",
 		"notes.md",
+		"backup-tree-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
 	assertRegularFileExists(t, filepath.Join(retentionTree, "accounts", accountstore.BackupManifestFilename))
 	assertRegularFileExists(t, filepath.Join(retentionTree, "safebox", safeboxstore.BackupManifestFilename))
+	assertBackupTreeStatusComplete(t, retentionTree)
 
 	assertDirExists(t, accountDir+".aside-"+retentionTreeTimestamp(t, retentionTree))
 	assertDirExists(t, filepath.Dir(safeboxPath)+".aside-"+retentionTreeTimestamp(t, retentionTree))
@@ -276,25 +286,6 @@ func mustWriteFile(t *testing.T, path string, body []byte) {
 	}
 }
 
-func runPrintedShellScript(t *testing.T, script string) (stdout string, stderr string, code int) {
-	t.Helper()
-	cmd := exec.Command("/bin/sh", "-s")
-	cmd.Stdin = strings.NewReader(script)
-	var outBuf bytes.Buffer
-	var errBuf bytes.Buffer
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	if err == nil {
-		return outBuf.String(), errBuf.String(), 0
-	}
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("expected ExitError from printed script, got %v", err)
-	}
-	return outBuf.String(), errBuf.String(), exitErr.ExitCode()
-}
-
 func mustFindSingleRetentionTree(t *testing.T, backupBase, commit12 string) string {
 	t.Helper()
 	entries, err := os.ReadDir(backupBase)
@@ -316,6 +307,42 @@ func mustFindSingleRetentionTree(t *testing.T, backupBase, commit12 string) stri
 		t.Fatalf("expected exactly one retention tree ending with %q under %s, got %#v", suffix, backupBase, matches)
 	}
 	return matches[0]
+}
+
+func assertBackupTreeStatusComplete(t *testing.T, retentionTree string) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(retentionTree, "backup-tree-status.json"))
+	if err != nil {
+		t.Fatalf("read backup-tree-status.json: %v", err)
+	}
+	var got struct {
+		Format            string `json:"format"`
+		Present           bool   `json:"present"`
+		StoreCount        int    `json:"store_count"`
+		StorePresentCount int    `json:"store_present_count"`
+		StoresComplete    bool   `json:"stores_complete"`
+		Stores            []struct {
+			Kind         string `json:"kind"`
+			Present      bool   `json:"present"`
+			Valid        bool   `json:"valid"`
+			AccountCount int    `json:"account_count"`
+		} `json:"stores"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode backup-tree-status.json: %v\nbody:\n%s", err, raw)
+	}
+	if got.Format != "go-metin2-backup-tree-status-v1" || !got.Present || !got.StoresComplete || got.StoreCount != 8 || got.StorePresentCount != 8 || len(got.Stores) != 8 {
+		t.Fatalf("unexpected backup-tree-status.json envelope: %#v", got)
+	}
+	if got.Stores[0].Kind != "accounts" || !got.Stores[0].Present || !got.Stores[0].Valid || got.Stores[0].AccountCount != 1 {
+		t.Fatalf("expected seeded accounts store in backup-tree-status.json, got %#v", got.Stores[0])
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"drill-owner", "DrillHero", "CREATE TABLE", "postgres://", "mysql://", "DSN=", `"logins"`, `"login_keys"`} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("backup-tree-status.json must not expose %q, got %s", forbidden, body)
+		}
+	}
 }
 
 func retentionTreeTimestamp(t *testing.T, retentionTree string) string {

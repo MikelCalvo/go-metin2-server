@@ -136,6 +136,10 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 		`$BASE/safebox`,
 		`"$OPS/local/account-store/backup/validate"`,
 		`"$OPS/local/safebox-store/backup/validate"`,
+		`echo '== backup-tree status =='`,
+		`metin2-migrate backup-tree-status --backup-tree "$BASE"`,
+		`--require-stores-complete`,
+		`> "$BASE/backup-tree-status.json"`,
 		`"$OPS/local/item-templates/restore"`,
 		`"$OPS/local/ground-item-store/restore"`,
 		`"$OPS/local/safebox-store/restore"`,
@@ -169,14 +173,16 @@ func TestRunBackupRestoreDrillPrintsLabRetentionCommands(t *testing.T) {
 	idxCrashCleanup := strings.Index(body, `"$OPS/local/account-store/crash-temps/cleanup"`)
 	idxBackup := strings.Index(body, `"$OPS/local/account-store/backup"`)
 	idxBackupValidate := strings.Index(body, `"$OPS/local/account-store/backup/validate"`)
+	idxBackupTreeStatus := strings.Index(body, `metin2-migrate backup-tree-status --backup-tree "$BASE"`)
+	idxAsideRename := strings.Index(body, `mv "$ACCOUNT_STORE_DIR"`)
 	idxRestore := strings.Index(body, `"$OPS/local/item-templates/restore"`)
 	idxStatusAfter := strings.Index(body, `> "$BASE/persistence-status-after.json"`)
-	if idxGamedBuild < 0 || idxAuthdBuild < 0 || idxRuntimeRetain < 0 || idxStatusBefore < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxRestore < 0 || idxStatusAfter < 0 {
+	if idxGamedBuild < 0 || idxAuthdBuild < 0 || idxRuntimeRetain < 0 || idxStatusBefore < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxStoreValidate < 0 || idxCrashCleanup < 0 || idxBackup < 0 || idxBackupValidate < 0 || idxBackupTreeStatus < 0 || idxAsideRename < 0 || idxRestore < 0 || idxStatusAfter < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxGamedBuild < idxAuthdBuild && idxAuthdBuild < idxRuntimeRetain && idxRuntimeRetain < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxRestore && idxRestore < idxStatusAfter) {
-		t.Fatalf("expected gamed/authd build-info -> runtime-config -> status-before -> daemon logs -> notes -> validate -> cleanup -> backup -> backup validate -> restore -> status-after ordering, got idxs gamed=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d validate=%d cleanup=%d backup=%d backupValidate=%d restore=%d after=%d\n%s",
-			idxGamedBuild, idxAuthdBuild, idxRuntimeRetain, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxRestore, idxStatusAfter, body)
+	if !(idxGamedBuild < idxAuthdBuild && idxAuthdBuild < idxRuntimeRetain && idxRuntimeRetain < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxStoreValidate && idxStoreValidate < idxCrashCleanup && idxCrashCleanup < idxBackup && idxBackup < idxBackupValidate && idxBackupValidate < idxBackupTreeStatus && idxBackupTreeStatus < idxAsideRename && idxAsideRename < idxRestore && idxRestore < idxStatusAfter) {
+		t.Fatalf("expected gamed/authd build-info -> runtime-config -> status-before -> daemon logs -> notes -> validate -> cleanup -> backup -> backup validate -> backup-tree-status -> aside-rename -> restore -> status-after ordering, got idxs gamed=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d validate=%d cleanup=%d backup=%d backupValidate=%d backupTreeStatus=%d aside=%d restore=%d after=%d\n%s",
+			idxGamedBuild, idxAuthdBuild, idxRuntimeRetain, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxStoreValidate, idxCrashCleanup, idxBackup, idxBackupValidate, idxBackupTreeStatus, idxAsideRename, idxRestore, idxStatusAfter, body)
 	}
 	idxStaticActorValidate := strings.Index(body, `"$OPS/local/static-actor-store/validate"`)
 	idxStaticActorsBackup := strings.Index(body, `"$OPS/local/static-actors/backup"`)

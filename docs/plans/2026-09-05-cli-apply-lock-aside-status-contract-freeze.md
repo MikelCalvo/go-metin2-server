@@ -320,7 +320,7 @@ GREEN on `lane/persistence`.
   confirmation-gated aside-rename echo and still does **not** auto-run
   aside-rename or aside-status under `set -eu`.
 - Upsert / auto-run / stock production driver / cascade-delete remain deferred.
-- Follow-up owned separately: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
+- Follow-up owned separately and now GREEN: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

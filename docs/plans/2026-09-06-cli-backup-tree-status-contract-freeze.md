@@ -350,7 +350,24 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/persistence`. GREEN is the next commit.
+GREEN on `lane/persistence`.
+
+- Read-only `metin2-migrate backup-tree-status --backup-tree <absolute-path>
+  [--require-stores-complete]` re-validates a retained `backup-restore-drill`
+  tree without restoring, emptying live stores, opening a database, or
+  walking live gamed FileStores.
+- Outer envelope is `go-metin2-backup-tree-status-v1`; missing path is
+  ungated `present: false`; present trees walk the eight lab store subdirs
+  through existing `ValidateBackupFrom` seams and report checksums / counts
+  without identity slices.
+- `backup-restore-drill` prints a matching
+  `backup-tree-status --require-stores-complete` redirect to
+  `$BASE/backup-tree-status.json` after backup/validate and before
+  aside-rename / restore.
+- Hermetic `/bin/sh` backup-restore drill HTTP proof now puts
+  `metin2-migrate` on `PATH` and asserts that retained JSON.
+- Upsert / auto-run / stock production driver / cascade-delete /
+  `backup-tree-status-status` / `--require-no-crash-temps` remain deferred.
 
 ## Exit criteria for this freeze
 
@@ -373,3 +390,5 @@ Frozen on `lane/persistence`. GREEN is the next commit.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
 - Do not list `backup-tree-status.json` in lab topology or add a
   working CLI example until GREEN actually produces the command.
+  GREEN now owns that listing, the backup-restore-drill redirect, and
+  the hermetic `/bin/sh` PATH proof.
