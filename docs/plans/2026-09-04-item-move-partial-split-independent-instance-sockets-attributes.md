@@ -51,10 +51,16 @@ merchant buy.
    destination split) must project presence-aware instance sockets/attributes
    via ordinary `EffectiveSockets` / `EffectiveAttributes`.
 4. **Persistence**: the selected-character account snapshot after the successful
-   move must round-trip independent presence-aware fields for both the remainder
-   and the split (including explicit zero).
+   move must round-trip presence-aware fields for both the remainder and the
+   split (including explicit zero). Destination independence is owned here;
+   remainder pointer independence is frozen separately in
+   `docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`.
 5. **Source remainder**: the source cell keeps its existing presence pointers
-   (count-only mutation); only the new destination identity must clone.
+   (count-only mutation) **in this destination-clone slice**; only the new
+   destination identity must clone here. Remainder independence is frozen
+   separately in
+   `docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`
+   and stays the next GREEN twin.
 6. **Non-goals**: whole-stack empty-destination relocate (already
    identity-preserving), compatible partial/whole merge (already destination-
    wins count-only), refine catalysts / mall / party ownership notices, or
@@ -101,4 +107,7 @@ identity so later source/destination writes cannot alias
 `TestGameRuntimeItemMoveCountedPartialSplitClonesInstanceSocketsAndAttributesIndependently`,
 `TestGameRuntimeItemMoveCountedPartialSplitOmitsInstancePresenceIndependently`).
 Compatible merge stays destination-wins count-only; whole-stack empty move stays
-identity-preserving. Refine catalysts / mall / party ownership remain deferred.
+identity-preserving. Empty-destination split remainder independence is the next
+honesty seam
+(`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
+Refine catalysts / mall / party ownership remain deferred.

@@ -123,5 +123,7 @@ FileStore rematerialize, and same-session reopen, while the destination
 stays a fresh identity plus its already-owned independent clone
 (`TestSafeboxPartialSplitRemainderItemClonesPresenceIndependently`,
 `TestGameRuntimeSafeboxItemMovePartialSplitPreservesInstanceSocketsAndAttributes`).
-Carried `ITEM_MOVE` split remainder pointers stay the next honesty seam.
+Carried `ITEM_MOVE` split remainder independence is frozen as the next
+honesty seam
+(`docs/plans/2026-09-06-item-move-partial-split-remainder-preserve-instance-sockets-attributes.md`).
 Refine catalysts / mall / party ownership remain deferred.
