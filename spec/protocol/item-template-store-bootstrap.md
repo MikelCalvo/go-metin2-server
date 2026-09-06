@@ -109,7 +109,7 @@ If the default item-template file is missing, the minimal runtime still uses the
 - `12200` practice blade equipment point metadata
 - `27001` small red potion stack, merchant price, and use-effect metadata
 
-Missing-file fallback is a bootstrap compatibility aid, not the final production item-data model.
+Checked-in PvE/NPC-service example bundles now also author those same `11200.equip_slot` and `27001.use_effect` fields so content-bundle import no longer strips the playable use/equip vertical back to shop-only rows. Missing-file fallback remains a bootstrap compatibility aid, not the final production item-data model.
 
 Malformed snapshots, missing or `null` top-level template collections, invalid templates, duplicate `vnum` entries, stackable templates that also author `equip_slot`, snapshots with unknown JSON fields, and snapshots with trailing JSON values are fatal for runtime construction.
 

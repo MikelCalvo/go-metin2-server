@@ -6398,6 +6398,13 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	if !reflect.DeepEqual(canonical.SpawnGroups, wantSpawn) {
 		t.Fatalf("unexpected canonical PvE vertical spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, wantSpawn)
 	}
+	wantTemplates := []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+	}
+	if !reflect.DeepEqual(canonical.ItemTemplates, wantTemplates) {
+		t.Fatalf("unexpected canonical PvE vertical item templates:\n got: %#v\nwant: %#v", canonical.ItemTemplates, wantTemplates)
+	}
 	summary, err := Summarize(canonical)
 	if err != nil {
 		t.Fatalf("summarize canonical PvE vertical authoring example: %v", err)

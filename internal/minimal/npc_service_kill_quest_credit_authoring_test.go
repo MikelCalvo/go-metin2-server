@@ -215,6 +215,17 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if !reflect.DeepEqual(gotItemVnums, wantItemVnums) {
 		t.Fatalf("unexpected imported NPC service item templates: %#v", imported.ItemTemplates)
 	}
+	byVnum := make(map[uint32]itemcatalog.Template, len(imported.ItemTemplates))
+	for _, template := range imported.ItemTemplates {
+		byVnum[template.Vnum] = template
+	}
+	if byVnum[11200].EquipSlot != "weapon" || byVnum[11200].UseEffect != nil {
+		t.Fatalf("expected imported NPC service 11200 to author weapon equip_slot, got %+v", byVnum[11200])
+	}
+	wantPotionEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}
+	if byVnum[27001].EquipSlot != "" || !reflect.DeepEqual(byVnum[27001].UseEffect, wantPotionEffect) {
+		t.Fatalf("expected imported NPC service 27001 to author use_effect, got %+v", byVnum[27001])
+	}
 
 	actors := runtime.StaticActors()
 	if len(actors) != 10 {

@@ -13,6 +13,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
@@ -103,6 +104,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 || imported.CombatProfiles[0].ChaseDelayMs != 2000 || imported.CombatProfiles[0].ReturnDelayMs != 2000 || imported.CombatProfiles[0].HomewardDelayMs != 2000 || imported.CombatProfiles[0].MaxStep != 50 || imported.CombatProfiles[0].ReactionDelayMs != 2000 || imported.CombatProfiles[0].RetaliationPointDelta != -2 {
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
+	assertPveVerticalAuthoredUseAndEquipTemplates(t, imported.ItemTemplates, "imported PvE vertical authoring bundle")
 
 	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
 	var foundPackMembers int
@@ -697,6 +699,122 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[1].Vnum != pveVerticalMerchantPotionVnum {
 		t.Fatalf("expected stale merchant buy to leave post-buy inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
+	swordID := inventorySnapshot.Inventory[0].ID
+	_ = flushServerFrames(t, flow)
+
+	beforeUsePoints, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected points snapshot before authored potion ITEM_USE")
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account before authored potion ITEM_USE: %v", err)
+	}
+	wantHPAfterUse := beforeUsePoints.Points[bootstrapPlayerPointValueIndex] + 50
+	wantPersistedHPAfterUse := account.Characters[0].Points[bootstrapPlayerPointValueIndex] + 50
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(1)})))
+	if err != nil {
+		t.Fatalf("unexpected authored potion ITEM_USE: %v", err)
+	}
+	if len(useOut) != 4 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, and info chat for last-stack authored potion, got %d", len(useOut))
+	}
+	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored potion ITEM_USE echo: %v", err)
+	}
+	if useEcho.Position != itemproto.InventoryPosition(1) || useEcho.CharacterVID != hero.VID || useEcho.VictimVID != hero.VID || useEcho.Vnum != pveVerticalMerchantPotionVnum {
+		t.Fatalf("unexpected authored potion ITEM_USE echo: %+v", useEcho)
+	}
+	usePoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, useOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored potion point-change: %v", err)
+	}
+	if usePoint.VID != hero.VID || usePoint.Type != bootstrapPlayerPointType || usePoint.Amount != 50 || usePoint.Value != wantHPAfterUse {
+		t.Fatalf("unexpected authored potion point-change: %+v want value=%d", usePoint, wantHPAfterUse)
+	}
+	useDel, err := itemproto.DecodeDel(decodeSingleFrame(t, useOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored potion ITEM_DEL: %v", err)
+	}
+	if useDel.Position != itemproto.InventoryPosition(1) {
+		t.Fatalf("unexpected authored potion ITEM_DEL: %+v", useDel)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, useOut[3:], "consume:27001:+50", "authored potion ITEM_USE")
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterUse {
+		t.Fatalf("expected live HP %d after authored potion ITEM_USE, got ok=%v snapshot=%+v", wantHPAfterUse, ok, pointsSnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != swordID || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory to keep only the turn-in sword after authored potion ITEM_USE, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored potion ITEM_USE: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterUse {
+		t.Fatalf("expected persisted HP %d after authored potion ITEM_USE (live=%d), got %d", wantPersistedHPAfterUse, wantHPAfterUse, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != swordID || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Slot != 0 {
+		t.Fatalf("expected persisted inventory to keep only the turn-in sword after authored potion ITEM_USE, got %+v", account.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterReset, "authored potion ITEM_USE")
+
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build weapon equipment position: %v", err)
+	}
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(0),
+		Destination: weaponPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword ITEM_MOVE equip: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, and CHARACTER_UPDATE for empty-weapon authored equip, got %d", len(equipOut))
+	}
+	equipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, equipOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip ITEM_DEL: %v", err)
+	}
+	if equipDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored sword equip ITEM_DEL: %+v", equipDel)
+	}
+	equipSet, err := itemproto.DecodeSet(decodeSingleFrame(t, equipOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword equipment ITEM_SET: %v", err)
+	}
+	if equipSet.Position != weaponPosition || equipSet.Vnum != 11200 || equipSet.Count != 1 {
+		t.Fatalf("unexpected authored sword equipment ITEM_SET: %+v", equipSet)
+	}
+	appearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword CHARACTER_UPDATE: %v", err)
+	}
+	if appearance.VID != hero.VID || appearance.Parts[0] != hero.MainPart || appearance.Parts[1] != 11200 || appearance.Parts[3] != hero.HairPart {
+		t.Fatalf("unexpected authored sword CHARACTER_UPDATE: %+v want vid=%d parts[0]=%d parts[1]=11200 parts[3]=%d", appearance, hero.VID, hero.MainPart, hero.HairPart)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected live inventory empty after authored sword equip, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != swordID || equipmentSnapshot.Equipment[0].Vnum != 11200 || equipmentSnapshot.Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon.String() {
+		t.Fatalf("expected live weapon equipment after authored sword equip, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored sword equip: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 {
+		t.Fatalf("expected persisted inventory empty after authored sword equip, got %+v", account.Characters[0].Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].ID != swordID || account.Characters[0].Equipment[0].Vnum != 11200 || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
+		t.Fatalf("expected persisted weapon equipment after authored sword equip, got %+v", account.Characters[0].Equipment)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterReset, "authored sword equip")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	assertPveVerticalGatedMismatch(t, flow, merchantVID, "revoked Merchant")
@@ -853,4 +971,109 @@ func assertPveVerticalFormulaFirstHitFrames(t *testing.T, frames [][]byte, mobVI
 	}
 	assertDamageInfoFrame(t, frames[2], mobVID, wantMobDamage, context+" mob damage-info")
 	assertDamageInfoFrame(t, frames[3], ownerVID, -pveVerticalMobRetaliationDelta, context+" owner retaliation damage-info")
+}
+
+func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []itemcatalog.Template, context string) {
+	t.Helper()
+	byVnum := make(map[uint32]itemcatalog.Template, len(templates))
+	for _, template := range templates {
+		byVnum[template.Vnum] = template
+	}
+	sword, ok := byVnum[11200]
+	if !ok || sword.Name != "Wooden Sword" || sword.Stackable || sword.MaxCount != 1 || sword.ShopSellPrice != 100 || sword.EquipSlot != inventory.EquipmentSlotWeapon.String() || sword.UseEffect != nil {
+		t.Fatalf("expected %s 11200 to author weapon equip_slot without use_effect, got %+v", context, sword)
+	}
+	potion, ok := byVnum[27001]
+	if !ok || potion.Name != "Small Red Potion" || !potion.Stackable || potion.MaxCount != 200 || potion.ShopBuyPrice != 5 || potion.ShopSellPrice != 2 || potion.EquipSlot != "" || potion.UseEffect == nil {
+		t.Fatalf("expected %s 27001 to author use_effect without equip_slot, got %+v", context, potion)
+	}
+	wantEffect := &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}
+	if !reflect.DeepEqual(potion.UseEffect, wantEffect) {
+		t.Fatalf("unexpected %s 27001 use_effect: got %+v want %+v", context, potion.UseEffect, wantEffect)
+	}
+}
+
+func TestPveVerticalTemplateBackedUseAndEquipFailClosedWithoutAuthoredMetadata(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030161, 0x02040161, 469500, 964200, 0, 101, 201)
+	hero.Inventory = []inventory.ItemInstance{
+		{ID: 11, Vnum: 11200, Count: 1, Slot: 0},
+		{ID: 12, Vnum: 27001, Count: 1, Slot: 1},
+	}
+	issuePeerTicket(t, ticketStore, "pve-vertical-fail-closed", 0x61616161, hero)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "pve-vertical-fail-closed", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
+		t.Fatalf("seed PvE vertical fail-closed account: %v", err)
+	}
+	itemStore := itemcatalog.NewFileStore(filepath.Join(t.TempDir(), "item-templates.json"))
+	if err := itemStore.Save(itemcatalog.Snapshot{Templates: []itemcatalog.Template{
+		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2},
+	}}); err != nil {
+		t.Fatalf("seed shop-only PvE templates: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemStore,
+		queststate.NewMemoryStore(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new PvE vertical fail-closed runtime: %v", err)
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical-fail-closed", 0x61616161)
+	defer closeSessionFlow(t, flow)
+
+	useOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(1)})))
+	if err != nil {
+		t.Fatalf("unexpected missing-use_effect ITEM_USE: %v", err)
+	}
+	if len(useOut) != 0 {
+		t.Fatalf("expected missing-use_effect ITEM_USE to emit no frames, got %d", len(useOut))
+	}
+	weaponPosition, err := itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build weapon equipment position: %v", err)
+	}
+	equipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(0),
+		Destination: weaponPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected missing-equip_slot ITEM_MOVE: %v", err)
+	}
+	if len(equipOut) != 0 {
+		t.Fatalf("expected missing-equip_slot ITEM_MOVE to emit no frames, got %d", len(equipOut))
+	}
+
+	pointsSnapshot, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != hero.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected missing-use_effect ITEM_USE to leave HP unchanged, got ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 2 || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[1].Vnum != 27001 {
+		t.Fatalf("expected fail-closed use/equip to leave live inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 0 {
+		t.Fatalf("expected fail-closed weapon equip to leave equipment empty, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+	account, err := accounts.Load("pve-vertical-fail-closed")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical fail-closed account: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != hero.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected persisted HP unchanged after fail-closed use/equip, got %d", account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, hero.Inventory) {
+		t.Fatalf("expected persisted inventory unchanged after fail-closed use/equip, got %+v want %+v", account.Characters[0].Inventory, hero.Inventory)
+	}
+	if len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted equipment empty after fail-closed weapon equip, got %+v", account.Characters[0].Equipment)
+	}
 }
