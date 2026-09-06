@@ -3414,6 +3414,11 @@ func TestRuntimeSafeboxCheckinItemRejectsAntiSafeboxAndMalformedWithoutMutation(
 			inventory: []inventory.ItemInstance{{ID: 115, Vnum: 71124, Count: 2, Slot: 8}},
 			template:  itemcatalog.Template{Vnum: 71124, Name: "Tiny Charm", Stackable: false, MaxCount: 1},
 		},
+		{
+			name:      "equipped carried slot",
+			inventory: []inventory.ItemInstance{{ID: 116, Vnum: 11200, Count: 1, Slot: 8, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon}},
+			template:  itemcatalog.Template{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), ShopSellPrice: 100},
+		},
 	}
 
 	for _, tc := range cases {

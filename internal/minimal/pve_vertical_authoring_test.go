@@ -852,23 +852,59 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "merchant reopen after QuestGuide re-unlock")
 	_ = flushServerFrames(t, flow)
 
-	equippedSellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
+	closeShopOut, err = flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
 	if err != nil {
-		t.Fatalf("unexpected SHOP SELL while sword is still equipped: %v", err)
+		t.Fatalf("unexpected merchant close before lab /open_safebox: %v", err)
 	}
-	if len(equippedSellOut) != 1 {
-		t.Fatalf("expected 1 INVALID_POS frame for SHOP SELL while sword is equipped, got %d", len(equippedSellOut))
+	if len(closeShopOut) != 1 {
+		t.Fatalf("expected 1 merchant close frame before lab /open_safebox, got %d", len(closeShopOut))
 	}
-	if err := shopproto.DecodeServerInvalidPos(decodeSingleFrame(t, equippedSellOut[0])); err != nil {
-		t.Fatalf("decode equipped-sword SHOP SELL invalid-pos: %v", err)
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, closeShopOut[0])); err != nil {
+		t.Fatalf("decode merchant close before lab /open_safebox: %v", err)
+	}
+
+	labOpenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected lab /open_safebox after QuestGuide re-unlock: %v", err)
+	}
+	if len(labOpenOut) != 2 {
+		t.Fatalf("expected SAFEBOX_SIZE and SAFEBOX_MONEY_CHANGE after lab /open_safebox, got %d", len(labOpenOut))
+	}
+	labSize, err := itemproto.DecodeSafeboxSize(decodeSingleFrame(t, labOpenOut[0]))
+	if err != nil {
+		t.Fatalf("decode lab /open_safebox SAFEBOX_SIZE: %v", err)
+	}
+	if labSize != (itemproto.SafeboxSizePacket{Size: 1}) {
+		t.Fatalf("unexpected lab /open_safebox SAFEBOX_SIZE: %+v", labSize)
+	}
+	labMoney, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, labOpenOut[1]))
+	if err != nil {
+		t.Fatalf("decode lab /open_safebox SAFEBOX_MONEY_CHANGE: %v", err)
+	}
+	if labMoney != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+		t.Fatalf("unexpected lab /open_safebox SAFEBOX_MONEY_CHANGE: %+v", labMoney)
+	}
+
+	equippedCheckinOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected SAFEBOX_CHECKIN while sword is still equipped: %v", err)
+	}
+	if len(equippedCheckinOut) != 0 {
+		t.Fatalf("expected SAFEBOX_CHECKIN while sword is equipped to emit no frames, got %d", len(equippedCheckinOut))
 	}
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
 	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
-		t.Fatalf("expected equipped-sword SHOP SELL to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
+		t.Fatalf("expected equipped-sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
 	}
 	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
 	if !ok || len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != swordID || equipmentSnapshot.Equipment[0].Vnum != 11200 {
-		t.Fatalf("expected equipped-sword SHOP SELL to leave weapon worn, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+		t.Fatalf("expected equipped-sword SAFEBOX_CHECKIN to leave weapon worn, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
 	}
 
 	weaponPosition, err = itemproto.EquipmentPosition(4)
@@ -906,13 +942,84 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if unequipAppearance.VID != hero.VID || unequipAppearance.Parts[1] != 0 {
 		t.Fatalf("expected authored sword unequip to clear weapon appearance, got %+v", unequipAppearance)
 	}
+
+	checkinOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword SAFEBOX_CHECKIN: %v", err)
+	}
+	if len(checkinOut) != 2 {
+		t.Fatalf("expected ITEM_DEL and SAFEBOX_SET for authored sword SAFEBOX_CHECKIN, got %d", len(checkinOut))
+	}
+	checkinDel, err := itemproto.DecodeDel(decodeSingleFrame(t, checkinOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword SAFEBOX_CHECKIN ITEM_DEL: %v", err)
+	}
+	if checkinDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored sword SAFEBOX_CHECKIN ITEM_DEL: %+v", checkinDel)
+	}
+	checkinSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, checkinOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword SAFEBOX_SET: %v", err)
+	}
+	if checkinSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) || checkinSet.Vnum != 11200 || checkinSet.Count != 1 {
+		t.Fatalf("unexpected authored sword SAFEBOX_SET: %+v", checkinSet)
+	}
 	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
-	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != swordID || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Slot != 0 {
-		t.Fatalf("expected live inventory to hold unequipped sword, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected live inventory empty after authored sword SAFEBOX_CHECKIN, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
 	if !ok || len(equipmentSnapshot.Equipment) != 0 {
-		t.Fatalf("expected live equipment empty after authored sword unequip, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+		t.Fatalf("expected live equipment empty after authored sword SAFEBOX_CHECKIN, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterBuy {
+		t.Fatalf("expected authored sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterBuy, ok, currencySnapshot)
+	}
+
+	checkoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword SAFEBOX_CHECKOUT: %v", err)
+	}
+	if len(checkoutOut) != 2 {
+		t.Fatalf("expected SAFEBOX_DEL and ITEM_SET for authored sword SAFEBOX_CHECKOUT, got %d", len(checkoutOut))
+	}
+	checkoutDel, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, checkoutOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword SAFEBOX_DEL: %v", err)
+	}
+	if checkoutDel.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected authored sword SAFEBOX_DEL: %+v", checkoutDel)
+	}
+	checkoutSet, err := itemproto.DecodeSet(decodeSingleFrame(t, checkoutOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword checkout ITEM_SET: %v", err)
+	}
+	if checkoutSet.Position != itemproto.InventoryPosition(0) || checkoutSet.Vnum != 11200 || checkoutSet.Count != 1 {
+		t.Fatalf("unexpected authored sword checkout ITEM_SET: %+v", checkoutSet)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != swordID || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory to hold checked-out sword, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+
+	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before authored sword SHOP SELL")
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	merchantReopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
+	if err != nil {
+		t.Fatalf("unexpected merchant reopen after warehouse checkout: %v", err)
+	}
+	if len(merchantReopenOut) != 1 {
+		t.Fatalf("expected 1 merchant shop-open frame after warehouse checkout, got %d", len(merchantReopenOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, merchantReopenOut[0])); err != nil {
+		t.Fatalf("decode merchant shop start after warehouse checkout: %v", err)
 	}
 
 	const pveVerticalSwordSellPrice = int32(100)
