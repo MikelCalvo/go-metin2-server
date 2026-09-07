@@ -159,6 +159,10 @@ catalog slot `2` (`27002 x2` @ `20g`) from gated `Merchant`, then binds
 that stacked cell after authored `INTERACT` (`cube open 20022`) with
 `/cube add 0 0` → `cube info 100 0 0` and no further gold/inventory
 mutation (`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`).
+The composed PvE vertical gameplay proof now also packet-buys that same
+catalog slot after authored sword `SHOP SELL`, then binds `/cube add 0 0`
+on the second authored `CubeMaster` window
+(`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`).
 
 See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.
@@ -207,8 +211,13 @@ bound stacked cell through `/cube make` after authored `INTERACT`,
 grants `27001 x1`, debits `20` gold on the buy plus `100` gold on the
 craft, and persists the same live snapshot
 (`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`). The
-composed PvE vertical gameplay proof still stops at non-mutating `r_info`
-/ `m_info`.
+composed PvE vertical gameplay proof now also packet-buys catalog slot
+`2` after authored sword `SHOP SELL`, then `/cube add 0 0` / `/cube make`
+on a second authored `CubeMaster` window, grants `27001 x1`, and persists
+the same live snapshot
+(`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`). The
+first composed CubeMaster inspect still stays non-mutating `r_info` /
+`m_info` because inventory is empty and gold is too low for materials.
 
 See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 `docs/plans/2026-08-25-cube-make-percent-100-implementation.md`,

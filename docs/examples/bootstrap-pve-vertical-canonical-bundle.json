@@ -179,7 +179,8 @@
       "vnum": 27002,
       "name": "Small Blue Potion",
       "stackable": true,
-      "max_count": 200
+      "max_count": 200,
+      "shop_buy_price": 10
     }
   ],
   "cube_recipes": [
@@ -293,6 +294,12 @@
           "item_vnum": 11200,
           "price": 500,
           "count": 1
+        },
+        {
+          "slot": 2,
+          "item_vnum": 27002,
+          "price": 20,
+          "count": 2
         }
       ],
       "quest_ref": "quest:first_steps",

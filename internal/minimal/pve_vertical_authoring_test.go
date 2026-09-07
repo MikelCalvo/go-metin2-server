@@ -319,8 +319,18 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(shopOut) != 1 {
 		t.Fatalf("expected 1 merchant shop-open frame after guide unlock, got %d", len(shopOut))
 	}
-	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, shopOut[0])); err != nil {
+	firstShopStart, err := shopproto.DecodeServerStart(decodeSingleFrame(t, shopOut[0]))
+	if err != nil {
 		t.Fatalf("decode unlocked merchant shop start: %v", err)
+	}
+	if firstShopStart.Items[0].Vnum != 27001 || firstShopStart.Items[0].Price != 50 || firstShopStart.Items[0].Count != 1 || firstShopStart.Items[0].DisplayPos != 0 {
+		t.Fatalf("unexpected merchant catalog slot 0: %+v", firstShopStart.Items[0])
+	}
+	if firstShopStart.Items[1].Vnum != 11200 || firstShopStart.Items[1].Price != 500 || firstShopStart.Items[1].Count != 1 || firstShopStart.Items[1].DisplayPos != 1 {
+		t.Fatalf("unexpected merchant catalog slot 1: %+v", firstShopStart.Items[1])
+	}
+	if firstShopStart.Items[2].Vnum != 27002 || firstShopStart.Items[2].Price != 20 || firstShopStart.Items[2].Count != 2 || firstShopStart.Items[2].DisplayPos != 2 {
+		t.Fatalf("unexpected merchant catalog slot 2: %+v", firstShopStart.Items[2])
 	}
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -1387,6 +1397,149 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected persisted inventory/equipment empty after authored sword SHOP SELL, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
 	}
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored sword SHOP SELL")
+
+	const pveVerticalCubeMaterialPrice = uint64(20)
+	wantGoldAfterCubeMaterialBuy := wantGoldAfterSwordSell - pveVerticalCubeMaterialPrice
+	cubeMaterialBuyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 2})))
+	if err != nil {
+		t.Fatalf("unexpected authored cube-material merchant buy error: %v", err)
+	}
+	if len(cubeMaterialBuyOut) != 1 {
+		t.Fatalf("expected 1 item refresh frame for catalog slot 2 merchant buy, got %d", len(cubeMaterialBuyOut))
+	}
+	cubeMaterialSet, err := itemproto.DecodeSet(decodeSingleFrame(t, cubeMaterialBuyOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored cube-material merchant buy item set: %v", err)
+	}
+	if cubeMaterialSet.Position != itemproto.InventoryPosition(0) || cubeMaterialSet.Vnum != 27002 || cubeMaterialSet.Count != 2 {
+		t.Fatalf("unexpected authored cube-material merchant buy item set: %+v", cubeMaterialSet)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterCubeMaterialBuy {
+		t.Fatalf("expected live gold %d after authored cube-material merchant buy, got ok=%v snapshot=%+v", wantGoldAfterCubeMaterialBuy, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 {
+		t.Fatalf("expected live inventory one 27002 stack after authored cube-material merchant buy, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	boughtMaterials := inventorySnapshot.Inventory[0]
+	if boughtMaterials.Vnum != 27002 || boughtMaterials.Count != 2 || boughtMaterials.Slot != 0 || boughtMaterials.ID == 0 {
+		t.Fatalf("unexpected live cube-material inventory after merchant buy: %+v", boughtMaterials)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored cube-material merchant buy: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfterCubeMaterialBuy {
+		t.Fatalf("expected persisted gold %d after authored cube-material merchant buy, got %d", wantGoldAfterCubeMaterialBuy, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != boughtMaterials.ID || account.Characters[0].Inventory[0].Vnum != 27002 || account.Characters[0].Inventory[0].Count != 2 || account.Characters[0].Inventory[0].Slot != 0 {
+		t.Fatalf("expected persisted cube-material inventory after merchant buy, got %+v", account.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube-material merchant buy")
+
+	closeShopAfterCubeMaterialOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientEnd()))
+	if err != nil {
+		t.Fatalf("unexpected merchant close after authored cube-material buy: %v", err)
+	}
+	if len(closeShopAfterCubeMaterialOut) != 1 {
+		t.Fatalf("expected 1 merchant close frame after authored cube-material buy, got %d", len(closeShopAfterCubeMaterialOut))
+	}
+	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, closeShopAfterCubeMaterialOut[0])); err != nil {
+		t.Fatalf("decode merchant shop end after authored cube-material buy: %v", err)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	craftCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: cubeVID})))
+	if err != nil {
+		t.Fatalf("unexpected CubeMaster interaction after authored cube-material buy: %v", err)
+	}
+	if len(craftCubeOut) != 2 {
+		t.Fatalf("expected chat + cube open frames after authored cube-material buy, got %d", len(craftCubeOut))
+	}
+	craftCubeChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, craftCubeOut[0]))
+	if err != nil || craftCubeChat.Type != chatproto.ChatTypeInfo || craftCubeChat.VID != 0 || craftCubeChat.Empire != 0 || craftCubeChat.Message != "The craftsman lights the forge." {
+		t.Fatalf("unexpected authored CubeMaster craft-open chat: %+v err=%v", craftCubeChat, err)
+	}
+	assertCubeCommandChatFrame(t, craftCubeOut[1], "cube open 20022", "pve vertical CubeMaster craft open")
+
+	addOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube add 0 0",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube add 0 0 after authored CubeMaster craft open: %v", err)
+	}
+	if len(addOut) != 1 {
+		t.Fatalf("expected /cube add 0 0 to emit one command chat frame, got %d", len(addOut))
+	}
+	assertCubeCommandChatFrame(t, addOut[0], "cube info 100 0 0", "pve vertical matched stacked cube add")
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterCubeMaterialBuy {
+		t.Fatalf("expected live gold %d after stacked cube add, got ok=%v snapshot=%+v", wantGoldAfterCubeMaterialBuy, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != boughtMaterials.ID || inventorySnapshot.Inventory[0].Vnum != 27002 || inventorySnapshot.Inventory[0].Count != 2 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected stacked cube add to leave cube-material inventory unchanged, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored stacked cube add")
+
+	makeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube make",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /cube make after authored CubeMaster add: %v", err)
+	}
+	if len(makeOut) != 5 {
+		t.Fatalf("expected authored CubeMaster /cube make burst of 5 frames, got %d", len(makeOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, makeOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored cube-make material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored cube-make material delete: %+v", materialDel)
+	}
+	rewardSet, err := itemproto.DecodeSet(decodeSingleFrame(t, makeOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored cube-make reward ITEM_SET: %v", err)
+	}
+	if rewardSet.Position != itemproto.InventoryPosition(0) || rewardSet.Vnum != 27001 || rewardSet.Count != 1 {
+		t.Fatalf("unexpected authored cube-make reward ITEM_SET: %+v", rewardSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, makeOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored cube-make gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	wantGoldAfterCubeMake := wantGoldAfterCubeMaterialBuy - 100
+	if goldChange.VID != hero.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -100 || uint64(goldChange.Value) != wantGoldAfterCubeMake {
+		t.Fatalf("unexpected authored cube-make gold point-change: %+v want value=%d", goldChange, wantGoldAfterCubeMake)
+	}
+	assertCubeCommandChatFrame(t, makeOut[3], cubestore.FormatCubeSuccessCommand(27001, 1), "pve vertical cube make success")
+	assertCubeCommandChatFrame(t, makeOut[4], "cube info 0 0 0", "pve vertical post-make cube info")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected authored CubeMaster /cube make to queue no peer frames, got %d", len(queued))
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterCubeMake {
+		t.Fatalf("expected live gold %d after authored cube make, got ok=%v snapshot=%+v", wantGoldAfterCubeMake, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory one 27001 after authored cube make, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored cube make: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfterCubeMake {
+		t.Fatalf("expected persisted gold %d after authored cube make, got %d", wantGoldAfterCubeMake, account.Characters[0].Gold)
+	}
+	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 0 {
+		t.Fatalf("expected persisted inventory one 27001 after authored cube make, got %+v", account.Characters[0].Inventory)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube make")
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {
@@ -1690,8 +1843,8 @@ func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []ite
 		t.Fatalf("unexpected %s 27001 use_effect: got %+v want %+v", context, potion.UseEffect, wantEffect)
 	}
 	material, ok := byVnum[27002]
-	if !ok || material.Name != "Small Blue Potion" || !material.Stackable || material.MaxCount != 200 {
-		t.Fatalf("expected %s 27002 to author cube material template, got %+v", context, material)
+	if !ok || material.Name != "Small Blue Potion" || !material.Stackable || material.MaxCount != 200 || material.ShopBuyPrice != 10 {
+		t.Fatalf("expected %s 27002 to author cube material template with shop_buy_price 10, got %+v", context, material)
 	}
 }
 

@@ -6526,7 +6526,7 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	wantTemplates := []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
 		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
-		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 10},
 	}
 	if !reflect.DeepEqual(canonical.ItemTemplates, wantTemplates) {
 		t.Fatalf("unexpected canonical PvE vertical item templates:\n got: %#v\nwant: %#v", canonical.ItemTemplates, wantTemplates)
@@ -6595,6 +6595,36 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	}
 	if !reflect.DeepEqual(summary.OpenCubeRoutes, []OpenCubeRouteSummary{wantCube}) {
 		t.Fatalf("unexpected PvE vertical open_cube routes:\n got: %#v\nwant: %#v", summary.OpenCubeRoutes, []OpenCubeRouteSummary{wantCube})
+	}
+	wantShopCatalog := ShopCatalogSummary{
+		Kind:       interactionstore.KindShopPreview,
+		Ref:        "npc:qa_merchant",
+		Title:      "QA Merchant",
+		EntryCount: 3,
+		Entries: []ShopCatalogEntrySummary{
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+			{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
+			{Slot: 2, ItemVnum: 27002, ItemName: "Small Blue Potion", Count: 2, Price: 20, Stackable: true, MaxCount: 200, ShopBuyPrice: 10},
+		},
+	}
+	if !reflect.DeepEqual(summary.ShopCatalogs, []ShopCatalogSummary{wantShopCatalog}) {
+		t.Fatalf("unexpected PvE vertical shop catalogs:\n got: %#v\nwant: %#v", summary.ShopCatalogs, []ShopCatalogSummary{wantShopCatalog})
+	}
+	if len(summary.ShopRoutes) != 1 || summary.ShopRoutes[0].Ref != "npc:qa_merchant" || summary.ShopRoutes[0].EntryCount != 3 {
+		t.Fatalf("unexpected PvE vertical shop routes: %#v", summary.ShopRoutes)
+	}
+	foundMap := false
+	for _, mapSummary := range summary.Maps {
+		if mapSummary.MapIndex != 1 {
+			continue
+		}
+		foundMap = true
+		if mapSummary.ShopCatalogEntryCount != 3 {
+			t.Fatalf("expected map 1 shop_catalog_entry_count=3, got %d", mapSummary.ShopCatalogEntryCount)
+		}
+	}
+	if !foundMap {
+		t.Fatal("expected map 1 summary for PvE vertical authoring example")
 	}
 	if len(canonical.StaticActors) != 9 || len(canonical.InteractionDefinitions) != 9 {
 		t.Fatalf("unexpected canonical PvE vertical counts: actors=%d defs=%d", len(canonical.StaticActors), len(canonical.InteractionDefinitions))
@@ -7047,7 +7077,7 @@ func TestExampleBootstrapPveVerticalAuthoringBundleExportsOnto0013AndQuarantines
 	if export.MigrationVersion != staticstore.StaticActorContentStateMigrationVersion || export.MigrationName != staticstore.StaticActorContentStateMigrationName {
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
-	if len(export.InteractionDefinitions) != 9 || len(export.MerchantCatalogEntries) != 2 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 12 || len(export.RewardDrops) != 1 {
+	if len(export.InteractionDefinitions) != 9 || len(export.MerchantCatalogEntries) != 3 || len(export.QuestFlagRewardItems) != 1 || len(export.QuestFlagConsumeItems) != 1 || len(export.StaticActors) != 12 || len(export.RewardDrops) != 1 {
 		t.Fatalf("unexpected PvE vertical authoring export counts: defs=%d catalog=%d reward_items=%d consume_items=%d actors=%d drops=%d",
 			len(export.InteractionDefinitions), len(export.MerchantCatalogEntries), len(export.QuestFlagRewardItems), len(export.QuestFlagConsumeItems), len(export.StaticActors), len(export.RewardDrops))
 	}
