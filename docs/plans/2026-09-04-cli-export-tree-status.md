@@ -156,6 +156,8 @@ Follow-up owned separately and now GREEN: read-only `backup-tree-status-status` 
 
 Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 
+Follow-up owned separately: freeze-only read-only `persistence-status-status` for retained `persistence-status-*.json` — see [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md). GREEN is follow-on.
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

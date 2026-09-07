@@ -68,3 +68,4 @@ Validation for this slice:
 5. ~~Read-only `backup-tree-status` for retained backup-restore trees.~~ Done — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
 6. ~~Read-only `backup-tree-status-status` for retained `backup-tree-status.json`.~~ Done — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 7. ~~Opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status`.~~ Done — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
+8. Follow-up owned separately: freeze-only read-only `persistence-status-status` for retained `persistence-status-*.json` — see [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md). GREEN is follow-on.
