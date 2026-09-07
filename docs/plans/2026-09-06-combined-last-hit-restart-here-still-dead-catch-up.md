@@ -48,7 +48,12 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- reconnect / `/phase_select` still-dead dummy catch-up after combined last-hit
+- kill-reward rematerialize after `/phase_select` / reconnect (Leave still
+  deletes currently owned ground handles)
+
+Reconnect / `/phase_select` still-dead dummy catch-up after combined last-hit
+is now owned by
+`2026-09-07-combined-last-hit-phase-select-reconnect-still-dead-catch-up.md`.
 
 Kill-reward ground-item catch-up on `/restart_here` is now owned by
 `2026-09-06-combined-last-hit-restart-here-ground-catch-up.md`.
