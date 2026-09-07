@@ -23,6 +23,7 @@ import (
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
+	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
@@ -917,6 +918,21 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	swordID := inventorySnapshot.Inventory[0].ID
 	_ = flushServerFrames(t, flow)
 
+	const (
+		pveVerticalSkillQuickslotPosition  uint8 = 1
+		pveVerticalPotionQuickslotPosition uint8 = 2
+		pveVerticalSwordQuickslotPosition  uint8 = 3
+		pveVerticalSkillQuickslotIndex     uint8 = 1
+	)
+	bindPveVerticalQuickslot(t, flow, runtime, accounts, "pve-vertical", hero.Name, pveVerticalSkillQuickslotPosition, quickslotproto.TypeSkill, pveVerticalSkillQuickslotIndex, "unrelated skill quickslot")
+	bindPveVerticalQuickslot(t, flow, runtime, accounts, "pve-vertical", hero.Name, pveVerticalPotionQuickslotPosition, quickslotproto.TypeItem, 1, "authored potion item quickslot")
+	bindPveVerticalQuickslot(t, flow, runtime, accounts, "pve-vertical", hero.Name, pveVerticalSwordQuickslotPosition, quickslotproto.TypeItem, 0, "authored sword item quickslot")
+	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+		{Position: pveVerticalPotionQuickslotPosition, Type: quickslotproto.TypeItem, Slot: 1},
+		{Position: pveVerticalSwordQuickslotPosition, Type: quickslotproto.TypeItem, Slot: 0},
+	}, "post-rebuy quickslot bind")
+
 	beforeUsePoints, ok := runtime.PointsSnapshot(hero.Name)
 	if !ok {
 		t.Fatal("expected points snapshot before authored potion ITEM_USE")
@@ -931,8 +947,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored potion ITEM_USE: %v", err)
 	}
-	if len(useOut) != 4 {
-		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, and info chat for last-stack authored potion, got %d", len(useOut))
+	if len(useOut) != 5 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, potion QUICKSLOT_DEL, and info chat for last-stack authored potion, got %d", len(useOut))
 	}
 	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -955,7 +971,14 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if useDel.Position != itemproto.InventoryPosition(1) {
 		t.Fatalf("unexpected authored potion ITEM_DEL: %+v", useDel)
 	}
-	assertPveVerticalSelfOnlyInfoChat(t, useOut[3:], "consume:27001:+50", "authored potion ITEM_USE")
+	potionQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, useOut[3]))
+	if err != nil {
+		t.Fatalf("decode authored potion QUICKSLOT_DEL: %v", err)
+	}
+	if potionQuickslotDel.Position != pveVerticalPotionQuickslotPosition {
+		t.Fatalf("unexpected authored potion QUICKSLOT_DEL: %+v want position=%d", potionQuickslotDel, pveVerticalPotionQuickslotPosition)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, useOut[4:], "consume:27001:+50", "authored potion ITEM_USE")
 	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
 	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterUse {
 		t.Fatalf("expected live HP %d after authored potion ITEM_USE, got ok=%v snapshot=%+v", wantHPAfterUse, ok, pointsSnapshot)
@@ -974,6 +997,10 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != swordID || account.Characters[0].Inventory[0].Vnum != 11200 || account.Characters[0].Inventory[0].Slot != 0 {
 		t.Fatalf("expected persisted inventory to keep only the turn-in sword after authored potion ITEM_USE, got %+v", account.Characters[0].Inventory)
 	}
+	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+		{Position: pveVerticalSwordQuickslotPosition, Type: quickslotproto.TypeItem, Slot: 0},
+	}, "authored potion ITEM_USE")
 	assertPveVerticalQuestState(t, runtime, wantAfterReset, "authored potion ITEM_USE")
 
 	weaponPosition, err := itemproto.EquipmentPosition(4)
@@ -987,8 +1014,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored sword ITEM_MOVE equip: %v", err)
 	}
-	if len(equipOut) != 3 {
-		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, and CHARACTER_UPDATE for empty-weapon authored equip, got %d", len(equipOut))
+	if len(equipOut) != 4 {
+		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, CHARACTER_UPDATE, and sword QUICKSLOT_DEL for empty-weapon authored equip, got %d", len(equipOut))
 	}
 	equipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, equipOut[0]))
 	if err != nil {
@@ -1011,6 +1038,13 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if appearance.VID != hero.VID || appearance.Parts[0] != hero.MainPart || appearance.Parts[1] != 11200 || appearance.Parts[3] != hero.HairPart {
 		t.Fatalf("unexpected authored sword CHARACTER_UPDATE: %+v want vid=%d parts[0]=%d parts[1]=11200 parts[3]=%d", appearance, hero.VID, hero.MainPart, hero.HairPart)
 	}
+	swordQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[3]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip QUICKSLOT_DEL: %v", err)
+	}
+	if swordQuickslotDel.Position != pveVerticalSwordQuickslotPosition {
+		t.Fatalf("unexpected authored sword equip QUICKSLOT_DEL: %+v want position=%d", swordQuickslotDel, pveVerticalSwordQuickslotPosition)
+	}
 	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
 	if !ok || len(inventorySnapshot.Inventory) != 0 {
 		t.Fatalf("expected live inventory empty after authored sword equip, got ok=%v snapshot=%+v", ok, inventorySnapshot)
@@ -1029,6 +1063,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].ID != swordID || account.Characters[0].Equipment[0].Vnum != 11200 || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
 		t.Fatalf("expected persisted weapon equipment after authored sword equip, got %+v", account.Characters[0].Equipment)
 	}
+	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+	}, "authored sword equip")
 	assertPveVerticalQuestState(t, runtime, wantAfterReset, "authored sword equip")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -1309,6 +1346,78 @@ func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint3
 		t.Fatalf("unexpected %s interaction error: %v", context, err)
 	}
 	return out
+}
+
+func bindPveVerticalQuickslot(t *testing.T, flow service.SessionFlow, runtime *gameRuntime, accounts *accountstore.FileStore, login string, name string, position uint8, slotType uint8, slot uint8, context string) {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, quickslotproto.EncodeClientAdd(quickslotproto.ClientAddPacket{
+		Position: position,
+		Slot:     quickslotproto.Slot{Type: slotType, Position: slot},
+	})))
+	if err != nil {
+		t.Fatalf("unexpected %s QUICKSLOT_ADD: %v", context, err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected 1 self-only QUICKSLOT_ADD for %s, got %d", context, len(out))
+	}
+	add, err := quickslotproto.DecodeAdd(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s QUICKSLOT_ADD: %v", context, err)
+	}
+	if add.Position != position || add.Slot.Type != slotType || add.Slot.Position != slot {
+		t.Fatalf("unexpected %s QUICKSLOT_ADD: %+v want position=%d type=%d slot=%d", context, add, position, slotType, slot)
+	}
+	want := QuickslotSnapshot{Position: position, Type: slotType, Slot: slot}
+	live, ok := runtime.QuickslotsSnapshot(name)
+	if !ok {
+		t.Fatalf("expected live quickslots after %s", context)
+	}
+	foundLive := false
+	for _, quickslot := range live.Quickslots {
+		if quickslot == want {
+			foundLive = true
+			break
+		}
+	}
+	if !foundLive {
+		t.Fatalf("expected live %s binding %+v, got %+v", context, want, live.Quickslots)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after %s: %v", context, err)
+	}
+	foundPersisted := false
+	for _, quickslot := range account.Characters[0].Quickslots {
+		if quickslot.Position == position && quickslot.Type == slotType && quickslot.Slot == slot {
+			foundPersisted = true
+			break
+		}
+	}
+	if !foundPersisted {
+		t.Fatalf("expected persisted %s binding %+v, got %+v", context, want, account.Characters[0].Quickslots)
+	}
+}
+
+func assertPveVerticalQuickslots(t *testing.T, runtime *gameRuntime, accounts *accountstore.FileStore, login string, name string, want []QuickslotSnapshot, context string) {
+	t.Helper()
+	live, ok := runtime.QuickslotsSnapshot(name)
+	if !ok {
+		t.Fatalf("expected live quickslots after %s", context)
+	}
+	if !reflect.DeepEqual(live.Quickslots, want) {
+		t.Fatalf("unexpected live quickslots after %s: got %+v want %+v", context, live.Quickslots, want)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted account after %s: %v", context, err)
+	}
+	got := make([]QuickslotSnapshot, 0, len(account.Characters[0].Quickslots))
+	for _, quickslot := range account.Characters[0].Quickslots {
+		got = append(got, QuickslotSnapshot{Position: quickslot.Position, Type: quickslot.Type, Slot: quickslot.Slot})
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected persisted quickslots after %s: got %+v want %+v", context, got, want)
+	}
 }
 
 func assertPveVerticalGatedMismatch(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) {
