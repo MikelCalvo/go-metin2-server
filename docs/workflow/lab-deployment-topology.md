@@ -203,7 +203,7 @@ metin2-migrate version \
   | metin2-migrate migration-run-retention --build-info -
 ```
 
-The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json`, persistence status before/after mutation, a `notes.md` stub, and the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands.
+The printer emits a path-aware shell script that creates `YYYYMMDDTHHMMSSZ-<commit12>/`, retains both-daemon build-info (`gamed` via `--ops-base-url`, `authd` via `--authd-ops-base-url`, default `http://127.0.0.1:6061`), `runtime-config.json`, persistence status before/after mutation, a `notes.md` stub, and the runbook artifacts listed above. It never opens a database, never embeds a DSN, and never executes apply itself — operators must export `DRIVER` / `DSN` before running the printed DB-touching commands. Matching ungated `persistence-status-status` companions beside `$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json` are frozen next — see [CLI migration-run-retention persistence-status-status contract freeze](../plans/2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). GREEN stays follow-on; printed scripts still do not emit `persistence-status-*-status.json`.
 
 For rollback drills, pass an explicit non-`latest` target plus `--allow-rollback`:
 

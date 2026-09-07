@@ -58,6 +58,10 @@ proof for mid-catalog targets.
    ~~contrib print-helper target/rollback env forwarding~~ Done — see
    [contrib migration-run retention target env](2026-08-28-contrib-migration-run-retention-target-env.md).
    Upsert / auto-run / stock production driver remain explicitly deferred.
+   ~~Follow-up: freeze `persistence-status-status` printer + hermetic curl-stub
+   expansion.~~ Done for docs/spec freeze — see
+   [CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+   GREEN stays follow-on.
 
 ## What this is not yet
 

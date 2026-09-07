@@ -60,7 +60,9 @@ apply itself. Hermetic `/bin/sh` proofs cover forward apply-to-tip, rollback-to-
 `/var/log/metin2/{gamed,authd}.log` copies when present (`--gamed-log-path` /
 `--authd-log-path`; missing files stay non-fatal), runtime-config, persistence
 status before/after mutation, and a `notes.md` stub beside the migration
-metadata artifacts. Export `DRIVER` / `DSN` before running any printed
+metadata artifacts. Matching ungated `persistence-status-status` companions
+beside `$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`
+are frozen next — see [CLI migration-run-retention persistence-status-status contract freeze](../plans/2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). GREEN stays follow-on; printed scripts still do not emit `persistence-status-*-status.json`. Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.
 
 ```bash
