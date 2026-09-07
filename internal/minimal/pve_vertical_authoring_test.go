@@ -1032,8 +1032,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored sword ITEM_MOVE equip: %v", err)
 	}
-	if len(equipOut) != 4 {
-		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, CHARACTER_UPDATE, and sword QUICKSLOT_DEL for empty-weapon authored equip, got %d", len(equipOut))
+	if len(equipOut) != 5 {
+		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, PLAYER_POINT_CHANGE, CHARACTER_UPDATE, and sword QUICKSLOT_DEL for empty-weapon authored equip, got %d", len(equipOut))
 	}
 	equipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, equipOut[0]))
 	if err != nil {
@@ -1049,14 +1049,23 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if equipSet.Position != weaponPosition || equipSet.Vnum != 11200 || equipSet.Count != 1 {
 		t.Fatalf("unexpected authored sword equipment ITEM_SET: %+v", equipSet)
 	}
-	appearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[2]))
+	equipPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, equipOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip PLAYER_POINT_CHANGE: %v", err)
+	}
+	wantHPAfterSwordEquip := wantHPAfterUse + 10
+	wantPersistedHPAfterSwordEquip := wantPersistedHPAfterUse + 10
+	if equipPointChange.VID != hero.VID || equipPointChange.Type != bootstrapPlayerPointType || equipPointChange.Amount != 10 || equipPointChange.Value != wantHPAfterSwordEquip {
+		t.Fatalf("unexpected authored sword equip PLAYER_POINT_CHANGE: %+v want value=%d", equipPointChange, wantHPAfterSwordEquip)
+	}
+	appearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, equipOut[3]))
 	if err != nil {
 		t.Fatalf("decode authored sword CHARACTER_UPDATE: %v", err)
 	}
 	if appearance.VID != hero.VID || appearance.Parts[0] != hero.MainPart || appearance.Parts[1] != 11200 || appearance.Parts[3] != hero.HairPart {
 		t.Fatalf("unexpected authored sword CHARACTER_UPDATE: %+v want vid=%d parts[0]=%d parts[1]=11200 parts[3]=%d", appearance, hero.VID, hero.MainPart, hero.HairPart)
 	}
-	swordQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[3]))
+	swordQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[4]))
 	if err != nil {
 		t.Fatalf("decode authored sword equip QUICKSLOT_DEL: %v", err)
 	}
@@ -1084,6 +1093,17 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
 		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
 	}, "authored sword equip")
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterSwordEquip {
+		t.Fatalf("expected live HP %d after authored sword equip, got ok=%v snapshot=%+v", wantHPAfterSwordEquip, ok, pointsSnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored sword equip: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterSwordEquip {
+		t.Fatalf("expected persisted HP %d after authored sword equip, got %d", wantPersistedHPAfterSwordEquip, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
 	assertPveVerticalQuestState(t, runtime, wantAfterReset, "authored sword equip")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -1209,8 +1229,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored sword ITEM_MOVE unequip: %v", err)
 	}
-	if len(unequipOut) != 3 {
-		t.Fatalf("expected ITEM_DEL, carried ITEM_SET, and CHARACTER_UPDATE for authored sword unequip, got %d", len(unequipOut))
+	if len(unequipOut) != 4 {
+		t.Fatalf("expected ITEM_DEL, carried ITEM_SET, PLAYER_POINT_CHANGE, and CHARACTER_UPDATE for authored sword unequip, got %d", len(unequipOut))
 	}
 	unequipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, unequipOut[0]))
 	if err != nil {
@@ -1226,12 +1246,30 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if unequipSet.Position != itemproto.InventoryPosition(0) || unequipSet.Vnum != 11200 || unequipSet.Count != 1 {
 		t.Fatalf("unexpected authored sword unequip ITEM_SET: %+v", unequipSet)
 	}
-	unequipAppearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[2]))
+	unequipPointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, unequipOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword unequip PLAYER_POINT_CHANGE: %v", err)
+	}
+	if unequipPointChange.VID != hero.VID || unequipPointChange.Type != bootstrapPlayerPointType || unequipPointChange.Amount != -10 || unequipPointChange.Value != wantHPAfterUse {
+		t.Fatalf("unexpected authored sword unequip PLAYER_POINT_CHANGE: %+v want value=%d", unequipPointChange, wantHPAfterUse)
+	}
+	unequipAppearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, unequipOut[3]))
 	if err != nil {
 		t.Fatalf("decode authored sword unequip CHARACTER_UPDATE: %v", err)
 	}
 	if unequipAppearance.VID != hero.VID || unequipAppearance.Parts[1] != 0 {
 		t.Fatalf("expected authored sword unequip to clear weapon appearance, got %+v", unequipAppearance)
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterUse {
+		t.Fatalf("expected live HP %d after authored sword unequip, got ok=%v snapshot=%+v", wantHPAfterUse, ok, pointsSnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored sword unequip: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterUse {
+		t.Fatalf("expected persisted HP %d after authored sword unequip, got %d", wantPersistedHPAfterUse, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	checkinOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
@@ -1363,6 +1401,96 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("decode merchant shop start after warehouse checkout: %v", err)
 	}
 
+	const pveVerticalSwordEquipDelta = int32(10)
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account before merchant-phase authored sword equip: %v", err)
+	}
+	persistedHPBeforeMerchantSwordEquip := account.Characters[0].Points[bootstrapPlayerPointValueIndex]
+	weaponPosition, err = itemproto.EquipmentPosition(4)
+	if err != nil {
+		t.Fatalf("build authored sword weapon equipment position: %v", err)
+	}
+	swordEquipOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.InventoryPosition(0),
+		Destination: weaponPosition,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword ITEM_MOVE equip: %v", err)
+	}
+	if len(swordEquipOut) != 4 {
+		t.Fatalf("expected ITEM_DEL, equipment ITEM_SET, PLAYER_POINT_CHANGE, and CHARACTER_UPDATE for authored sword equip, got %d", len(swordEquipOut))
+	}
+	swordEquipDel, err := itemproto.DecodeDel(decodeSingleFrame(t, swordEquipOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip ITEM_DEL: %v", err)
+	}
+	if swordEquipDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored sword equip ITEM_DEL: %+v", swordEquipDel)
+	}
+	swordEquipSet, err := itemproto.DecodeSet(decodeSingleFrame(t, swordEquipOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip ITEM_SET: %v", err)
+	}
+	if swordEquipSet.Position != weaponPosition || swordEquipSet.Vnum != 11200 || swordEquipSet.Count != 1 {
+		t.Fatalf("unexpected authored sword equip ITEM_SET: %+v", swordEquipSet)
+	}
+	swordEquipPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, swordEquipOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip PLAYER_POINT_CHANGE: %v", err)
+	}
+	if swordEquipPoint.VID != hero.VID || swordEquipPoint.Type != bootstrapPlayerPointType || swordEquipPoint.Amount != pveVerticalSwordEquipDelta {
+		t.Fatalf("unexpected authored sword equip PLAYER_POINT_CHANGE: %+v", swordEquipPoint)
+	}
+	wantHPAfterMerchantSwordEquip := swordEquipPoint.Value
+	swordEquipAppearance, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, swordEquipOut[3]))
+	if err != nil {
+		t.Fatalf("decode authored sword equip CHARACTER_UPDATE: %v", err)
+	}
+	if swordEquipAppearance.VID != hero.VID || swordEquipAppearance.Parts[1] != 11200 {
+		t.Fatalf("unexpected authored sword equip CHARACTER_UPDATE: %+v", swordEquipAppearance)
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterMerchantSwordEquip {
+		t.Fatalf("expected live HP %d after authored sword equip, got ok=%v snapshot=%+v", wantHPAfterMerchantSwordEquip, ok, pointsSnapshot)
+	}
+	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != swordID || equipmentSnapshot.Equipment[0].Vnum != 11200 || equipmentSnapshot.Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon.String() {
+		t.Fatalf("expected live equipment to hold authored sword after equip, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored sword equip: %v", err)
+	}
+	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 1 || account.Characters[0].Equipment[0].Vnum != 11200 || account.Characters[0].Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon || !account.Characters[0].Equipment[0].Equipped {
+		t.Fatalf("expected persisted authored sword equipment placement, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != persistedHPBeforeMerchantSwordEquip+pveVerticalSwordEquipDelta {
+		t.Fatalf("expected persisted authored sword equip HP %d, got %d", persistedHPBeforeMerchantSwordEquip+pveVerticalSwordEquipDelta, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+
+	unequipForMerchantOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      weaponPosition,
+		Destination: itemproto.InventoryPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword ITEM_MOVE unequip before SHOP SELL: %v", err)
+	}
+	if len(unequipForMerchantOut) != 4 {
+		t.Fatalf("expected ITEM_DEL, carried ITEM_SET, PLAYER_POINT_CHANGE, and CHARACTER_UPDATE for authored sword unequip before SHOP SELL, got %d", len(unequipForMerchantOut))
+	}
+	unequipForMerchantPoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, unequipForMerchantOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored sword unequip before SHOP SELL PLAYER_POINT_CHANGE: %v", err)
+	}
+	if unequipForMerchantPoint.VID != hero.VID || unequipForMerchantPoint.Type != bootstrapPlayerPointType || unequipForMerchantPoint.Amount != -pveVerticalSwordEquipDelta {
+		t.Fatalf("unexpected authored sword unequip before SHOP SELL PLAYER_POINT_CHANGE: %+v", unequipForMerchantPoint)
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != unequipForMerchantPoint.Value {
+		t.Fatalf("expected live HP %d after authored sword unequip before SHOP SELL, got ok=%v snapshot=%+v", unequipForMerchantPoint.Value, ok, pointsSnapshot)
+	}
+
 	const pveVerticalSwordSellPrice = int32(100)
 	wantGoldAfterSwordSell := wantGoldAfterWarehouseWithdraw + uint64(pveVerticalSwordSellPrice)
 	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
@@ -1370,7 +1498,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected authored sword SHOP SELL: %v", err)
 	}
 	if len(sellOut) != 2 {
-		t.Fatalf("expected ITEM_DEL and gold PLAYER_POINT_CHANGE for authored sword SHOP SELL, got %d", len(sellOut))
+		t.Fatalf("expected carried ITEM_DEL and gold PLAYER_POINT_CHANGE for authored sword SHOP SELL, got %d", len(sellOut))
 	}
 	sellDel, err := itemproto.DecodeDel(decodeSingleFrame(t, sellOut[0]))
 	if err != nil {
@@ -1394,6 +1522,10 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || len(inventorySnapshot.Inventory) != 0 {
 		t.Fatalf("expected live inventory empty after authored sword SHOP SELL, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
+	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
+	if !ok || len(equipmentSnapshot.Equipment) != 0 {
+		t.Fatalf("expected live equipment empty after authored sword SHOP SELL, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
+	}
 	account, err = accounts.Load("pve-vertical")
 	if err != nil {
 		t.Fatalf("load persisted PvE vertical account after authored sword SHOP SELL: %v", err)
@@ -1402,7 +1534,10 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected persisted gold %d after authored sword SHOP SELL, got %d", wantGoldAfterSwordSell, account.Characters[0].Gold)
 	}
 	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 0 {
-		t.Fatalf("expected persisted inventory/equipment empty after authored sword SHOP SELL, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+		t.Fatalf("expected persisted empty inventory/equipment after authored sword SHOP SELL, got %+v", account.Characters[0])
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != persistedHPBeforeMerchantSwordEquip {
+		t.Fatalf("expected persisted authored sword unequip HP %d, got %d", persistedHPBeforeMerchantSwordEquip, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored sword SHOP SELL")
 
@@ -1936,8 +2071,9 @@ func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []ite
 		byVnum[template.Vnum] = template
 	}
 	sword, ok := byVnum[11200]
-	if !ok || sword.Name != "Wooden Sword" || sword.Stackable || sword.MaxCount != 1 || sword.ShopSellPrice != 100 || sword.EquipSlot != inventory.EquipmentSlotWeapon.String() || sword.UseEffect != nil {
-		t.Fatalf("expected %s 11200 to author weapon equip_slot without use_effect, got %+v", context, sword)
+	wantSwordEffect := &itemcatalog.PointEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 10}
+	if !ok || sword.Name != "Wooden Sword" || sword.Stackable || sword.MaxCount != 1 || sword.ShopSellPrice != 100 || sword.EquipSlot != inventory.EquipmentSlotWeapon.String() || sword.UseEffect != nil || !reflect.DeepEqual(sword.EquipEffect, wantSwordEffect) {
+		t.Fatalf("expected %s 11200 to author weapon equip_slot + equip_effect without use_effect, got %+v", context, sword)
 	}
 	potion, ok := byVnum[27001]
 	if !ok || potion.Name != "Small Red Potion" || !potion.Stackable || potion.MaxCount != 200 || potion.ShopBuyPrice != 5 || potion.ShopSellPrice != 2 || potion.EquipSlot != "" || potion.UseEffect == nil {
