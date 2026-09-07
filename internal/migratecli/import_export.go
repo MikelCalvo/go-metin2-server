@@ -91,6 +91,9 @@ func runImportExport(args []string, stdin io.Reader, stdout io.Writer, stderr io
 		writeMigrationCommandError(stderr, dsn, "import-export: %v", err)
 		return exitError
 	}
+	if !requireLinkedDatabaseDriver(stderr, dsn, "import-export", driverName) {
+		return exitError
+	}
 
 	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
 	if err != nil {

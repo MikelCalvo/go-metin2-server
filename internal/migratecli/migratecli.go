@@ -21,6 +21,7 @@ import (
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
+	"github.com/MikelCalvo/go-metin2-server/internal/config"
 )
 
 const (
@@ -227,6 +228,9 @@ func runLedgerSnapshot(args []string, stdout io.Writer, stderr io.Writer) int {
 		printLedgerSnapshotUsage(stderr)
 		return exitUsage
 	}
+	if !requireLinkedDatabaseDriver(stderr, dsn, "migration ledger-snapshot", driverName) {
+		return exitError
+	}
 
 	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
 	if err != nil {
@@ -270,6 +274,9 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "invalid --target-version %q: %v\n", targetVersionText, err)
 		return exitUsage
+	}
+	if !requireLinkedDatabaseDriver(stderr, dsn, "migration status", driverName) {
+		return exitError
 	}
 
 	db, err := sql.Open(strings.TrimSpace(driverName), strings.TrimSpace(dsn))
@@ -804,6 +811,13 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: rollback/down migration plan requires --plan-sha256, --plan-artifact, or --apply-preflight", ErrMigrationApplyPlanConfirmation))
 		return exitError
 	}
+	if strings.TrimSpace(auditFilePath) != "" && len(plan.Pending) == 0 {
+		writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: audit file requires at least one applied migration", ErrMigrationApplyAudit))
+		return exitError
+	}
+	if !requireLinkedDatabaseDriver(stderr, dsn, "migration apply", driverName) {
+		return exitError
+	}
 
 	var lockFile *migrationApplyLockFile
 	if strings.TrimSpace(lockFilePath) != "" {
@@ -843,10 +857,6 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 
 	var auditFile *migrationApplyAuditFile
 	if strings.TrimSpace(auditFilePath) != "" {
-		if len(plan.Pending) == 0 {
-			writeMigrationCommandError(stderr, dsn, "migration apply: %v", fmt.Errorf("%w: audit file requires at least one applied migration", ErrMigrationApplyAudit))
-			return exitError
-		}
 		auditFile, err = createMigrationApplyAuditFile(auditFilePath)
 		if err != nil {
 			writeMigrationCommandError(stderr, dsn, "migration apply: %v", err)
@@ -885,6 +895,14 @@ func runApply(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer
 		}
 	}
 	return writeJSON(stdout, stderr, result)
+}
+
+func requireLinkedDatabaseDriver(stderr io.Writer, dsn, command, driverName string) bool {
+	if err := config.RequireRegisteredDatabaseDriver(driverName); err != nil {
+		writeMigrationCommandError(stderr, dsn, "%s: %v", command, err)
+		return false
+	}
+	return true
 }
 
 func runApplyLockStatus(args []string, stdout io.Writer, stderr io.Writer) int {

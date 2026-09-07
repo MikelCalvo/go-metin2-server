@@ -3290,6 +3290,98 @@ func TestRunApplyRejectsDriverWithoutDSNAsUsageError(t *testing.T) {
 	}
 }
 
+func TestRunApplyRejectsUnlinkedDriverBeforeCreatingLockOrAudit(t *testing.T) {
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot([]dbmigrations.LedgerEntry{})
+	if err != nil {
+		t.Fatalf("marshal empty ledger snapshot: %v", err)
+	}
+	dir := t.TempDir()
+	lockPath := dir + "/migration-apply.lock"
+	auditPath := dir + "/migration-apply-audit.json"
+	secretDSN := "memory://secret-password@db/unlinked-apply"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run(
+		[]string{
+			"apply",
+			"--driver", "go_metin2_unlinked_driver",
+			"--dsn", secretDSN,
+			"--ledger-snapshot", "-",
+			"--target-version", "1",
+			"--lock-file", lockPath,
+			"--audit-file", auditPath,
+		},
+		bytes.NewReader(rawSnapshot),
+		&stdout,
+		&stderr,
+	)
+
+	if code != exitError {
+		t.Fatalf("expected unlinked driver to exit %d, got %d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout when driver linkage is unavailable, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "database driver is unavailable") || !strings.Contains(stderr.String(), "go_metin2_unlinked_driver") {
+		t.Fatalf("expected unavailable-driver error before lock/audit creation, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected unlinked-driver error to redact DSN, got %q", stderr.String())
+	}
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected unlinked driver to leave lock absent, stat err=%v", err)
+	}
+	if _, err := os.Stat(auditPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected unlinked driver to leave audit absent, stat err=%v", err)
+	}
+}
+
+func TestRunApplyRejectsNoopAuditBeforeCheckingDriverLinkage(t *testing.T) {
+	catalog, err := dbmigrations.Catalog()
+	if err != nil {
+		t.Fatalf("load catalog: %v", err)
+	}
+	applied := []dbmigrations.LedgerEntry{{Version: catalog[0].Version, Name: catalog[0].Name, UpSHA256: catalog[0].UpSHA256}}
+	rawSnapshot, err := dbmigrations.MarshalJSONLedgerSnapshot(applied)
+	if err != nil {
+		t.Fatalf("marshal ledger snapshot: %v", err)
+	}
+	auditPath := t.TempDir() + "/noop-audit.json"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run(
+		[]string{
+			"apply",
+			"--driver", "go_metin2_unlinked_driver",
+			"--dsn", "memory://unlinked-noop-audit",
+			"--ledger-snapshot", "-",
+			"--target-version", "1",
+			"--audit-file", auditPath,
+		},
+		bytes.NewReader(rawSnapshot),
+		&stdout,
+		&stderr,
+	)
+
+	if code != exitError {
+		t.Fatalf("expected no-op audited apply to exit %d, got %d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout for rejected no-op audit, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "audit file requires at least one applied migration") {
+		t.Fatalf("expected audit eligibility to precede linkage gate, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), "database driver is unavailable") {
+		t.Fatalf("expected no-op audit rejection before linkage gate, got %q", stderr.String())
+	}
+	if _, err := os.Stat(auditPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected rejected no-op audit to leave path absent, stat err=%v", err)
+	}
+}
+
 func TestRunApplyRejectsOversizedLedgerSnapshotBeforeOpeningDatabase(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	oversizedSnapshot := `{"format":"` + dbmigrations.LedgerSnapshotFormat + `","entries":[]}` + strings.Repeat(" ", 70*1024)
@@ -3858,6 +3950,27 @@ func TestRunLedgerSnapshotRejectsMissingDriverOrDSNAsUsageError(t *testing.T) {
 	}
 }
 
+func TestRunLedgerSnapshotRejectsUnlinkedDriverBeforeOpeningTarget(t *testing.T) {
+	secretDSN := "memory://secret-password@db/unlinked-ledger-snapshot"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"ledger-snapshot", "--driver", "go_metin2_unlinked_driver", "--dsn", secretDSN}, nil, &stdout, &stderr)
+
+	if code != exitError {
+		t.Fatalf("expected unlinked driver to exit %d, got %d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout when driver linkage is unavailable, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "database driver is unavailable") || !strings.Contains(stderr.String(), "go_metin2_unlinked_driver") {
+		t.Fatalf("expected unavailable-driver error before target open, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected unlinked-driver error to redact DSN, got %q", stderr.String())
+	}
+}
+
 func TestRunLedgerSnapshotRedactsDSNFromRuntimeErrors(t *testing.T) {
 	driverName := registerMigrateCLITestSQLDriver(t)
 	secretDSN := "memory://secret-password@db/snapshot"
@@ -4006,6 +4119,27 @@ func TestRunStatusRejectsMissingDriverOrDSNAsUsageError(t *testing.T) {
 				t.Fatalf("expected driver/DSN usage guidance, got %q", stderr.String())
 			}
 		})
+	}
+}
+
+func TestRunStatusRejectsUnlinkedDriverBeforeOpeningTarget(t *testing.T) {
+	secretDSN := "memory://secret-password@db/unlinked-status"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	code := Run([]string{"status", "--driver", "go_metin2_unlinked_driver", "--dsn", secretDSN, "--target-version", "latest"}, nil, &stdout, &stderr)
+
+	if code != exitError {
+		t.Fatalf("expected unlinked driver to exit %d, got %d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout when driver linkage is unavailable, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "database driver is unavailable") || !strings.Contains(stderr.String(), "go_metin2_unlinked_driver") {
+		t.Fatalf("expected unavailable-driver error before target open, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected unlinked-driver error to redact DSN, got %q", stderr.String())
 	}
 }
 

@@ -122,6 +122,38 @@ func TestRunImportExportRejectsInvalidExportBeforeOpeningDatabase(t *testing.T) 
 	}
 }
 
+func TestRunImportExportRejectsUnlinkedDriverAfterQuarantineBeforeOpeningTarget(t *testing.T) {
+	secretDSN := "memory://secret-password@db/unlinked-import"
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{
+			"import-export",
+			"--kind", "account-character-roster",
+			"--export", "-",
+			"--driver", "go_metin2_unlinked_driver",
+			"--dsn", secretDSN,
+			"--i-confirm-sql-import",
+		},
+		strings.NewReader(`{"migration_version":2,"migration_name":"account_character_roster","accounts":[],"characters":[]}`),
+		&stdout,
+		&stderr,
+	)
+
+	if code != exitError {
+		t.Fatalf("expected unlinked driver to exit %d, got %d stdout=%q stderr=%q", exitError, code, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout when driver linkage is unavailable, got %q", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "database driver is unavailable") || !strings.Contains(stderr.String(), "go_metin2_unlinked_driver") {
+		t.Fatalf("expected unavailable-driver error after quarantine, got %q", stderr.String())
+	}
+	if strings.Contains(stderr.String(), secretDSN) {
+		t.Fatalf("expected unlinked-driver error to redact DSN, got %q", stderr.String())
+	}
+}
+
 func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T) {
 	catalog, err := dbmigrations.Catalog()
 	if err != nil {

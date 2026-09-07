@@ -166,15 +166,22 @@ git diff --check
 - `internal/migratecli/import_export.go`
 - `internal/migratecli/migratecli_test.go`
 - `internal/migratecli/import_export_test.go`
-- `docs/development.md`
-- `docs/workflow/migration-apply-runbook.md`
 - this plan (flip freeze → Done)
 
 ## Status
 
-Contract frozen on `lane/persistence`; GREEN is intentionally deferred to the
-next cohesive migration-CLI slice. The current linked-driver inspector remains
-fully usable for manual/runbook preflight.
+GREEN on `lane/persistence`.
+
+- `ledger-snapshot` and `status` now validate driver linkage immediately
+  before their existing `sql.Open` calls.
+- `import-export` preserves retained export decoding/quarantine before it
+  validates linkage and opens the import target.
+- `apply` preserves offline-ledger/plan/preflight checks, then validates
+  linkage before reserving its optional lock/audit paths or opening the target.
+- Unlinked names return an existing DSN-redacted, command-prefixed
+  `database driver is unavailable` error with no JSON stdout; linked-driver
+  paths and existing missing-flag usage behavior are unchanged.
+- Focused untagged and tagged migration CLI tests are green.
 
 ## Exit criteria for this freeze
 
@@ -183,12 +190,10 @@ fully usable for manual/runbook preflight.
   missing-flag behavior are explicit;
 - `apply` ordering explicitly protects lock/audit paths;
 - test boundaries distinguish no-open failures from linked-driver success;
-- no production Go code, production driver registration, or DB target is
-  introduced by this freeze.
+- no production driver registration or DB target is introduced by this slice.
 
 ## Anti-goals / ordering constraints
 
-- Do not open a RED test or implement GREEN before this contract is committed.
 - Do not change the working `migration-run-retention` printer gate in this
   slice.
 - Do not select or install a production SQL driver.
