@@ -67,7 +67,12 @@ proof for mid-catalog targets.
    Intermediate proofs now assert `$RUN/post-apply-status-status.json` /
    `$RUN/post-rollback-status-status.json`. The hermetic curl stub now emits a
    valid empty-ledger Plan for `$RUN/daemon-migrations-status.json` (still no
-   gated daemon inspect).
+   gated daemon inspect). ~~Follow-up owned separately: freeze production-engine
+   selection / operator runbook hardening before any stock driver
+   registration.~~ Done for docs/spec freeze — see
+   [CLI sql-drivers / loopback GET /local/db/drivers contract freeze](2026-09-07-cli-sql-drivers-contract-freeze.md).
+   GREEN stays follow-on (`$RUN/sql-drivers.json`). Tagged proofs still do not
+   retain that file.
 
 ## What this is not yet
 

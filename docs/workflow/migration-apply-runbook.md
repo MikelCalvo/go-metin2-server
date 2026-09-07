@@ -72,6 +72,10 @@ stays ungated. The hermetic SQLite curl stub now emits a valid empty-ledger
 Plan for that optional retain so operators can later inspect it by hand.
 See
 [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md).
+Read-only `metin2-migrate drivers --require-driver "$DRIVER"` is frozen
+next — see
+[CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
+GREEN stays follow-on; printed scripts still do not emit `sql-drivers.json`.
 Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.
 

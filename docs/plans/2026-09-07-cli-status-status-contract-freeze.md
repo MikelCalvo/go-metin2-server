@@ -422,7 +422,9 @@ Live `status` / `GET /local/db/migrations/status` stay no-format. Daemon
 hermetic curl stub now emits a compact empty-ledger Plan from `PlanUpToLatest(nil)`
 so operators can later inspect that retained file by hand with `status-status`.
 Follow-up owned separately: freeze production-engine selection / operator
-runbook hardening before any stock driver registration.
+runbook hardening before any stock driver registration. Frozen as
+[CLI sql-drivers / loopback GET /local/db/drivers](2026-09-07-cli-sql-drivers-contract-freeze.md);
+GREEN stays follow-on.
 
 ## Exit criteria for this freeze
 
