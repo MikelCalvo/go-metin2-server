@@ -72,10 +72,12 @@ stays ungated. The hermetic SQLite curl stub now emits a valid empty-ledger
 Plan for that optional retain so operators can later inspect it by hand.
 See
 [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md).
-Read-only `metin2-migrate drivers --require-driver "$DRIVER"` is frozen
-next — see
-[CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
-GREEN stays follow-on; printed scripts still do not emit `sql-drivers.json`.
+The printed script now runs `metin2-migrate drivers --require-driver "$DRIVER"`
+immediately after requiring `DRIVER` / `DSN`, retains its complete envelope as
+`$RUN/sql-drivers.json`, and only then permits `ledger-snapshot` to open the
+target. This gates the applying CLI binary before any DSN-touching command;
+it does not curl `GET /local/db/drivers` or emit `sql-drivers-status.json`.
+See [CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
 Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.
 
@@ -85,6 +87,9 @@ metin2-migrate catalog-status \
   --catalog migration-catalog.json \
   --require-matches-embedded \
   > migration-catalog-status.json
+metin2-migrate drivers \
+  --require-driver <database/sql-driver> \
+  > sql-drivers.json
 metin2-migrate ledger-snapshot \
   --driver <database/sql-driver> \
   --dsn <dsn> \

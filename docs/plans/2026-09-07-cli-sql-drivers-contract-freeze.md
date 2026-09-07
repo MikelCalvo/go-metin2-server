@@ -373,17 +373,22 @@ git diff --check
 
 ## Status
 
-FROZEN on `lane/persistence` (docs-only). GREEN stays follow-on.
+GREEN on `lane/persistence` in `c19e5565` (`feat(persistence): inspect linked SQL drivers`).
 
-- Read-only `metin2-migrate drivers [--require-driver <name>]` and
-  loopback `GET /local/db/drivers` (gamed only) are the named production-engine
-  operator surface.
-- Stock binaries remain empty (`drivers: []`).
-- Harness-only `sqlite` remains opt-in `//go:build sqlite_harness`.
-- Printed `migration-run-retention` scripts still do **not** emit
-  `sql-drivers.json` until GREEN.
-- Upsert / auto-run / stock production driver / cascade-delete remain
-  deferred.
+- `metin2-migrate drivers [--require-driver <name>]` reports the sorted linked
+  `database/sql` names without opening a target; `--require-driver` fails
+  closed before a DSN-touching command when its name is absent.
+- Gamed-only, loopback `GET /local/db/drivers` exposes the same
+  `go-metin2-sql-drivers-v1` envelope. Default/authd muxes omit the route.
+- Stock binaries remain empty (`drivers: []`); harness-only `sqlite` remains
+  opt-in `//go:build sqlite_harness`.
+- Printed `migration-run-retention` scripts retain `$RUN/sql-drivers.json`
+  immediately after DRIVER/DSN require and before `ledger-snapshot`; they do
+  not curl the daemon route or emit `sql-drivers-status.json`.
+- Focused config/CLI/ops/minimal coverage, tagged SQLite hermetic retention,
+  touched-package tests, vet, formatting, and direct stock/tagged CLI runs
+  are GREEN.
+- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
 
 Follow-up owned separately after GREEN: choose and document a production
 DB engine/driver only when repository or migrator work needs a stock

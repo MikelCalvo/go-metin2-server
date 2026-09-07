@@ -71,8 +71,8 @@ proof for mid-catalog targets.
    selection / operator runbook hardening before any stock driver
    registration.~~ Done for docs/spec freeze — see
    [CLI sql-drivers / loopback GET /local/db/drivers contract freeze](2026-09-07-cli-sql-drivers-contract-freeze.md).
-   GREEN stays follow-on (`$RUN/sql-drivers.json`). Tagged proofs still do not
-   retain that file.
+   Done: tagged proofs retain `$RUN/sql-drivers.json` and assert linked
+   harness `sqlite` before the first DSN-touching command.
 
 ## What this is not yet
 
