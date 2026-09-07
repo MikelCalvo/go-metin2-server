@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -123,7 +124,25 @@ func ValidateDatabaseDriverAvailability(cfg Service) error {
 	if driver == "" {
 		return nil
 	}
-	for _, registered := range sql.Drivers() {
+	return RequireRegisteredDatabaseDriver(driver)
+}
+
+// RegisteredDatabaseDrivers returns the database/sql driver names linked into
+// this process. It never opens a database target.
+func RegisteredDatabaseDrivers() []string {
+	drivers := append([]string{}, sql.Drivers()...)
+	sort.Strings(drivers)
+	return drivers
+}
+
+// RequireRegisteredDatabaseDriver validates a driver name and fails closed when
+// it is not linked into this process. It never opens a database target.
+func RequireRegisteredDatabaseDriver(name string) error {
+	driver := strings.TrimSpace(name)
+	if driver == "" || strings.ContainsRune(name, '\x00') || strings.ContainsAny(name, " 	\r\n") {
+		return fmt.Errorf("%w: database driver %q", ErrDatabaseConfigInvalid, name)
+	}
+	for _, registered := range RegisteredDatabaseDrivers() {
 		if registered == driver {
 			return nil
 		}

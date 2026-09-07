@@ -131,12 +131,21 @@ func TestRegisterGamedFileStorePersistenceOpsServesStatusAndAccountBackup(t *tes
 		t.Fatalf("expected non-loopback persistence status 403, got %d", remoteRec.Code)
 	}
 
-	// Helper must stay drill-scoped: migration status remains unregistered here.
+	// Helper must stay drill-scoped: migration status and linked-driver
+	// discovery remain unregistered here (gamed migration helper owns them).
 	migrationReq := httptest.NewRequest(http.MethodGet, "/local/db/migrations/status", nil)
 	migrationReq.RemoteAddr = "127.0.0.1:4242"
 	migrationRec := httptest.NewRecorder()
 	mux.ServeHTTP(migrationRec, migrationReq)
 	if migrationRec.Code != http.StatusNotFound {
 		t.Fatalf("expected helper to omit migration status, got %d", migrationRec.Code)
+	}
+
+	driversReq := httptest.NewRequest(http.MethodGet, "/local/db/drivers", nil)
+	driversReq.RemoteAddr = "127.0.0.1:4242"
+	driversRec := httptest.NewRecorder()
+	mux.ServeHTTP(driversRec, driversReq)
+	if driversRec.Code != http.StatusNotFound {
+		t.Fatalf("expected file-store helper to omit sql-drivers, got %d", driversRec.Code)
 	}
 }

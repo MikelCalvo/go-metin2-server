@@ -10114,6 +10114,7 @@ func TestNewPprofMuxDoesNotExposeLocalMigrationStatusByDefault(t *testing.T) {
 		path   string
 	}{
 		{method: http.MethodGet, path: "/local/db/migrations/status"},
+		{method: http.MethodGet, path: "/local/db/drivers"},
 		{method: http.MethodGet, path: "/local/db/migrations/plan?target_version=0"},
 		{method: http.MethodGet, path: "/local/db/migrations/ledger-snapshot"},
 		{method: http.MethodPost, path: "/local/db/migrations/plan-from-ledger-snapshot?target_version=0"},

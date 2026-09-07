@@ -10,6 +10,7 @@ import (
 	"net/http"
 	stdpprof "net/http/pprof"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1710,6 +1711,37 @@ func RegisterLocalPersistenceStatusEndpoint(mux *http.ServeMux, persistenceStatu
 		if err := json.NewEncoder(w).Encode(persistenceStatus()); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
+	})
+	return mux
+}
+
+type localSQLDriversResponse struct {
+	Format  string   `json:"format"`
+	Drivers []string `json:"drivers"`
+}
+
+// RegisterLocalSQLDriversEndpoint exposes metadata-only database/sql driver
+// discovery to loopback callers. The callback must not open a database target.
+func RegisterLocalSQLDriversEndpoint(mux *http.ServeMux, drivers func() []string) *http.ServeMux {
+	if mux == nil || drivers == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/db/drivers", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		linked := append([]string{}, drivers()...)
+		sort.Strings(linked)
+		writeLocalJSONMutationResponse(w, localSQLDriversResponse{
+			Format:  "go-metin2-sql-drivers-v1",
+			Drivers: linked,
+		}, http.StatusOK)
 	})
 	return mux
 }

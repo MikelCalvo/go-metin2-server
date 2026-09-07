@@ -94,6 +94,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 		"notes.md",
 		"migration-catalog.json",
 		"migration-catalog-status.json",
+		"sql-drivers.json",
 		"ledger-snapshot.json",
 		"ledger-snapshot-status.json",
 		"migration-plan-artifact.json",
@@ -126,6 +127,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", catalogTipVersion(t))
 	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
+	assertMigrationRunRetentionSQLDrivers(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *testing.T) {
@@ -206,6 +208,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 	for _, name := range []string{
 		"migration-catalog.json",
 		"migration-catalog-status.json",
+		"sql-drivers.json",
 		"rollback-plan-artifact.json",
 		"rollback-plan-artifact-status.json",
 		"rollback-apply-preflight.json",
@@ -233,6 +236,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 0)
 	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
+	assertMigrationRunRetentionSQLDrivers(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTarget(t *testing.T) {
@@ -315,6 +319,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 	for _, name := range []string{
 		"migration-catalog.json",
 		"migration-catalog-status.json",
+		"sql-drivers.json",
 		"ledger-snapshot.json",
 		"ledger-snapshot-status.json",
 		"migration-plan-artifact.json",
@@ -344,6 +349,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", 7)
 	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
+	assertMigrationRunRetentionSQLDrivers(t, runDir)
 }
 
 func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediateTarget(t *testing.T) {
@@ -424,6 +430,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 	for _, name := range []string{
 		"migration-catalog.json",
 		"migration-catalog-status.json",
+		"sql-drivers.json",
 		"rollback-plan-artifact.json",
 		"rollback-plan-artifact-status.json",
 		"rollback-apply-preflight.json",
@@ -451,6 +458,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 8)
 	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
+	assertMigrationRunRetentionSQLDrivers(t, runDir)
 }
 
 func compactEmptyLedgerPlanJSON() string {
@@ -773,5 +781,34 @@ func assertMigrationRunRetentionDaemonMigrationsStatus(t *testing.T, runDir stri
 	}
 	if _, err := os.Lstat(filepath.Join(runDir, "daemon-migrations-status-status.json")); !os.IsNotExist(err) {
 		t.Fatalf("printer must not emit daemon-migrations-status-status.json, lstat err=%v", err)
+	}
+}
+
+func assertMigrationRunRetentionSQLDrivers(t *testing.T, runDir string) {
+	t.Helper()
+	path := filepath.Join(runDir, "sql-drivers.json")
+	assertRegularFileExists(t, path)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read sql-drivers.json: %v", err)
+	}
+	var got sqlDriversGot
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode sql-drivers.json: %v\nbody:\n%s", err, raw)
+	}
+	if got.Format != "go-metin2-sql-drivers-v1" {
+		t.Fatalf("unexpected sql-drivers format: %#v body=%s", got, raw)
+	}
+	if !sqlDriversListContains(t, got.Drivers, "sqlite") {
+		t.Fatalf("expected sqlite in retained sql-drivers.json, got %s", raw)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "memory://", "postgres://", "password="} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("sql-drivers.json must not expose %q, got %s", forbidden, body)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "sql-drivers-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("printer must not emit sql-drivers-status.json, lstat err=%v", err)
 	}
 }

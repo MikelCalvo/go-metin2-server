@@ -20,7 +20,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
-func TestRegisterGamedMigrationQuarantineExportOpsServesCatalogExportAndQuarantine(t *testing.T) {
+func TestRegisterGamedMigrationQuarantineExportOpsServesCatalogExportQuarantineAndDrivers(t *testing.T) {
 	defer worldruntime.DisableDurableGroundItemSyncForTest()()
 
 	root := t.TempDir()
@@ -104,6 +104,33 @@ func TestRegisterGamedMigrationQuarantineExportOpsServesCatalogExportAndQuaranti
 	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "UpSQL", "DownSQL", "postgres://"} {
 		if strings.Contains(catalogBody, forbidden) {
 			t.Fatalf("migration catalog must not expose SQL/DSN marker %q, got %s", forbidden, catalogBody)
+		}
+	}
+
+	driversReq := httptest.NewRequest(http.MethodGet, "/local/db/drivers", nil)
+	driversReq.RemoteAddr = "127.0.0.1:4242"
+	driversRec := httptest.NewRecorder()
+	mux.ServeHTTP(driversRec, driversReq)
+	if driversRec.Code != http.StatusOK {
+		t.Fatalf("expected sql-drivers 200, got %d body=%s", driversRec.Code, driversRec.Body.String())
+	}
+	if contentType := driversRec.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("expected application/json sql-drivers content type, got %q", contentType)
+	}
+	var driversEnvelope struct {
+		Format  string   `json:"format"`
+		Drivers []string `json:"drivers"`
+	}
+	if err := json.Unmarshal(driversRec.Body.Bytes(), &driversEnvelope); err != nil {
+		t.Fatalf("decode sql-drivers JSON: %v body=%s", err, driversRec.Body.String())
+	}
+	if driversEnvelope.Format != "go-metin2-sql-drivers-v1" || driversEnvelope.Drivers == nil {
+		t.Fatalf("unexpected sql-drivers envelope: %#v body=%s", driversEnvelope, driversRec.Body.String())
+	}
+	driversBody := driversRec.Body.String()
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "UpSQL", "DownSQL", "postgres://", "password="} {
+		if strings.Contains(driversBody, forbidden) {
+			t.Fatalf("sql-drivers endpoint must not expose %q, got %s", forbidden, driversBody)
 		}
 	}
 

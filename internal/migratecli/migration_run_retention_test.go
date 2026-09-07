@@ -66,6 +66,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`--catalog "$RUN/migration-catalog.json"`,
 		`--require-matches-embedded`,
 		`> "$RUN/migration-catalog-status.json"`,
+		`metin2-migrate drivers`,
+		`--require-driver "$DRIVER"`,
+		`> "$RUN/sql-drivers.json"`,
 		`metin2-migrate ledger-snapshot`,
 		`> "$RUN/ledger-snapshot.json"`,
 		`metin2-migrate ledger-snapshot-status`,
@@ -141,6 +144,7 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-apply-status.json")
+	assertMigrationRunRetentionPrintsGatedSQLDrivers(t, body)
 }
 
 func TestRunMigrationRunRetentionReadsRegularFile(t *testing.T) {
@@ -420,6 +424,9 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`--catalog "$RUN/migration-catalog.json"`,
 		`--require-matches-embedded`,
 		`> "$RUN/migration-catalog-status.json"`,
+		`metin2-migrate drivers`,
+		`--require-driver "$DRIVER"`,
+		`> "$RUN/sql-drivers.json"`,
 		`> "$RUN/ledger-snapshot.json"`,
 		`> "$RUN/ledger-snapshot-status.json"`,
 		`> "$RUN/rollback-plan-artifact.json"`,
@@ -490,6 +497,7 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-rollback-status.json")
+	assertMigrationRunRetentionPrintsGatedSQLDrivers(t, body)
 }
 
 func TestRunMigrationRunRetentionRejectsAllowRollbackWithLatestTarget(t *testing.T) {
@@ -597,6 +605,9 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`--persistence-status "$RUN/persistence-status-after.json"`,
 		`> "$RUN/persistence-status-after-status.json"`,
+		`metin2-migrate drivers`,
+		`--require-driver "$DRIVER"`,
+		`> "$RUN/sql-drivers.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in intermediate forward stdout:\n%s", want, body)
@@ -618,6 +629,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-apply-status.json")
+	assertMigrationRunRetentionPrintsGatedSQLDrivers(t, body)
 }
 
 func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) {
@@ -669,6 +681,9 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`--persistence-status "$RUN/persistence-status-after.json"`,
 		`> "$RUN/persistence-status-after-status.json"`,
+		`metin2-migrate drivers`,
+		`--require-driver "$DRIVER"`,
+		`> "$RUN/sql-drivers.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in intermediate rollback stdout:\n%s", want, body)
@@ -691,6 +706,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-rollback-status.json")
+	assertMigrationRunRetentionPrintsGatedSQLDrivers(t, body)
 }
 
 func TestRunMigrationRunRetentionHonorsCustomDaemonLogPaths(t *testing.T) {
@@ -804,5 +820,25 @@ func assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t *testing.
 		if strings.Contains(beforeBlock, banned) || strings.Contains(afterBlock, banned) {
 			t.Fatalf("migration-run-retention persistence-status-status redirects must omit %q, got:\n%s", banned, body)
 		}
+	}
+}
+
+func assertMigrationRunRetentionPrintsGatedSQLDrivers(t *testing.T, body string) {
+	t.Helper()
+	idxDriverRequire := strings.Index(body, `: "${DRIVER:?export DRIVER to the database/sql driver name}"`)
+	idxDSNRequire := strings.Index(body, `: "${DSN:?export DSN to the operator-managed database/sql DSN}"`)
+	idxInspect := strings.Index(body, `metin2-migrate drivers`)
+	idxRequireDriver := strings.Index(body, `--require-driver "$DRIVER"`)
+	idxCompanion := strings.Index(body, `> "$RUN/sql-drivers.json"`)
+	idxLedger := strings.Index(body, `metin2-migrate ledger-snapshot`)
+	if idxDriverRequire < 0 || idxDSNRequire < 0 || idxInspect < 0 || idxRequireDriver < 0 || idxCompanion < 0 || idxLedger < 0 {
+		t.Fatalf("expected gated drivers --require-driver immediately after DRIVER/DSN require and before ledger-snapshot, got:\n%s", body)
+	}
+	if !(idxDriverRequire < idxDSNRequire && idxDSNRequire < idxInspect && idxInspect < idxRequireDriver && idxRequireDriver < idxCompanion && idxCompanion < idxLedger) {
+		t.Fatalf("expected DRIVER/DSN require -> drivers --require-driver -> sql-drivers.json -> ledger-snapshot, got idxs driver=%d dsn=%d inspect=%d require=%d companion=%d ledger=%d\n%s",
+			idxDriverRequire, idxDSNRequire, idxInspect, idxRequireDriver, idxCompanion, idxLedger, body)
+	}
+	if strings.Contains(body, `curl -sS "$OPS/local/db/drivers"`) || strings.Contains(body, "sql-drivers-status.json") {
+		t.Fatalf("migration-run-retention must not print a curl retain of /local/db/drivers or a sql-drivers-status companion, got:\n%s", body)
 	}
 }

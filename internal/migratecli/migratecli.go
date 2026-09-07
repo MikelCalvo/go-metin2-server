@@ -89,6 +89,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runCatalog(args[1:], stdout, stderr)
 	case "catalog-status":
 		return runCatalogStatus(args[1:], stdout, stderr)
+	case "drivers":
+		return runDrivers(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
 	case "status-status":
@@ -2152,6 +2154,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "commands:")
 	fmt.Fprintln(w, "  catalog                print metadata-only embedded migration catalog summary")
 	fmt.Fprintln(w, "  catalog-status         inspect a retained migration catalog summary without mutating it")
+	fmt.Fprintln(w, "  drivers                print database/sql drivers linked into this binary without opening a target")
 	fmt.Fprintln(w, "  status                 read database schema_migrations metadata and print a dry-run plan")
 	fmt.Fprintln(w, "  status-status          inspect a retained metin2-migrate status Plan without opening a database")
 	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
@@ -2188,6 +2191,8 @@ func printUsage(w io.Writer) {
 	printVersionUsage(w)
 	fmt.Fprintln(w, "")
 	printCatalogStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printDriversUsage(w)
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
 	fmt.Fprintln(w, "")
@@ -2254,6 +2259,11 @@ func printVersionUsage(w io.Writer) {
 	fmt.Fprintln(w, "version usage:")
 	fmt.Fprintln(w, "  metin2-migrate version")
 	fmt.Fprintln(w, "  metin2-migrate --version")
+}
+
+func printDriversUsage(w io.Writer) {
+	fmt.Fprintln(w, "drivers usage:")
+	fmt.Fprintln(w, "  metin2-migrate drivers [--require-driver <database/sql-driver-name>]")
 }
 
 func printEmptyLedgerSnapshotUsage(w io.Writer) {

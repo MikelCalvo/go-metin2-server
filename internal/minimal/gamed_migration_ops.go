@@ -3,6 +3,7 @@ package minimal
 import (
 	"net/http"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 )
 
@@ -23,6 +24,7 @@ func RegisterGamedMigrationQuarantineExportOps(mux *http.ServeMux, runtime *game
 
 	mux = ops.RegisterLocalMigrationStatusEndpoint(mux, runtime.MigrationStatus)
 	mux = ops.RegisterLocalMigrationCatalogEndpoint(mux, runtime.MigrationCatalogSummary)
+	mux = ops.RegisterLocalSQLDriversEndpoint(mux, config.RegisteredDatabaseDrivers)
 	mux = ops.RegisterLocalMigrationPlanEndpoint(mux, runtime.MigrationPlanToVersion)
 	mux = ops.RegisterLocalMigrationLedgerSnapshotEndpoint(mux, runtime.MigrationLedgerSnapshot)
 	mux = ops.RegisterLocalMigrationLedgerSnapshotPlanEndpoint(mux, runtime.MigrationPlanFromLedgerSnapshot)

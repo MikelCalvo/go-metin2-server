@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 )
 
@@ -850,5 +851,53 @@ func TestValidateDatabaseConfigRejectsPartialOrMalformedConfig(t *testing.T) {
 				t.Fatalf("expected %v, got %v", tc.wantErr, err)
 			}
 		})
+	}
+}
+
+func TestRegisteredDatabaseDriversReturnsNonNilSortedCopy(t *testing.T) {
+	got := RegisteredDatabaseDrivers()
+	if got == nil {
+		t.Fatalf("expected non-nil drivers list for an empty or populated process")
+	}
+	if !sort.StringsAreSorted(got) {
+		t.Fatalf("expected sorted drivers, got %#v", got)
+	}
+	if len(got) == 0 {
+		return
+	}
+	original := got[0]
+	got[0] = "mutated"
+	again := RegisteredDatabaseDrivers()
+	if len(again) == 0 {
+		t.Fatalf("expected drivers list to remain populated after caller mutation")
+	}
+	if again[0] == "mutated" {
+		t.Fatalf("RegisteredDatabaseDrivers must return a copy")
+	}
+	if again[0] != original && !sort.StringsAreSorted(again) {
+		t.Fatalf("expected a sorted copy after caller mutation, got %#v", again)
+	}
+}
+
+func TestRequireRegisteredDatabaseDriverRejectsEmptyOrInvalidName(t *testing.T) {
+	for _, name := range []string{"", "  ", "sqlite 3", "sqlite3\x00"} {
+		err := RequireRegisteredDatabaseDriver(name)
+		if !errors.Is(err, ErrDatabaseConfigInvalid) {
+			t.Fatalf("name %q: expected ErrDatabaseConfigInvalid, got %v", name, err)
+		}
+	}
+}
+
+func TestRequireRegisteredDatabaseDriverRejectsUnknownName(t *testing.T) {
+	err := RequireRegisteredDatabaseDriver("go_metin2_missing_driver")
+	if !errors.Is(err, ErrDatabaseDriverUnavailable) {
+		t.Fatalf("expected ErrDatabaseDriverUnavailable, got %v", err)
+	}
+}
+
+func TestRequireRegisteredDatabaseDriverAcceptsRegisteredName(t *testing.T) {
+	registerConfigTestSQLDriver()
+	if err := RequireRegisteredDatabaseDriver(configTestSQLDriverName); err != nil {
+		t.Fatalf("expected registered driver to satisfy require, got %v", err)
 	}
 }
