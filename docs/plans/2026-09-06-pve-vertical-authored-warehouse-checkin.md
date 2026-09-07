@@ -43,6 +43,9 @@ must fail closed until unequip.
   the same composed proof~~ Later closed by reconnect + authored `Warehouse`
   password reopen; see
   [pve-vertical-authored-warehouse-password-reopen](2026-09-06-pve-vertical-authored-warehouse-password-reopen.md).
+- ~~unused size-2 warehouse-cell occupancy in the same composed proof~~ Later
+  closed by authored `SAFEBOX_ITEM_MOVE` into cell `5`; see
+  [pve-vertical-authored-warehouse-size-2-occupancy](2026-09-07-pve-vertical-authored-warehouse-size-2-occupancy.md).
 - cube mutation / refine in the same composed proof
 - claiming the whole storage system is now template-complete
 

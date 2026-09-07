@@ -39,7 +39,7 @@ already includes authored drop-table `reward_gold = 60` from the pre-guide
    (not `0`).
 4. `/safebox_money_withdraw 60` restores carried gold with self-only gold
    `PLAYER_POINT_CHANGE` (`+60`) plus `SAFEBOX_MONEY_CHANGE` `0` before
-   equipped `SAFEBOX_CHECKIN` / unequip / check-in / check-out / sell.
+   equipped `SAFEBOX_CHECKIN` / unequip / check-in / size-2 move / check-out / sell.
 
 ## What this is not yet
 

@@ -40,7 +40,7 @@ unproven on the authoring-form path.
 
 ## What this is not yet
 
-- warehouse size-2 occupancy / `SAFEBOX_ITEM_MOVE` in the same composed proof
+- ~~warehouse size-2 occupancy / `SAFEBOX_ITEM_MOVE` in the same composed proof~~ Later closed by authored size-2 cell `5` occupancy; see [pve-vertical-authored-warehouse-size-2-occupancy](2026-09-07-pve-vertical-authored-warehouse-size-2-occupancy.md).
 - cube `add` / `make` / `make all` in the same composed proof
 - exchange / refine / mall in the same composed proof
 - claiming the whole quickslot system is now template-complete

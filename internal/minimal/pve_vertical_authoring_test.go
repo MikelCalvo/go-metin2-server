@@ -1252,9 +1252,58 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || currencySnapshot.Gold != wantGoldAfterWarehouseWithdraw {
 		t.Fatalf("expected authored sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterWarehouseWithdraw, ok, currencySnapshot)
 	}
+	assertPveVerticalDurableWarehouseCell(t, runtime, "pve-vertical", hero.ID, 0, inventory.ItemInstance{ID: swordID, Vnum: 11200, Count: 1, Slot: 0}, "authored sword SAFEBOX_CHECKIN")
+
+	oorMoveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.InventoryPosition(0),
+		Destination: itemproto.InventoryPosition(10),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword SAFEBOX_ITEM_MOVE out of size-2 range: %v", err)
+	}
+	if len(oorMoveOut) != 0 {
+		t.Fatalf("expected authored sword SAFEBOX_ITEM_MOVE into cell 10 to emit no frames, got %d", len(oorMoveOut))
+	}
+	assertPveVerticalDurableWarehouseCell(t, runtime, "pve-vertical", hero.ID, 0, inventory.ItemInstance{ID: swordID, Vnum: 11200, Count: 1, Slot: 0}, "authored sword SAFEBOX_ITEM_MOVE out of size-2 range")
+
+	safeboxMoveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxItemMove(itemproto.ClientSafeboxItemMovePacket{
+		Source:      itemproto.InventoryPosition(0),
+		Destination: itemproto.InventoryPosition(5),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored sword SAFEBOX_ITEM_MOVE into size-2 cell 5: %v", err)
+	}
+	if len(safeboxMoveOut) != 2 {
+		t.Fatalf("expected SAFEBOX_DEL and SAFEBOX_SET for authored sword SAFEBOX_ITEM_MOVE, got %d", len(safeboxMoveOut))
+	}
+	moveDel, err := itemproto.DecodeSafeboxDel(decodeSingleFrame(t, safeboxMoveOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored sword SAFEBOX_ITEM_MOVE SAFEBOX_DEL: %v", err)
+	}
+	if moveDel.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+		t.Fatalf("unexpected authored sword SAFEBOX_ITEM_MOVE SAFEBOX_DEL: %+v", moveDel)
+	}
+	moveSet, err := itemproto.DecodeSafeboxSet(decodeSingleFrame(t, safeboxMoveOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored sword SAFEBOX_ITEM_MOVE SAFEBOX_SET: %v", err)
+	}
+	if moveSet.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 5}) || moveSet.Vnum != 11200 || moveSet.Count != 1 {
+		t.Fatalf("unexpected authored sword SAFEBOX_ITEM_MOVE SAFEBOX_SET: %+v", moveSet)
+	}
+	assertPveVerticalDurableWarehouseCell(t, runtime, "pve-vertical", hero.ID, 5, inventory.ItemInstance{ID: swordID, Vnum: 11200, Count: 1, Slot: 5}, "authored sword SAFEBOX_ITEM_MOVE into size-2 cell 5")
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterWarehouseWithdraw {
+		t.Fatalf("expected authored sword SAFEBOX_ITEM_MOVE to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterWarehouseWithdraw, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected live inventory empty after authored sword SAFEBOX_ITEM_MOVE, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
 
 	checkoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
-		SafeSlot: 0,
+		SafeSlot: 5,
 		Position: itemproto.InventoryPosition(0),
 	})))
 	if err != nil {
@@ -1267,7 +1316,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("decode authored sword SAFEBOX_DEL: %v", err)
 	}
-	if checkoutDel.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 0}) {
+	if checkoutDel.Position != (itemproto.Position{WindowType: itemproto.WindowSafebox, Cell: 5}) {
 		t.Fatalf("unexpected authored sword SAFEBOX_DEL: %+v", checkoutDel)
 	}
 	checkoutSet, err := itemproto.DecodeSet(decodeSingleFrame(t, checkoutOut[1]))
@@ -1281,6 +1330,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].ID != swordID || inventorySnapshot.Inventory[0].Vnum != 11200 || inventorySnapshot.Inventory[0].Slot != 0 {
 		t.Fatalf("expected live inventory to hold checked-out sword, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
+	assertPveVerticalDurableWarehouseEmpty(t, runtime, "pve-vertical", hero.ID, "authored sword SAFEBOX_CHECKOUT")
 
 	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before authored sword SHOP SELL")
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
@@ -1492,6 +1542,36 @@ func assertPveVerticalDurableWarehouseGold(t *testing.T, runtime *gameRuntime, l
 	}
 	if got := safeboxstore.CharacterMoney(snapshot, login, characterID); got != want {
 		t.Fatalf("durable warehouse gold after %s=%d want %d", context, got, want)
+	}
+}
+
+func assertPveVerticalDurableWarehouseCell(t *testing.T, runtime *gameRuntime, login string, characterID uint32, cell uint8, want inventory.ItemInstance, context string) {
+	t.Helper()
+	snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+	if err != nil {
+		t.Fatalf("load durable safebox after %s: %v", context, err)
+	}
+	cells := safeboxstore.CharacterCells(snapshot, login, characterID)
+	got, ok := cells[cell]
+	if !ok {
+		t.Fatalf("expected durable warehouse cell %d after %s, got %+v", cell, context, cells)
+	}
+	if got.ID != want.ID || got.Vnum != want.Vnum || got.Count != want.Count || got.Slot != want.Slot {
+		t.Fatalf("durable warehouse cell %d after %s=%+v want %+v", cell, context, got, want)
+	}
+	if len(cells) != 1 {
+		t.Fatalf("expected exactly one durable warehouse cell after %s, got %+v", context, cells)
+	}
+}
+
+func assertPveVerticalDurableWarehouseEmpty(t *testing.T, runtime *gameRuntime, login string, characterID uint32, context string) {
+	t.Helper()
+	snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+	if err != nil {
+		t.Fatalf("load durable safebox after %s: %v", context, err)
+	}
+	if cells := safeboxstore.CharacterCells(snapshot, login, characterID); len(cells) != 0 {
+		t.Fatalf("expected durable warehouse empty after %s, got %+v", context, cells)
 	}
 }
 
