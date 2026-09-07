@@ -158,6 +158,8 @@ Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `
 
 ~~Follow-up owned separately: freeze-only read-only `persistence-status-status` for retained `persistence-status-*.json`.~~ Done — see [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md).
 
+Follow-up owned separately: freeze-only read-only `status-status` for retained `post-apply-status.json` / `post-rollback-status.json` — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

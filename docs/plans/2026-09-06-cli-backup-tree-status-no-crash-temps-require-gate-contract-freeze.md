@@ -257,6 +257,9 @@ the extra flags.
 ~~Follow-up owned separately: freeze-only read-only `persistence-status-status`
 for retained `persistence-status-*.json`.~~ Done — see
 [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md).
+Follow-up owned separately: freeze-only read-only `status-status` for
+retained `post-apply-status.json` / `post-rollback-status.json` — see
+[CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

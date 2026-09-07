@@ -61,6 +61,9 @@ proof for mid-catalog targets.
    ~~Follow-up: freeze `persistence-status-status` printer + hermetic curl-stub
    expansion.~~ Done — see
    [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+   Follow-up owned separately: freeze read-only `status-status` for retained
+   `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json` — see
+   [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
 ## What this is not yet
 

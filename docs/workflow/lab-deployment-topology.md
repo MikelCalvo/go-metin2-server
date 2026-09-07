@@ -197,6 +197,11 @@ metin2-migrate persistence-status-status \
 ```
 
 See [CLI persistence-status-status](../plans/2026-09-07-cli-persistence-status-status-contract-freeze.md).
+Read-only `status-status` for retained `post-apply-status.json` /
+`post-rollback-status.json` is frozen next — see
+[CLI status-status contract freeze](../plans/2026-09-07-cli-status-status-contract-freeze.md).
+GREEN stays follow-on; the tree listing above still does not include
+`post-apply-status-status.json` / `post-rollback-status-status.json`.
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 

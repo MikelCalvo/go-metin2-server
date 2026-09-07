@@ -64,6 +64,11 @@ companions (`persistence-status-before-status.json` /
 `persistence-status-after-status.json`; no `--require-ok` / `--require-drained` /
 `--require-no-crash-temps` on those redirects), and a `notes.md` stub beside the
 migration metadata artifacts. See [CLI migration-run-retention persistence-status-status](../plans/2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+Read-only `status-status` for retained `post-apply-status.json` /
+`post-rollback-status.json` is frozen next — see
+[CLI status-status contract freeze](../plans/2026-09-07-cli-status-status-contract-freeze.md).
+GREEN stays follow-on; printed scripts still do not emit
+`post-*-status-status.json`.
 Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.
 

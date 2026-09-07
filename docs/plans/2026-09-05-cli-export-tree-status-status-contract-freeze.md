@@ -327,6 +327,7 @@ GREEN on `lane/persistence`.
 - Follow-up owned separately and now GREEN: read-only `backup-tree-status-status` for retained `backup-tree-status.json` — see [CLI backup-tree-status-status contract freeze](2026-09-06-cli-backup-tree-status-status-contract-freeze.md).
 - Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 - ~~Follow-up owned separately: freeze-only read-only `persistence-status-status` for retained `persistence-status-*.json`.~~ Done — see [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md).
+- Follow-up owned separately: freeze-only read-only `status-status` for retained `post-apply-status.json` / `post-rollback-status.json` — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

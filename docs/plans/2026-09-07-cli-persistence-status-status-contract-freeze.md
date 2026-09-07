@@ -462,6 +462,9 @@ before-status-status redirect plus a gated after-status-status
 `$BASE/persistence-status-after-status.json`. Matching `migration-run-retention`
 printer + hermetic curl-stub expansion is now GREEN — see
 [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+Follow-up owned separately: freeze-only read-only `status-status` for
+retained `post-apply-status.json` / `post-rollback-status.json` — see
+[CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 

@@ -268,6 +268,9 @@ GREEN on `lane/persistence`: `migration-run-retention` prints ungated
 `$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`,
 and the hermetic SQLite curl stub emits a compact empty eight-store
 `GET /local/persistence/status` body that those inspect lines accept.
+Follow-up owned separately: freeze-only read-only `status-status` for
+retained `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json` —
+see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 
