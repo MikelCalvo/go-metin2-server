@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,6 +26,7 @@ import (
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 )
@@ -84,6 +86,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	const pveVerticalMobHitsToKill = 4 // max_hp 20 / formula damage 5
 	const pveVerticalMobFormulaDamage = int32(5)
 	const pveVerticalMobRespawnDelay = 2 * time.Second
+	const pveVerticalKillRewardGold = uint64(60) // loot.qa_pve_vertical_reward.reward_gold
 	imported, err := runtime.ImportContentBundle(authored)
 	if err != nil {
 		t.Fatalf("import PvE vertical authoring bundle: %v", err)
@@ -355,7 +358,26 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if warehouseSize != (itemproto.SafeboxSizePacket{Size: 2}) {
 		t.Fatalf("unexpected unlocked warehouse SAFEBOX_SIZE: %+v", warehouseSize)
 	}
+	assertPveVerticalSafeboxMoneyChange(t, warehouseOpenOut[1], 0, "unlocked warehouse password open")
+	beforeWarehouseGold, ok := runtime.CurrencySnapshot(hero.Name)
+	if !ok || beforeWarehouseGold.Gold < pveVerticalKillRewardGold {
+		t.Fatalf("expected live gold at least authored kill-reward %d before warehouse money save, got ok=%v snapshot=%+v", pveVerticalKillRewardGold, ok, beforeWarehouseGold)
+	}
+	wantGoldAfterWarehouseSave := beforeWarehouseGold.Gold - pveVerticalKillRewardGold
+	slashPveVerticalSafeboxMoney(
+		t,
+		flow,
+		fmt.Sprintf("/safebox_money_save %d", pveVerticalKillRewardGold),
+		hero.VID,
+		-int32(pveVerticalKillRewardGold),
+		wantGoldAfterWarehouseSave,
+		int32(pveVerticalKillRewardGold),
+		"authored warehouse money save",
+	)
+	assertPveVerticalCurrency(t, runtime, accounts, hero.Name, wantGoldAfterWarehouseSave, "authored warehouse money save")
+	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, int64(pveVerticalKillRewardGold), "authored warehouse money save")
 	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before cube")
+	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, int64(pveVerticalKillRewardGold), "authored warehouse close after money save")
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	warehouseCooldownOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: warehouseVID})))
@@ -464,6 +486,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(cubeAccount.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected persisted inventory empty after authored cube r_info/m_info, got %+v", cubeAccount.Characters[0].Inventory)
 	}
+	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, int64(pveVerticalKillRewardGold), "authored cube r_info/m_info")
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube r_info/m_info")
 
 	assertCloseCubeCommandChat(t, flow, "/close_cube", "pve vertical cube close before reconnect")
@@ -1084,9 +1107,22 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("decode authored warehouse reopen SAFEBOX_MONEY_CHANGE: %v", err)
 	}
-	if warehouseReopenMoney != (itemproto.SafeboxMoneyChangePacket{Money: 0}) {
+	if warehouseReopenMoney != (itemproto.SafeboxMoneyChangePacket{Money: int32(pveVerticalKillRewardGold)}) {
 		t.Fatalf("unexpected authored warehouse reopen SAFEBOX_MONEY_CHANGE: %+v", warehouseReopenMoney)
 	}
+	wantGoldAfterWarehouseWithdraw := wantGoldAfterRebuy + pveVerticalKillRewardGold
+	slashPveVerticalSafeboxMoney(
+		t,
+		flow,
+		fmt.Sprintf("/safebox_money_withdraw %d", pveVerticalKillRewardGold),
+		hero.VID,
+		int32(pveVerticalKillRewardGold),
+		wantGoldAfterWarehouseWithdraw,
+		0,
+		"authored warehouse money withdraw",
+	)
+	assertPveVerticalCurrency(t, runtime, accounts, hero.Name, wantGoldAfterWarehouseWithdraw, "authored warehouse money withdraw")
+	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, 0, "authored warehouse money withdraw")
 
 	equippedCheckinOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
 		SafeSlot: 0,
@@ -1099,8 +1135,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected SAFEBOX_CHECKIN while sword is equipped to emit no frames, got %d", len(equippedCheckinOut))
 	}
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
-	if !ok || currencySnapshot.Gold != wantGoldAfterRebuy {
-		t.Fatalf("expected equipped-sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterRebuy, ok, currencySnapshot)
+	if !ok || currencySnapshot.Gold != wantGoldAfterWarehouseWithdraw {
+		t.Fatalf("expected equipped-sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterWarehouseWithdraw, ok, currencySnapshot)
 	}
 	equipmentSnapshot, ok = runtime.EquipmentSnapshot(hero.Name)
 	if !ok || len(equipmentSnapshot.Equipment) != 1 || equipmentSnapshot.Equipment[0].ID != swordID || equipmentSnapshot.Equipment[0].Vnum != 11200 {
@@ -1176,8 +1212,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected live equipment empty after authored sword SAFEBOX_CHECKIN, got ok=%v snapshot=%+v", ok, equipmentSnapshot)
 	}
 	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
-	if !ok || currencySnapshot.Gold != wantGoldAfterRebuy {
-		t.Fatalf("expected authored sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterRebuy, ok, currencySnapshot)
+	if !ok || currencySnapshot.Gold != wantGoldAfterWarehouseWithdraw {
+		t.Fatalf("expected authored sword SAFEBOX_CHECKIN to leave gold at %d, got ok=%v snapshot=%+v", wantGoldAfterWarehouseWithdraw, ok, currencySnapshot)
 	}
 
 	checkoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckout(itemproto.ClientSafeboxCheckoutPacket{
@@ -1223,7 +1259,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 
 	const pveVerticalSwordSellPrice = int32(100)
-	wantGoldAfterSwordSell := wantGoldAfterRebuy + uint64(pveVerticalSwordSellPrice)
+	wantGoldAfterSwordSell := wantGoldAfterWarehouseWithdraw + uint64(pveVerticalSwordSellPrice)
 	sellOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientSell(shopproto.ClientSellPacket{Slot: 0})))
 	if err != nil {
 		t.Fatalf("unexpected authored sword SHOP SELL: %v", err)
@@ -1288,6 +1324,65 @@ func assertPveVerticalSelfOnlyInfoChat(t *testing.T, frames [][]byte, wantMessag
 	chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frames[0]))
 	if err != nil || chat.Type != chatproto.ChatTypeInfo || chat.VID != 0 || chat.Empire != 0 || chat.Message != wantMessage {
 		t.Fatalf("unexpected %s chat: %+v err=%v", context, chat, err)
+	}
+}
+
+func slashPveVerticalSafeboxMoney(t *testing.T, flow service.SessionFlow, command string, heroVID uint32, goldAmount int32, goldValue uint64, warehouseMoney int32, context string) {
+	t.Helper()
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: command,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected %s: %v", context, err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected gold PLAYER_POINT_CHANGE + SAFEBOX_MONEY_CHANGE for %s, got %d", context, len(out))
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode %s gold PLAYER_POINT_CHANGE: %v", context, err)
+	}
+	if goldChange.VID != heroVID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != goldAmount || uint64(goldChange.Value) != goldValue {
+		t.Fatalf("unexpected %s gold PLAYER_POINT_CHANGE: %+v want amount=%d value=%d", context, goldChange, goldAmount, goldValue)
+	}
+	assertPveVerticalSafeboxMoneyChange(t, out[1], warehouseMoney, context)
+}
+
+func assertPveVerticalSafeboxMoneyChange(t *testing.T, frame []byte, want int32, context string) {
+	t.Helper()
+	money, err := itemproto.DecodeSafeboxMoneyChange(decodeSingleFrame(t, frame))
+	if err != nil {
+		t.Fatalf("decode %s SAFEBOX_MONEY_CHANGE: %v", context, err)
+	}
+	if money != (itemproto.SafeboxMoneyChangePacket{Money: want}) {
+		t.Fatalf("unexpected %s SAFEBOX_MONEY_CHANGE: %+v want %d", context, money, want)
+	}
+}
+
+func assertPveVerticalCurrency(t *testing.T, runtime *gameRuntime, accounts *accountstore.FileStore, name string, wantGold uint64, context string) {
+	t.Helper()
+	currency, ok := runtime.CurrencySnapshot(name)
+	if !ok || currency.Gold != wantGold {
+		t.Fatalf("expected live gold %d after %s, got ok=%v snapshot=%+v", wantGold, context, ok, currency)
+	}
+	account, err := accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after %s: %v", context, err)
+	}
+	if account.Characters[0].Gold != wantGold {
+		t.Fatalf("expected persisted gold %d after %s, got %d", wantGold, context, account.Characters[0].Gold)
+	}
+}
+
+func assertPveVerticalDurableWarehouseGold(t *testing.T, runtime *gameRuntime, login string, characterID uint32, want int64, context string) {
+	t.Helper()
+	snapshot, err := safeboxstore.LoadOrEmpty(runtime.safeboxStore)
+	if err != nil {
+		t.Fatalf("load durable safebox after %s: %v", context, err)
+	}
+	if got := safeboxstore.CharacterMoney(snapshot, login, characterID); got != want {
+		t.Fatalf("durable warehouse gold after %s=%d want %d", context, got, want)
 	}
 }
 

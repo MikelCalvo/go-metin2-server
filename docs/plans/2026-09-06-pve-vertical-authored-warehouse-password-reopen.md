@@ -36,7 +36,7 @@ composed authoring fixture already stores/retrieves turn-in `11200` after
 ## What this is not yet
 
 - cube mutation / refine in the same composed proof
-- mall, password-change, or warehouse-money mutation on the PvE vertical
+- mall, password-change, or unused size-2 warehouse-cell occupancy on the PvE vertical
 - claiming the whole storage system is now template-complete
 
 ## Verification

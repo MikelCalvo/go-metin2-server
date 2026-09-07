@@ -262,6 +262,6 @@ After the currently landed and later follow-up slices, the repository should be 
 - the current owned service-style NPC gameplay families are `warp`, merchant `shop_preview`, warehouse `open_safebox`, and craftsman `open_cube`
 - `warp` is the first real NPC gameplay action and already reuses the existing transfer / rebootstrap runtime through `INTERACT`
 - `shop_preview` now already resolves through `INTERACT` into the bootstrap merchant window open / buy / close flow built on the same structured catalog seam
-- `open_safebox` now already resolves through `INTERACT` into the bootstrap safebox password challenge, with matching `/safebox_password` opening the durable presentation used by check-in / check-out / move / money
+- `open_safebox` now already resolves through `INTERACT` into the bootstrap safebox password challenge, with matching `/safebox_password` opening the durable presentation used by check-in / check-out / move / money; composed PvE `Warehouse` now also deposits authored kill-reward gold on first open and rematerializes it after reconnect
 - `open_cube` now already resolves through `INTERACT` into the bootstrap cube open presentation (`cube open <npcVnum>`) used by the owned recipe-list / craft slash helpers; composed PvE `CubeMaster` now also proves non-mutating `/cube r_info` / `/cube r_info 0` on that window
 - the project still avoids speculative dialog-window, quest-script, sell-back, and mall / client change-password packet semantics until those underlying systems exist
