@@ -36,12 +36,18 @@ is already extending it for warehouse money.
    `cube success 27001 1` / follow-up `cube info 0 0 0`, and persists the
    same live snapshot. Quest flag stays `met_guide = 1`.
 
+The later merchant-buy follow-up
+`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md` replaces
+those seeded cells with packet `SHOP BUY` catalog slot `2`.
+
 ## What this is not yet
 
 - cube `add` / `make` inside the composed PvE vertical gameplay proof
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0`
 - FileStore `CubeRecipeStorePath` config knob
-- merchant catalog cube-material buy as a prerequisite
+- merchant catalog cube-material buy as a prerequisite (now owned on the
+  dedicated NPC-service proof; see
+  `docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`)
 - binary cube headers / OR-materials
 
 ## Verification

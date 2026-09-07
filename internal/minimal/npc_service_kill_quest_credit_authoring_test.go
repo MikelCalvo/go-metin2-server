@@ -227,8 +227,23 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if byVnum[27001].EquipSlot != "" || !reflect.DeepEqual(byVnum[27001].UseEffect, wantPotionEffect) {
 		t.Fatalf("expected imported NPC service 27001 to author use_effect, got %+v", byVnum[27001])
 	}
-	if byVnum[27002].Name != "Small Blue Potion" || !byVnum[27002].Stackable || byVnum[27002].MaxCount != 200 {
-		t.Fatalf("expected imported NPC service 27002 to author cube material template, got %+v", byVnum[27002])
+	if byVnum[27002].Name != "Small Blue Potion" || !byVnum[27002].Stackable || byVnum[27002].MaxCount != 200 || byVnum[27002].ShopBuyPrice != 10 {
+		t.Fatalf("expected imported NPC service 27002 to author cube material template with shop_buy_price 10, got %+v", byVnum[27002])
+	}
+	var merchantCatalog []interactionstore.MerchantCatalogEntry
+	for _, definition := range imported.InteractionDefinitions {
+		if definition.Kind == interactionstore.KindShopPreview && definition.Ref == "npc:qa_merchant" {
+			merchantCatalog = definition.Catalog
+			break
+		}
+	}
+	wantMerchantCatalog := []interactionstore.MerchantCatalogEntry{
+		{Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+		{Slot: 1, ItemVnum: 11200, Price: 500, Count: 1},
+		{Slot: 2, ItemVnum: 27002, Price: 20, Count: 2},
+	}
+	if !reflect.DeepEqual(merchantCatalog, wantMerchantCatalog) {
+		t.Fatalf("unexpected imported NPC service merchant catalog:\n got: %#v\nwant: %#v", merchantCatalog, wantMerchantCatalog)
 	}
 	if !reflect.DeepEqual(imported.CubeRecipes, cubestore.BootstrapSnapshot().NPCs) {
 		t.Fatalf("unexpected imported NPC service cube recipes: %#v", imported.CubeRecipes)
