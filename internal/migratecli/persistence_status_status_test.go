@@ -16,6 +16,82 @@ type persistenceStatusStatusGot struct {
 	Status                  json.RawMessage `json:"status,omitempty"`
 }
 
+func validEmptyPersistenceStatusJSON() []byte {
+	return []byte(`{
+  "ok": true,
+  "live_selected_character_count": 0,
+  "account_store": {
+    "path": "/state/accounts",
+    "valid": true,
+    "summary": {"account_count": 0, "character_count": 0, "logins": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "login_ticket_store": {
+    "path": "/state/tickets",
+    "valid": true,
+    "summary": {"ticket_count": 0, "character_count": 0, "logins": [], "login_keys": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "item_template_store": {
+    "path": "/state/item-templates.json",
+    "valid": true,
+    "summary": {"template_count": 0, "vnums": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "static_actor_store": {
+    "path": "/state/static-actors.json",
+    "valid": true,
+    "summary": {"actor_count": 0, "actor_ids": [], "actor_names": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "interaction_store": {
+    "path": "/state/interaction-definitions.json",
+    "valid": true,
+    "summary": {"definition_count": 0, "definition_keys": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "quest_state_store": {
+    "path": "/state/quest-state.json",
+    "valid": true,
+    "summary": {"flag_count": 0, "characters": [], "quest_refs": [], "flag_keys": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "ground_item_store": {
+    "path": "/state/ground-items.json",
+    "valid": true,
+    "summary": {"ground_item_count": 0, "item_shaped_count": 0, "gold_shaped_count": 0, "vids": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  },
+  "safebox_store": {
+    "path": "/state/safebox.json",
+    "valid": true,
+    "summary": {"character_count": 0, "cell_count": 0, "logins": [], "character_keys": []},
+    "backup_manifest": {"present": false},
+    "restore_blocked_by_live_sessions": false
+  }
+}
+`)
+}
+
+func compactEmptyPersistenceStatusJSON() string {
+	var snapshot any
+	if err := json.Unmarshal(validEmptyPersistenceStatusJSON(), &snapshot); err != nil {
+		panic(err)
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
 func validDrainedPersistenceStatusJSON() []byte {
 	return []byte(`{
   "ok": true,
@@ -173,6 +249,45 @@ func TestRunPersistenceStatusStatusReadsValidDrainedSnapshot(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("persistence-status-status must not expose %q, got %s", forbidden, body)
 		}
+	}
+	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
+		t.Fatalf("persistence-status-status must not open a database target, got events %#v", events)
+	}
+}
+
+func TestRunPersistenceStatusStatusReadsValidEmptySnapshot(t *testing.T) {
+	_ = registerMigrateCLITestSQLDriver(t)
+	raw := validEmptyPersistenceStatusJSON()
+	statusPath := mustWritePersistenceStatusFile(t, raw)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"persistence-status-status", "--persistence-status", statusPath}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected empty persistence-status-status to succeed, exit=%d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr on empty success, got %q", stderr.String())
+	}
+	var got persistenceStatusStatusGot
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode empty persistence-status-status JSON: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != "go-metin2-persistence-status-status-v1" || !got.Present || len(got.Status) == 0 {
+		t.Fatalf("unexpected empty envelope: %#v", got)
+	}
+	if got.PersistenceStatusSHA256 != sha256Hex(raw) {
+		t.Fatalf("unexpected persistence_status_sha256: got %s want %s", got.PersistenceStatusSHA256, sha256Hex(raw))
+	}
+	var inner struct {
+		OK                         bool `json:"ok"`
+		LiveSelectedCharacterCount int  `json:"live_selected_character_count"`
+	}
+	if err := json.Unmarshal(got.Status, &inner); err != nil {
+		t.Fatalf("decode inner status: %v\ninner:\n%s", err, got.Status)
+	}
+	if !inner.OK || inner.LiveSelectedCharacterCount != 0 {
+		t.Fatalf("unexpected empty inner snapshot: %#v", inner)
 	}
 	if events := currentMigrateCLITestDriver(t).eventsSnapshot(); len(events) != 0 {
 		t.Fatalf("persistence-status-status must not open a database target, got events %#v", events)

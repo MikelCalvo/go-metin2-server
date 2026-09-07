@@ -361,12 +361,12 @@ Do **not** change `migration-run-retention` in this GREEN. That printer also
 retains `persistence-status-*.json`, but its hermetic SQLite curl stub emits
 an incomplete `{"ok":true,"live_selected_character_count":0}` body that would
 fail this inspector's eight-store consistency rules. Expanding that stub is
-now frozen separately — see
-[CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+now GREEN — see
+[CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
 
-The inspector command already exists. Do **not** list working examples that
-claim `migration-run-retention` already emits `persistence-status-*-status.json`
-companions until that follow-up GREEN actually produces them.
+The inspector command already exists. `migration-run-retention` now emits
+`persistence-status-*-status.json` companions — see
+[CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
 
 ### G. Explicit non-goals
 
@@ -375,7 +375,7 @@ companions until that follow-up GREEN actually produces them.
 - changing the live endpoint to `4xx` when `ok` is false
 - walking / hashing live FileStores or backup-tree store subdirs
 - stripping identity slices from inner `status` stdout
-- `migration-run-retention` / contrib helper printer wiring (now frozen separately — see [CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md))
+- `migration-run-retention` / contrib helper printer wiring (now GREEN — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md))
 - crash-temp cleanup / restore / aside-rename from the status command
 - opening a database or emitting DSNs / executable SQL
 - accepting stdin (`-`)
@@ -460,8 +460,8 @@ before-status-status redirect plus a gated after-status-status
 (`--require-ok --require-drained`) redirect, and the hermetic HTTP proof asserts
 `$BASE/persistence-status-before-status.json` plus
 `$BASE/persistence-status-after-status.json`. Matching `migration-run-retention`
-printer + hermetic curl-stub expansion is frozen next — see
-[CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+printer + hermetic curl-stub expansion is now GREEN — see
+[CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
 
 ## Exit criteria for this freeze
 
@@ -477,12 +477,12 @@ printer + hermetic curl-stub expansion is frozen next — see
 - Do not open RED until this freeze is committed.
 - Do not add a live inner `format` marker in GREEN.
 - Do not import `internal/minimal` from `migratecli`.
-- Do not wire `migration-run-retention` in this GREEN; curl-stub expansion is frozen separately — see [CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+- Do not wire `migration-run-retention` in this GREEN; curl-stub expansion is owned separately — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
 - Do not restore / cleanup / open a database from the status command.
 - Do not auto-run `backup-restore-drill` from CLI.
 - Do not register a production driver or auto-run printed scripts.
 - Do not invent cascade delete inside roster replace.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
 - Do not add a working CLI example that claims `migration-run-retention`
-  already emits `persistence-status-*-status.json` until that follow-up GREEN
-  actually produces them.
+  already emits `persistence-status-*-status.json` unless that follow-up GREEN
+  actually produced them.

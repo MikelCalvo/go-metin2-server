@@ -59,10 +59,12 @@ The printer never opens a database, never embeds a DSN, and never executes
 apply itself. Hermetic `/bin/sh` proofs cover forward apply-to-tip, rollback-to-zero, and intermediate targets empty→`7` / tip→`8` under `go test -tags=sqlite_harness ./internal/migratecli -run MigrationRunRetentionSQLite` — see [hermetic migration-run-retention SQLite apply](../plans/2026-08-28-hermetic-migration-run-retention-sqlite-apply.md) and [intermediate-target twin](../plans/2026-08-28-hermetic-migration-run-retention-intermediate-target-sqlite.md). It retains both-daemon build-info, optional
 `/var/log/metin2/{gamed,authd}.log` copies when present (`--gamed-log-path` /
 `--authd-log-path`; missing files stay non-fatal), runtime-config, persistence
-status before/after mutation, and a `notes.md` stub beside the migration
-metadata artifacts. Matching ungated `persistence-status-status` companions
-beside `$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`
-are frozen next — see [CLI migration-run-retention persistence-status-status contract freeze](../plans/2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). GREEN stays follow-on; printed scripts still do not emit `persistence-status-*-status.json`. Export `DRIVER` / `DSN` before running any printed
+status before/after mutation plus matching ungated `persistence-status-status`
+companions (`persistence-status-before-status.json` /
+`persistence-status-after-status.json`; no `--require-ok` / `--require-drained` /
+`--require-no-crash-temps` on those redirects), and a `notes.md` stub beside the
+migration metadata artifacts. See [CLI migration-run-retention persistence-status-status](../plans/2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
+Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.
 
 ```bash

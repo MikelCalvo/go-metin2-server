@@ -44,18 +44,30 @@ proofs red for a missing-store reason, not a real FileStore failure.
 Opening RED without freezing printer placement, ungated vs gated semantics,
 stub JSON shape, hermetic filenames, leftover-lock ordering, and the
 no-new-live-endpoint rule would invent those operator-facing exit semantics
-mid-implementation. Freeze first; GREEN stays follow-on.
+mid-implementation. Freeze first; GREEN is now landed on `lane/persistence`.
 
-Working CLI after GREEN (inspect a retained migration-run file; this command
-already exists — GREEN only adds printer/stub wiring):
+Working CLI (inspect a retained migration-run file):
 
 ```bash
 metin2-migrate persistence-status-status \
   --persistence-status /var/metin2/migration-runs/YYYYMMDDTHHMMSSZ-<commit12>/persistence-status-after.json
 ```
 
-Do **not** list working examples that claim `migration-run-retention` already
-prints the `*-status.json` companions until GREEN actually emits them.
+Printed `migration-run-retention` companions (ungated):
+
+```sh
+curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"
+metin2-migrate persistence-status-status \
+  --persistence-status "$RUN/persistence-status-before.json" \
+  > "$RUN/persistence-status-before-status.json"
+```
+
+```sh
+curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"
+metin2-migrate persistence-status-status \
+  --persistence-status "$RUN/persistence-status-after.json" \
+  > "$RUN/persistence-status-after-status.json"
+```
 
 ## Contract to freeze (before RED)
 
@@ -251,9 +263,11 @@ git diff --check
 
 ## Status
 
-Freeze-only on `lane/persistence`. GREEN is follow-on: expand the hermetic
-curl stub and print ungated `persistence-status-status` companions beside
-`$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`.
+GREEN on `lane/persistence`: `migration-run-retention` prints ungated
+`persistence-status-status` companions immediately after
+`$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`,
+and the hermetic SQLite curl stub emits a compact empty eight-store
+`GET /local/persistence/status` body that those inspect lines accept.
 
 ## Exit criteria for this freeze
 
@@ -276,4 +290,4 @@ curl stub and print ungated `persistence-status-status` companions beside
 - Do not invent cascade delete inside roster replace.
 - Do not push `origin/main`; push only `origin/lane/persistence`.
 - Do not add a working CLI example that claims the printer already emits
-  `persistence-status-*-status.json` until GREEN actually produces them.
+  `persistence-status-*-status.json` unless GREEN actually produced them.

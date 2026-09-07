@@ -54,6 +54,9 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`,
 		`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`metin2-migrate persistence-status-status`,
+		`--persistence-status "$RUN/persistence-status-before.json"`,
+		`> "$RUN/persistence-status-before-status.json"`,
 		`curl -sS "$OPS/local/db/migrations/status" > "$RUN/daemon-migrations-status.json"`,
 		`if [ -f "$GAMED_LOG" ]; then cp -p "$GAMED_LOG" "$RUN/gamed.log"; fi`,
 		`if [ -f "$AUTHD_LOG" ]; then cp -p "$AUTHD_LOG" "$RUN/authd.log"; fi`,
@@ -83,6 +86,8 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`metin2-migrate status`,
 		`> "$RUN/post-apply-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
+		`--persistence-status "$RUN/persistence-status-after.json"`,
+		`> "$RUN/persistence-status-after-status.json"`,
 		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
 		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
@@ -110,6 +115,7 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	idxAuthd := strings.Index(body, `curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`)
 	idxRuntime := strings.Index(body, `curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`)
 	idxStatusBefore := strings.Index(body, `> "$RUN/persistence-status-before.json"`)
+	idxStatusBeforeStatus := strings.Index(body, `> "$RUN/persistence-status-before-status.json"`)
 	idxGamedLog := strings.Index(body, `cp -p "$GAMED_LOG" "$RUN/gamed.log"`)
 	idxAuthdLog := strings.Index(body, `cp -p "$AUTHD_LOG" "$RUN/authd.log"`)
 	idxNotes := strings.Index(body, `cat > "$RUN/notes.md" <<'EOF'`)
@@ -118,14 +124,16 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	idxApply := strings.Index(body, `metin2-migrate apply \`)
 	idxPostStatus := strings.Index(body, `> "$RUN/post-apply-status.json"`)
 	idxStatusAfter := strings.Index(body, `> "$RUN/persistence-status-after.json"`)
+	idxStatusAfterStatus := strings.Index(body, `> "$RUN/persistence-status-after-status.json"`)
 	idxLockStatus := strings.Index(body, `apply-lock-status --lock-file "$RUN/$LOCK_FILE"`)
-	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxLockStatus < 0 {
+	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxStatusBeforeStatus < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxStatusAfterStatus < 0 || idxLockStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter && idxStatusAfter < idxLockStatus) {
-		t.Fatalf("expected mkdir -> authd/runtime/status-before -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after -> conditional lock triage ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d lock=%d\n%s",
-			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, idxLockStatus, body)
+	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxStatusBeforeStatus && idxStatusBeforeStatus < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter && idxStatusAfter < idxStatusAfterStatus && idxStatusAfterStatus < idxLockStatus) {
+		t.Fatalf("expected mkdir -> authd/runtime/status-before -> before-status-status -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after -> after-status-status -> conditional lock triage ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d beforeStatus=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d afterStatus=%d lock=%d\n%s",
+			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxStatusBeforeStatus, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, idxStatusAfterStatus, idxLockStatus, body)
 	}
+	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 }
 
 func TestRunMigrationRunRetentionReadsRegularFile(t *testing.T) {
@@ -396,6 +404,9 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`curl -sS "$AUTH_OPS/local/build-info" > "$RUN/authd-build-info.json"`,
 		`curl -sS "$OPS/local/runtime-config" > "$RUN/runtime-config.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`metin2-migrate persistence-status-status`,
+		`--persistence-status "$RUN/persistence-status-before.json"`,
+		`> "$RUN/persistence-status-before-status.json"`,
 		`cat > "$RUN/notes.md" <<'EOF'`,
 		`metin2-migrate catalog > "$RUN/migration-catalog.json"`,
 		`metin2-migrate catalog-status`,
@@ -413,6 +424,8 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`> "$RUN/rollback-apply-audit-status.json"`,
 		`> "$RUN/post-rollback-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
+		`--persistence-status "$RUN/persistence-status-after.json"`,
+		`> "$RUN/persistence-status-after-status.json"`,
 		`if [ -e "$RUN/$LOCK_FILE" ]; then`,
 		`  metin2-migrate apply-lock-status --lock-file "$RUN/$LOCK_FILE" > "$RUN/apply-lock-status.json"`,
 		`  echo "  metin2-migrate apply-lock-aside --lock-file \"$RUN/$LOCK_FILE\" --i-confirm-lab-aside-rename > \"$RUN/apply-lock-aside.json\""`,
@@ -463,6 +476,7 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 	if !strings.Contains(applyBlock, `--allow-rollback`) {
 		t.Fatalf("expected --allow-rollback on apply block:\n%s", applyBlock)
 	}
+	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 }
 
 func TestRunMigrationRunRetentionRejectsAllowRollbackWithLatestTarget(t *testing.T) {
@@ -559,6 +573,12 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 		`> "$RUN/apply-preflight.json"`,
 		`--audit-file "$RUN/migration-apply-audit.json"`,
 		`> "$RUN/post-apply-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`--persistence-status "$RUN/persistence-status-before.json"`,
+		`> "$RUN/persistence-status-before-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
+		`--persistence-status "$RUN/persistence-status-after.json"`,
+		`> "$RUN/persistence-status-after-status.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in intermediate forward stdout:\n%s", want, body)
@@ -578,6 +598,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 			t.Fatalf("intermediate forward retention must not contain %q, got:\n%s", banned, body)
 		}
 	}
+	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 }
 
 func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) {
@@ -618,6 +639,12 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 		`--allow-rollback`,
 		`--audit-file "$RUN/migration-rollback-audit.json"`,
 		`> "$RUN/post-rollback-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
+		`--persistence-status "$RUN/persistence-status-before.json"`,
+		`> "$RUN/persistence-status-before-status.json"`,
+		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
+		`--persistence-status "$RUN/persistence-status-after.json"`,
+		`> "$RUN/persistence-status-after-status.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in intermediate rollback stdout:\n%s", want, body)
@@ -638,6 +665,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 			t.Fatalf("intermediate rollback retention must not contain %q, got:\n%s", banned, body)
 		}
 	}
+	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
 }
 
 func TestRunMigrationRunRetentionHonorsCustomDaemonLogPaths(t *testing.T) {
@@ -701,5 +729,32 @@ func TestRunMigrationRunRetentionRejectsRelativeDaemonLogPaths(t *testing.T) {
 				t.Fatalf("expected %s reason, got %q", tc.flag, stderr.String())
 			}
 		})
+	}
+}
+
+func assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t *testing.T, body string) {
+	t.Helper()
+	beforeRetain := `curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`
+	afterRetain := `curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`
+	beforeInspect := "metin2-migrate persistence-status-status \\\n  --persistence-status \"$RUN/persistence-status-before.json\" \\\n  > \"$RUN/persistence-status-before-status.json\""
+	afterInspect := "metin2-migrate persistence-status-status \\\n  --persistence-status \"$RUN/persistence-status-after.json\" \\\n  > \"$RUN/persistence-status-after-status.json\""
+	idxBeforeRetain := strings.Index(body, beforeRetain)
+	idxBeforeInspect := strings.Index(body, beforeInspect)
+	idxAfterRetain := strings.Index(body, afterRetain)
+	idxAfterInspect := strings.Index(body, afterInspect)
+	idxLockTriage := strings.Index(body, "echo '== optional lab stale-lock triage / aside-rename =='")
+	if idxBeforeRetain < 0 || idxBeforeInspect < 0 || idxAfterRetain < 0 || idxAfterInspect < 0 || idxLockTriage < 0 {
+		t.Fatalf("expected ungated persistence-status-status companions beside retained persistence-status JSON, got:\n%s", body)
+	}
+	if !(idxBeforeRetain < idxBeforeInspect && idxBeforeInspect < idxAfterRetain && idxAfterRetain < idxAfterInspect && idxAfterInspect < idxLockTriage) {
+		t.Fatalf("expected before-retain -> before-status-status -> after-retain -> after-status-status -> leftover-lock triage, got idxs beforeRetain=%d beforeInspect=%d afterRetain=%d afterInspect=%d lock=%d\n%s",
+			idxBeforeRetain, idxBeforeInspect, idxAfterRetain, idxAfterInspect, idxLockTriage, body)
+	}
+	beforeBlock := body[idxBeforeInspect:idxAfterRetain]
+	afterBlock := body[idxAfterInspect:idxLockTriage]
+	for _, banned := range []string{"--require-ok", "--require-drained", "--require-no-crash-temps"} {
+		if strings.Contains(beforeBlock, banned) || strings.Contains(afterBlock, banned) {
+			t.Fatalf("migration-run-retention persistence-status-status redirects must omit %q, got:\n%s", banned, body)
+		}
 	}
 }

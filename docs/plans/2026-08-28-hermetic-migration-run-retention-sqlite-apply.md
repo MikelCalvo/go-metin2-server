@@ -150,7 +150,7 @@ Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN �
 
 Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` is now GREEN — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md). Successful-apply SQLite proofs still expect no auto-run `apply-lock-aside-status.json`.
 
-Read-only `persistence-status-status` printer + hermetic curl-stub expansion for retained `$RUN/persistence-status-*.json` is frozen next — see [CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). GREEN stays follow-on; today's incomplete stub body must not be treated as a valid eight-store snapshot.
+Read-only `persistence-status-status` printer + hermetic curl-stub expansion for retained `$RUN/persistence-status-*.json` is now GREEN — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). Printed-script SQLite proofs retain `persistence-status-before-status.json` / `persistence-status-after-status.json` beside the live curls.
 
 ## Anti-goals / ordering constraints
 

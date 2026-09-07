@@ -104,9 +104,12 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 		"apply-audit-status.json",
 		"post-apply-status.json",
 		"persistence-status-after.json",
+		"persistence-status-before-status.json",
+		"persistence-status-after-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(runDir, name))
 	}
+	assertMigrationRunRetentionPersistenceStatusStatus(t, runDir)
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-apply.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful apply to remove lock file, lstat err=%v", err)
 	}
@@ -208,9 +211,12 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 		"rollback-apply-audit-status.json",
 		"post-rollback-status.json",
 		"persistence-status-after.json",
+		"persistence-status-before-status.json",
+		"persistence-status-after-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(runDir, name))
 	}
+	assertMigrationRunRetentionPersistenceStatusStatus(t, runDir)
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-rollback.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful rollback to remove lock file, lstat err=%v", err)
 	}
@@ -313,9 +319,12 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 		"apply-audit-status.json",
 		"post-apply-status.json",
 		"persistence-status-after.json",
+		"persistence-status-before-status.json",
+		"persistence-status-after-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(runDir, name))
 	}
+	assertMigrationRunRetentionPersistenceStatusStatus(t, runDir)
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-apply.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful apply to remove lock file, lstat err=%v", err)
 	}
@@ -414,9 +423,12 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 		"rollback-apply-audit-status.json",
 		"post-rollback-status.json",
 		"persistence-status-after.json",
+		"persistence-status-before-status.json",
+		"persistence-status-after-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(runDir, name))
 	}
+	assertMigrationRunRetentionPersistenceStatusStatus(t, runDir)
 	if _, err := os.Lstat(filepath.Join(runDir, "migration-rollback.lock")); !os.IsNotExist(err) {
 		t.Fatalf("expected successful rollback to remove lock file, lstat err=%v", err)
 	}
@@ -465,7 +477,7 @@ case "$url" in
     body='{"service":"gamed","stub":true}'
     ;;
   */local/persistence/status)
-    body='{"ok":true,"live_selected_character_count":0}'
+    body='` + compactEmptyPersistenceStatusJSON() + `'
     ;;
   */local/db/migrations/status)
     body='{"current_version":0,"latest_version":0,"up_to_date":false,"pending":[]}'
@@ -637,5 +649,46 @@ func assertRegularFileExists(t *testing.T, path string) {
 	}
 	if !info.Mode().IsRegular() {
 		t.Fatalf("expected regular file %s, mode=%v", path, info.Mode())
+	}
+}
+
+func assertMigrationRunRetentionPersistenceStatusStatus(t *testing.T, runDir string) {
+	t.Helper()
+	assertOneMigrationRunRetentionPersistenceStatusStatus(t, runDir, "persistence-status-before.json", "persistence-status-before-status.json")
+	assertOneMigrationRunRetentionPersistenceStatusStatus(t, runDir, "persistence-status-after.json", "persistence-status-after-status.json")
+}
+
+func assertOneMigrationRunRetentionPersistenceStatusStatus(t *testing.T, runDir, statusName, companionName string) {
+	t.Helper()
+	statusRaw, err := os.ReadFile(filepath.Join(runDir, statusName))
+	if err != nil {
+		t.Fatalf("read %s: %v", statusName, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, companionName))
+	if err != nil {
+		t.Fatalf("read %s: %v", companionName, err)
+	}
+	var got persistenceStatusStatusGot
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode %s: %v\nbody:\n%s", companionName, err, raw)
+	}
+	if got.Format != persistenceStatusStatusFormat || !got.Present || len(got.Status) == 0 || got.PersistenceStatusSHA256 != sha256Hex(statusRaw) {
+		t.Fatalf("unexpected %s envelope: %#v", companionName, got)
+	}
+	var inner struct {
+		OK                         bool `json:"ok"`
+		LiveSelectedCharacterCount int  `json:"live_selected_character_count"`
+	}
+	if err := json.Unmarshal(got.Status, &inner); err != nil {
+		t.Fatalf("decode inner %s: %v\ninner:\n%s", companionName, err, got.Status)
+	}
+	if !inner.OK || inner.LiveSelectedCharacterCount != 0 {
+		t.Fatalf("expected drained ok inner snapshot in %s, got %#v", companionName, inner)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "memory://", "postgres://", "password="} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("%s must not expose %q, got %s", companionName, forbidden, body)
+		}
 	}
 }

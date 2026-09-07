@@ -70,4 +70,4 @@ Validation for this slice:
 3. Add DB-engine-specific advisory lock coverage once a production driver is selected.
 4. Keep ground-item restart durability deferred until operators decide that quarantined `0010` exports should drive recovery.
 5. Keep import/backfill execution deferred until a driver-backed harness and backup policy exist.
-6. ~~Follow-up owned separately: freeze `persistence-status-status` printer + hermetic curl-stub expansion for retained `$RUN/persistence-status-*.json`.~~ Done for docs/spec freeze — see [CLI migration-run-retention persistence-status-status contract freeze](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). GREEN stays follow-on.
+6. ~~Follow-up owned separately: freeze `persistence-status-status` printer + hermetic curl-stub expansion for retained `$RUN/persistence-status-*.json`.~~ Done — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). Printed scripts now emit ungated `persistence-status-status` companions beside `$RUN/persistence-status-before.json` / `$RUN/persistence-status-after.json`.
