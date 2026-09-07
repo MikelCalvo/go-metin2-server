@@ -57,7 +57,16 @@ Opening RED without freezing the command / flag names, the live (no-format)
 inner shape, `ok` / drained recompute rules, identity-slice count mapping,
 stderr mapping, printer wiring, and the hermetic no-new-live-endpoint rule
 would invent those operator-facing exit semantics mid-implementation.
-Freeze first; GREEN stays follow-on.
+Freeze first; GREEN is now landed on `lane/persistence`.
+
+Working CLI example after GREEN:
+
+```bash
+metin2-migrate persistence-status-status \
+  --persistence-status /var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/persistence-status-after.json \
+  --require-ok \
+  --require-drained
+```
 
 ## Contract to freeze (before RED)
 
@@ -443,16 +452,21 @@ git diff --check
 
 ## Status
 
-Freeze only on `lane/persistence`. GREEN is the follow-on slice.
+GREEN on `lane/persistence`: read-only `persistence-status-status` inspects retained
+`GET /local/persistence/status` JSON, `backup-restore-drill` prints an ungated
+before-status-status redirect plus a gated after-status-status
+(`--require-ok --require-drained`) redirect, and the hermetic HTTP proof asserts
+`$BASE/persistence-status-before-status.json` plus
+`$BASE/persistence-status-after-status.json`.
 
 ## Exit criteria for this freeze
 
 - this plan exists and names exact command / flags / envelope / live
   no-format inner shape / `ok`+drained recompute / printer wiring /
   hermetic filenames / migration-run-retention exclusion
-- Track E / migration-contract point at this freeze as the next GREEN target
-- no Go production code changes in the freeze commit
-- tree stays green (`git status` clean after docs commit)
+- Track E / migration-contract point at this freeze; GREEN is now landed
+- freeze commit stayed docs-only; this GREEN commit adds the inspector
+- tree stays green after the GREEN commit
 
 ## Anti-goals / ordering constraints
 

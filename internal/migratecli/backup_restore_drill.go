@@ -498,6 +498,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString(`curl -sS "$OPS/local/runtime-config" > "$BASE/runtime-config.json"` + "\n")
 	b.WriteString(`curl -sS "$OPS/healthz"` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$BASE/persistence-status-before.json"` + "\n")
+	b.WriteString(`metin2-migrate persistence-status-status --persistence-status "$BASE/persistence-status-before.json" > "$BASE/persistence-status-before-status.json"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== optional retain daemon JSON logs =='\n")
 	b.WriteString(`# Missing files are non-fatal when unit samples have not been renamed yet.` + "\n")
@@ -601,6 +602,10 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("\n")
 	b.WriteString("echo '== post-restore =='\n")
 	b.WriteString("curl -sS \"$OPS/local/persistence/status\" > \"$BASE/persistence-status-after.json\"\n")
+	b.WriteString("metin2-migrate persistence-status-status --persistence-status \"$BASE/persistence-status-after.json\" \\\n")
+	b.WriteString("  --require-ok \\\n")
+	b.WriteString("  --require-drained \\\n")
+	b.WriteString("  > \"$BASE/persistence-status-after-status.json\"\n")
 	return b.String()
 }
 

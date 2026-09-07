@@ -254,10 +254,9 @@ GREEN on `lane/persistence`: opt-in `--require-no-crash-temps` on live
 `backup-restore-drill` redirects, and hermetic HTTP proof kept green under
 the extra flags.
 
-Follow-up owned separately: freeze-only read-only `persistence-status-status`
-for retained `persistence-status-*.json` — see
+~~Follow-up owned separately: freeze-only read-only `persistence-status-status`
+for retained `persistence-status-*.json`.~~ Done — see
 [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md).
-GREEN is follow-on.
 
 ## Exit criteria for this freeze
 

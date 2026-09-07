@@ -352,10 +352,9 @@ matching `backup-restore-drill` redirect, and hermetic
 - Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on live
   `backup-tree-status` and retained `backup-tree-status-status` — see
   [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
-- Follow-up owned separately: freeze-only read-only `persistence-status-status`
-  for retained `persistence-status-*.json` — see
+- ~~Follow-up owned separately: freeze-only read-only `persistence-status-status`
+  for retained `persistence-status-*.json`.~~ Done — see
   [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md).
-  GREEN is follow-on.
 
 ## Exit criteria for this freeze
 

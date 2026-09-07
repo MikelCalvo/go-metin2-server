@@ -205,7 +205,9 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"authd-build-info.json",
 		"runtime-config.json",
 		"persistence-status-before.json",
+		"persistence-status-before-status.json",
 		"persistence-status-after.json",
+		"persistence-status-after-status.json",
 		"notes.md",
 		"backup-tree-status.json",
 		"backup-tree-status-status.json",
@@ -216,6 +218,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	assertRegularFileExists(t, filepath.Join(retentionTree, "safebox", safeboxstore.BackupManifestFilename))
 	assertBackupTreeStatusComplete(t, retentionTree)
 	assertBackupTreeStatusStatusComplete(t, retentionTree)
+	assertPersistenceStatusStatusComplete(t, retentionTree)
 
 	assertDirExists(t, accountDir+".aside-"+retentionTreeTimestamp(t, retentionTree))
 	assertDirExists(t, filepath.Dir(safeboxPath)+".aside-"+retentionTreeTimestamp(t, retentionTree))
@@ -386,6 +389,50 @@ func assertBackupTreeStatusStatusComplete(t *testing.T, retentionTree string) {
 	for _, forbidden := range []string{"drill-owner", "DrillHero", "CREATE TABLE", "postgres://", "mysql://", "DSN=", `"logins"`, `"login_keys"`} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("backup-tree-status-status.json must not expose %q, got %s", forbidden, body)
+		}
+	}
+}
+
+func assertPersistenceStatusStatusComplete(t *testing.T, retentionTree string) {
+	t.Helper()
+	assertOnePersistenceStatusStatus(t, retentionTree, "persistence-status-before.json", "persistence-status-before-status.json", false)
+	assertOnePersistenceStatusStatus(t, retentionTree, "persistence-status-after.json", "persistence-status-after-status.json", true)
+}
+
+func assertOnePersistenceStatusStatus(t *testing.T, retentionTree, statusName, companionName string, requireDrainedOK bool) {
+	t.Helper()
+	statusRaw, err := os.ReadFile(filepath.Join(retentionTree, statusName))
+	if err != nil {
+		t.Fatalf("read %s: %v", statusName, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(retentionTree, companionName))
+	if err != nil {
+		t.Fatalf("read %s: %v", companionName, err)
+	}
+	var got struct {
+		Format                  string `json:"format"`
+		Present                 bool   `json:"present"`
+		PersistenceStatusSHA256 string `json:"persistence_status_sha256"`
+		Status                  *struct {
+			OK                         bool `json:"ok"`
+			LiveSelectedCharacterCount int  `json:"live_selected_character_count"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode %s: %v\nbody:\n%s", companionName, err, raw)
+	}
+	sum := sha256.Sum256(statusRaw)
+	wantSHA := hex.EncodeToString(sum[:])
+	if got.Format != "go-metin2-persistence-status-status-v1" || !got.Present || got.Status == nil || got.PersistenceStatusSHA256 != wantSHA {
+		t.Fatalf("unexpected %s envelope: %#v", companionName, got)
+	}
+	if requireDrainedOK && (!got.Status.OK || got.Status.LiveSelectedCharacterCount != 0) {
+		t.Fatalf("expected drained ok inner snapshot in %s, got %#v", companionName, got.Status)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "postgres://", "mysql://", "DSN=", "password="} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("%s must not expose %q, got %s", companionName, forbidden, body)
 		}
 	}
 }
