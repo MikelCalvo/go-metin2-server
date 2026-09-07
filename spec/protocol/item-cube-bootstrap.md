@@ -213,9 +213,10 @@ craft, and persists the same live snapshot
 (`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`). The
 composed PvE vertical gameplay proof now also packet-buys catalog slot
 `2` after authored sword `SHOP SELL`, then `/cube add 0 0` / `/cube make`
-on a second authored `CubeMaster` window, grants `27001 x1`, and persists
-the same live snapshot
-(`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`). The
+on a second authored `CubeMaster` window, grants `27001 x1`, `/close_cube`,
+and packet-uses that cube-granted last stack
+(`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`,
+`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`). The
 first composed CubeMaster inspect still stays non-mutating `r_info` /
 `m_info` because inventory is empty and gold is too low for materials.
 
@@ -283,6 +284,8 @@ keeps only the remaining craft-protocol gaps deferred.
 - `docs/plans/2026-08-30-open-cube-npc-service.md`
 - `docs/plans/2026-08-30-open-cube-content-bundle-route-summary.md`
 - `docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`
+- `docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`
+- `docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

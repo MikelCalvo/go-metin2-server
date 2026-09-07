@@ -56,6 +56,9 @@ enough for `20g` materials plus `100g` craft cost and inventory is empty.
 - FileStore `CubeRecipeStorePath` config knob
 - merchant sell-back of leftover cube materials
 - binary cube headers / OR-materials
+- ~~using the cube-granted `27001` on the same composed proof~~ Later closed by
+  authored cube-grant last-stack `ITEM_USE`; see
+  [pve-vertical-authored-cube-grant-use](2026-09-07-pve-vertical-authored-cube-grant-use.md).
 - refine / mall / party ownership
 
 ## Verification

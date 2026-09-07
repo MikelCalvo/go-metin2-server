@@ -1540,6 +1540,96 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected persisted inventory one 27001 after authored cube make, got %+v", account.Characters[0].Inventory)
 	}
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube make")
+
+	beforeCraftedUsePoints, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected points snapshot before authored cube-granted potion ITEM_USE")
+	}
+	wantHPAfterCraftedUse := beforeCraftedUsePoints.Points[bootstrapPlayerPointValueIndex] + 50
+	wantPersistedHPAfterCraftedUse := account.Characters[0].Points[bootstrapPlayerPointValueIndex] + 50
+
+	assertCloseCubeCommandChat(t, flow, "/close_cube", "pve vertical cube close after authored make")
+	closedCraftCubeRInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed-cube r_info after authored CubeMaster make: %v", err)
+	}
+	if len(closedCraftCubeRInfoOut) != 0 {
+		t.Fatalf("expected closed-cube r_info after authored make to emit no frames, got %d", len(closedCraftCubeRInfoOut))
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterCubeMake {
+		t.Fatalf("expected live gold %d after authored cube close, got ok=%v snapshot=%+v", wantGoldAfterCubeMake, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != 27001 || inventorySnapshot.Inventory[0].Count != 1 || inventorySnapshot.Inventory[0].Slot != 0 {
+		t.Fatalf("expected live inventory one 27001 after authored cube close, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube close after make")
+
+	craftedUseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(0)})))
+	if err != nil {
+		t.Fatalf("unexpected authored cube-granted potion ITEM_USE: %v", err)
+	}
+	if len(craftedUseOut) != 4 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, and info chat for cube-granted last-stack potion, got %d", len(craftedUseOut))
+	}
+	craftedUseEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, craftedUseOut[0]))
+	if err != nil {
+		t.Fatalf("decode authored cube-granted potion ITEM_USE echo: %v", err)
+	}
+	if craftedUseEcho.Position != itemproto.InventoryPosition(0) || craftedUseEcho.CharacterVID != hero.VID || craftedUseEcho.VictimVID != hero.VID || craftedUseEcho.Vnum != 27001 {
+		t.Fatalf("unexpected authored cube-granted potion ITEM_USE echo: %+v", craftedUseEcho)
+	}
+	craftedUsePoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, craftedUseOut[1]))
+	if err != nil {
+		t.Fatalf("decode authored cube-granted potion point-change: %v", err)
+	}
+	if craftedUsePoint.VID != hero.VID || craftedUsePoint.Type != bootstrapPlayerPointType || craftedUsePoint.Amount != 50 || craftedUsePoint.Value != wantHPAfterCraftedUse {
+		t.Fatalf("unexpected authored cube-granted potion point-change: %+v want value=%d", craftedUsePoint, wantHPAfterCraftedUse)
+	}
+	craftedUseDel, err := itemproto.DecodeDel(decodeSingleFrame(t, craftedUseOut[2]))
+	if err != nil {
+		t.Fatalf("decode authored cube-granted potion ITEM_DEL: %v", err)
+	}
+	if craftedUseDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected authored cube-granted potion ITEM_DEL: %+v", craftedUseDel)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, craftedUseOut[3:], "consume:27001:+50", "authored cube-granted potion ITEM_USE")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected authored cube-granted potion ITEM_USE to queue no peer frames, got %d", len(queued))
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterCraftedUse {
+		t.Fatalf("expected live HP %d after authored cube-granted potion ITEM_USE, got ok=%v snapshot=%+v", wantHPAfterCraftedUse, ok, pointsSnapshot)
+	}
+	currencySnapshot, ok = runtime.CurrencySnapshot(hero.Name)
+	if !ok || currencySnapshot.Gold != wantGoldAfterCubeMake {
+		t.Fatalf("expected live gold %d after authored cube-granted potion ITEM_USE, got ok=%v snapshot=%+v", wantGoldAfterCubeMake, ok, currencySnapshot)
+	}
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected live inventory empty after authored cube-granted potion ITEM_USE, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after authored cube-granted potion ITEM_USE: %v", err)
+	}
+	if account.Characters[0].Gold != wantGoldAfterCubeMake {
+		t.Fatalf("expected persisted gold %d after authored cube-granted potion ITEM_USE, got %d", wantGoldAfterCubeMake, account.Characters[0].Gold)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected persisted HP %d after authored cube-granted potion ITEM_USE (live=%d), got %d", wantPersistedHPAfterCraftedUse, wantHPAfterCraftedUse, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted inventory/equipment empty after authored cube-granted potion ITEM_USE, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
+	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+	}, "authored cube-granted potion ITEM_USE")
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube-granted potion ITEM_USE")
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {
