@@ -14,6 +14,7 @@ import (
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -383,6 +384,114 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 	want := queststate.Snapshot{Flags: []queststate.Flag{{Character: killer.Name, QuestRef: "quest:first_steps", Name: "killed_qa_mob", Value: 1}}}
 	if !reflect.DeepEqual(loaded, want) {
 		t.Fatalf("unexpected quest-state after kill credit:\n got: %#v\nwant: %#v", loaded, want)
+	}
+}
+
+func TestHandleAttackKillQuestCreditDoesNotAdvanceWhenDeathRewardAccountSaveFails(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("KillQuestRewardSaveFail", 0x01030155, 0x02040155, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapExperiencePointType] = 25
+	killer.Gold = 40
+	const login = "kill-quest-reward-save-fail"
+	issuePeerTicket(t, ticketStore, login, 0x55555555, killer)
+
+	accounts := newDeferredFailingAccountStore(0, accountstore.Account{
+		Login:      login,
+		Empire:     killer.Empire,
+		Characters: []loginticket.Character{killer},
+	})
+	questStore := queststate.NewMemoryStore()
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
+		questStore,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new kill quest reward-save-failure runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_550, 0)
+	runtime.now = func() time.Time { return currentTime }
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		ItemTemplates: rewardDropItemTemplates(27001),
+		SpawnGroups: []contentbundle.SpawnGroup{{
+			Ref:              "practice.kill_quest_reward_save_fail_mob",
+			Name:             "KillQuestRewardSaveFailMob",
+			MapIndex:         bootstrapMapIndex,
+			X:                1200,
+			Y:                2200,
+			RaceNum:          20350,
+			CombatProfile:    worldruntime.StaticActorCombatProfileTrainingDummy,
+			RewardExperience: 75,
+			RewardGold:       60,
+			RewardDropVnums:  []uint32{27001},
+			RewardQuestRef:   "quest:first_steps",
+			RewardQuestFlag:  "killed_qa_mob",
+			RewardQuestTo:    1,
+			RewardQuestText:  "Quest updated: first_steps.killed_qa_mob = 1.",
+		}},
+	}); err != nil {
+		t.Fatalf("import kill quest reward-save-failure bundle: %v", err)
+	}
+	targetVID := uint32(runtime.StaticActors()[0].EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x55555555)
+	defer closeSessionFlow(t, flow)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected kill quest reward-save-failure target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected kill quest reward-save-failure attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) != 5 {
+		t.Fatalf("expected killing hit to keep death/clear/damage-info plus independent ground reward without scalar or quest frames, got %d", len(killOut))
+	}
+	if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, killOut[0])); err != nil || dead.VID != targetVID {
+		t.Fatalf("unexpected reward-save-failure dead frame: dead=%+v err=%v", dead, err)
+	}
+	if ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[3])); err != nil || ground.Vnum != 27001 {
+		t.Fatalf("expected independent reward ground add after scalar save failure, got %+v err=%v", ground, err)
+	}
+	if ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[4])); err != nil || ownership.OwnerName != killer.Name {
+		t.Fatalf("expected independent reward ownership after scalar save failure, got %+v err=%v", ownership, err)
+	}
+	for index, raw := range killOut {
+		if _, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatalf("expected no kill-quest chat after scalar account-save failure, got frame %d", index)
+		}
+		if change, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil && (change.Type == bootstrapExperiencePointType || change.Type == bootstrapGoldPointType) {
+			t.Fatalf("expected no scalar reward point change after account-save failure, got %+v at frame %d", change, index)
+		}
+	}
+	if loaded, err := questStore.Load(); err != nil {
+		t.Fatalf("load quest-state after kill reward account-save failure: %v", err)
+	} else if want := (queststate.Snapshot{Flags: []queststate.Flag{}}); !reflect.DeepEqual(loaded, want) {
+		t.Fatalf("expected kill-quest state to remain empty after scalar account-save failure:\n got: %#v\nwant: %#v", loaded, want)
+	}
+	if currency, ok := runtime.CurrencySnapshot(killer.Name); !ok || currency.Gold != 40 {
+		t.Fatalf("expected live gold to roll back to 40 after kill reward account-save failure, ok=%v snapshot=%+v", ok, currency)
+	}
+	if points, ok := runtime.PointsSnapshot(killer.Name); !ok || points.Points[bootstrapExperiencePointType] != 25 {
+		t.Fatalf("expected live experience to roll back to 25 after kill reward account-save failure, ok=%v snapshot=%+v", ok, points)
+	}
+	account, err := accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load account after kill reward account-save failure: %v", err)
+	}
+	if len(account.Characters) != 1 || account.Characters[0].Gold != 40 || account.Characters[0].Points[bootstrapExperiencePointType] != 25 {
+		t.Fatalf("expected persisted scalar state to stay pre-reward after account-save failure, got %+v", account.Characters)
 	}
 }
 

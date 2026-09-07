@@ -9152,6 +9152,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
 					}
+					deathRewardScalarAccountSaveFailed := false
 					if !resolution.DeathReward.Empty() {
 						attackFrames := append([][]byte(nil), frames...)
 						type rewardDrop struct {
@@ -9197,6 +9198,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								persistedSelected.Points[bootstrapExperiencePointType] = updatedSelected.Points[bootstrapExperiencePointType]
 								updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedSelected)
 								if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, updatedCharacters) {
+									deathRewardScalarAccountSaveFailed = true
 									selectedPlayer.SetLiveGold(previousSelected.Gold)
 									selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
 									refreshLiveCharacterRegistration()
@@ -9240,7 +9242,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 						}
 					}
-					if resolution.ClearActiveTarget {
+					if resolution.ClearActiveTarget && !deathRewardScalarAccountSaveFailed {
 						if credit, ok := runtime.sharedWorld.StaticActorKillQuestCredit(resolution.Actor.EntityID); ok {
 							if ok, err := runtime.killQuestRequireGateSatisfied(previousSelected.Name, credit); err == nil && ok {
 								transitionResult, err := runtime.ApplyQuestStateTransition(queststate.Transition{
