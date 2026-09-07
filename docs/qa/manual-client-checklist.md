@@ -840,7 +840,7 @@ Important note:
 - [ ] Interact once
 - [ ] Confirm any authored informational text appears first if configured
 - [ ] Confirm the client re-enters the world at the authored destination and remains connected
-- [ ] If using `docs/examples/bootstrap-pve-vertical-authoring-bundle.json`, confirm the destination stays on map `1` at `470200,964200` (same-map warp, not a foreign-map hop). Before walking back, select `QAPveVerticalPack 2` at `470000,964200` and land the four-hit formula kill: death/clear, then self-only `PLAYER_POINT_CHANGE(POINT_EXP)` `+40` and `PLAYER_POINT_CHANGE(POINT_GOLD)` `+20`, with no `GROUND_ADD` and no kill-quest chat. Then walk back into the QA square's 300-unit interaction radius before continuing merchant / gated-mob / turn-in smoke
+- [ ] If using `docs/examples/bootstrap-pve-vertical-authoring-bundle.json`, confirm the destination stays on map `1` at `470200,964200` (same-map warp, not a foreign-map hop). Before walking back, select `QAPveVerticalPack 2` at `470000,964200` and land the four-hit formula kill: death/clear, then self-only `PLAYER_POINT_CHANGE(POINT_EXP)` `+40` and `PLAYER_POINT_CHANGE(POINT_GOLD)` `+20`, with no `GROUND_ADD` and no kill-quest chat. After its authored `2s` respawn delay, confirm that member alone rebuilds with delete/add/info/update at `470000,964200` and full HP; stale attack fails closed until a fresh target selection. `QAPveVerticalPack 1` remains live: this is independent-member lifecycle, not synchronized pack respawn. Then walk back into the QA square's 300-unit interaction radius.
 
 Expected result:
 - the warp actor relocates the character through the current transfer/rebootstrap flow, including same-map destinations that still emit the self rebootstrap burst

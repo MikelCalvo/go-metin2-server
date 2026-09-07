@@ -38,14 +38,16 @@ EXP/gold table is actually played before walking back into the QA square.
    `PLAYER_POINT_CHANGE(POINT_GOLD)` `+20`. No `GROUND_ADD`, no quest
    chat, no `killed_qa_mob` mutation.
 4. Live and persisted gold/experience match those point-change frames.
-   Pack 2 stays dead until its authored `2s` respawn; untargeted pack 1
-   stays alive.
+   Pack 2 stays dead until its authored `2s` respawn, then sends the ordinary
+   self delete/add/info/update rebuild at its authored tile with full HP;
+   attacks remain stale-fail-closed until fresh target selection. Untargeted
+   pack 1 stays alive throughout.
 5. The existing return `MOVE` then walks back into the QA-square
    300-unit radius for merchant / warehouse / gated-mob / turn-in.
 
 ## What this is not yet
 
-- Killing both pack members, or proving synchronized pack respawn
+- Killing both pack members or proving synchronized pack respawn; this slice only covers independent member lifecycle
 - Pack AI / assist / shared HP / random rectangle placement
 - Attaching kill-quest credit or drop vnums to pack members
 - Leftover cube-material sell-back or `/close_cube` after authored make

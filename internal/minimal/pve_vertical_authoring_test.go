@@ -372,6 +372,47 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("expected untargeted pack 1 to stay alive after pack 2 kill, ok=%v snapshot=%+v", ok, livingPack)
 	}
 	currentTime = currentTime.Add(pveVerticalMobRespawnDelay)
+	packRespawnOut := flushServerFrames(t, flow)
+	assertPveVerticalPackRespawn(t, packRespawnOut, pack2VID)
+	respawnedPack, ok := runtime.SpawnGroupByRef("practice.qa_pve_vertical_pack.m02")
+	if !ok || respawnedPack.Dead || respawnedPack.X != 470000 || respawnedPack.Y != hero.Y || respawnedPack.CombatMaxHP != pveVerticalMobMaxHP || respawnedPack.CombatHPPercent != 100 {
+		t.Fatalf("expected warp-tile pack 2 respawn to restore authored live full-HP state, ok=%v snapshot=%+v", ok, respawnedPack)
+	}
+	livingPack, ok = runtime.SpawnGroupByRef("practice.qa_pve_vertical_pack.m01")
+	if !ok || livingPack.Dead {
+		t.Fatalf("expected untargeted pack 1 to stay alive after pack 2 respawn, ok=%v snapshot=%+v", ok, livingPack)
+	}
+	attackWithoutReselectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  pack2VID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected warp-tile pack-2 attack without fresh target selection after respawn: %v", err)
+	}
+	if len(attackWithoutReselectOut) != 0 {
+		t.Fatalf("expected warp-tile pack-2 attack without fresh target selection after respawn to fail closed, got %d frames", len(attackWithoutReselectOut))
+	}
+	reselectPackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: pack2VID})))
+	if err != nil {
+		t.Fatalf("unexpected warp-tile pack-2 fresh target selection after respawn: %v", err)
+	}
+	if len(reselectPackOut) != 1 {
+		t.Fatalf("expected one warp-tile pack-2 target frame after respawn, got %d", len(reselectPackOut))
+	}
+	reselectedPack, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, reselectPackOut[0]))
+	if err != nil {
+		t.Fatalf("decode warp-tile pack-2 target frame after respawn: %v", err)
+	}
+	if reselectedPack.TargetVID != pack2VID || reselectedPack.HPPercent != 100 {
+		t.Fatalf("unexpected warp-tile pack-2 fresh target packet after respawn: %+v", reselectedPack)
+	}
+	clearPackTargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{})))
+	if err != nil {
+		t.Fatalf("unexpected warp-tile pack-2 target clear after respawn: %v", err)
+	}
+	if len(clearPackTargetOut) != 0 {
+		t.Fatalf("expected warp-tile pack-2 target clear after respawn to be consumed without frames, got %d", len(clearPackTargetOut))
+	}
 	_ = flushServerFrames(t, flow)
 
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
@@ -467,6 +508,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	)
 	assertPveVerticalCurrency(t, runtime, accounts, hero.Name, wantGoldAfterWarehouseSave, "authored warehouse money save")
 	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, int64(pveVerticalKillRewardGold), "authored warehouse money save")
+	_ = flushServerFrames(t, flow)
 	assertCloseSafeboxCommandChat(t, flow, "/close_safebox", "pve vertical warehouse close before cube")
 	assertPveVerticalDurableWarehouseGold(t, runtime, "pve-vertical", hero.ID, int64(pveVerticalKillRewardGold), "authored warehouse close after money save")
 
@@ -2181,6 +2223,41 @@ func assertPveVerticalEXPGoldOnlyKillReward(
 		if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, frame)); err == nil {
 			t.Fatalf("expected no GROUND_ADD on %s EXP/gold-only pack kill", context)
 		}
+	}
+}
+
+func assertPveVerticalPackRespawn(t *testing.T, frames [][]byte, packVID uint32) {
+	t.Helper()
+	if len(frames) != 4 {
+		t.Fatalf("expected warp-tile pack 2 respawn to emit delete + add/info/update, got %d frames", len(frames))
+	}
+	deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode warp-tile pack 2 respawn delete: %v", err)
+	}
+	if deleted.VID != packVID {
+		t.Fatalf("unexpected warp-tile pack 2 respawn delete: %+v", deleted)
+	}
+	added, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, frames[1]))
+	if err != nil {
+		t.Fatalf("decode warp-tile pack 2 respawn add: %v", err)
+	}
+	if added.VID != packVID || added.X != 470000 || added.Y != 964200 || added.RaceNum != 20350 {
+		t.Fatalf("unexpected warp-tile pack 2 respawn add: %+v", added)
+	}
+	info, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, frames[2]))
+	if err != nil {
+		t.Fatalf("decode warp-tile pack 2 respawn additional info: %v", err)
+	}
+	if info.VID != packVID || info.Name != "QAPveVerticalPack 2" {
+		t.Fatalf("unexpected warp-tile pack 2 respawn additional info: %+v", info)
+	}
+	updated, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, frames[3]))
+	if err != nil {
+		t.Fatalf("decode warp-tile pack 2 respawn update: %v", err)
+	}
+	if updated.VID != packVID {
+		t.Fatalf("unexpected warp-tile pack 2 respawn update: %+v", updated)
 	}
 }
 
