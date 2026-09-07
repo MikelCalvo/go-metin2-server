@@ -74,3 +74,6 @@ is now owned by
 Combined last-hit `/phase_select` / reconnect kill-reward rematerialize is now
 owned by
 `2026-09-07-combined-last-hit-phase-select-reconnect-kill-reward-rematerialize.md`.
+Combined last-hit `/phase_select` / reconnect `/restart_town` kill-reward
+rematerialize is now owned by
+`2026-09-07-combined-last-hit-phase-select-reconnect-restart-town-kill-reward-rematerialize.md`.
