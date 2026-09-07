@@ -124,6 +124,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 	assertSQLiteLedgerAtCatalogTip(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), catalogTipVersion(t))
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", catalogTipVersion(t))
+	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -230,6 +231,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 	assertSQLiteLedgerEmpty(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 0)
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 0)
+	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -340,6 +342,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 	assertSQLiteLedgerAtVersion(t, dsn, 7, "auth_login_ticket_handoff")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), 7)
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", 7)
+	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -446,7 +449,23 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 	assertSQLiteLedgerAtVersion(t, dsn, 8, "static_actor_content_state")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 8)
 	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 8)
+	assertMigrationRunRetentionDaemonMigrationsStatus(t, runDir)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
+}
+
+func compactEmptyLedgerPlanJSON() string {
+	plan, err := dbmigrations.PlanUpToLatest(nil)
+	if err != nil {
+		panic(err)
+	}
+	raw, err := json.Marshal(plan)
+	if err != nil {
+		panic(err)
+	}
+	if bytes.Contains(raw, []byte("'")) {
+		panic("empty-ledger plan JSON contains single quotes")
+	}
+	return string(raw)
 }
 
 func mustInstallMigrationRunRetentionCurlStub(t *testing.T, binDir string) {
@@ -488,7 +507,7 @@ case "$url" in
     body='` + compactEmptyPersistenceStatusJSON() + `'
     ;;
   */local/db/migrations/status)
-    body='{"current_version":0,"latest_version":0,"up_to_date":false,"pending":[]}'
+    body='` + compactEmptyLedgerPlanJSON() + `'
     ;;
 esac
 if [ -n "$out" ]; then
@@ -726,5 +745,33 @@ func assertMigrationRunRetentionStatusStatus(t *testing.T, runDir, statusName, c
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("%s must not expose %q, got %s", companionName, forbidden, body)
 		}
+	}
+}
+
+func assertMigrationRunRetentionDaemonMigrationsStatus(t *testing.T, runDir string) {
+	t.Helper()
+	statusPath := filepath.Join(runDir, "daemon-migrations-status.json")
+	raw, err := os.ReadFile(statusPath)
+	if err != nil {
+		t.Fatalf("read daemon-migrations-status.json: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run([]string{"status-status", "--status", statusPath}, nil, &stdout, &stderr)
+	if code != exitOK {
+		t.Fatalf("expected ungated status-status of daemon-migrations-status.json to succeed, exit=%d stderr=%q raw=%s", code, stderr.String(), raw)
+	}
+	var got statusStatusGot
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatalf("decode daemon-migrations status-status: %v\nbody:\n%s", err, stdout.String())
+	}
+	if got.Format != statusStatusFormat || !got.Present || got.Plan == nil || !got.MatchesEmbeddedLatest {
+		t.Fatalf("expected inspectable empty-ledger daemon-migrations-status, got %#v raw=%s", got, raw)
+	}
+	if got.Plan.CurrentVersion != 0 || got.Plan.UpToDate || len(got.Plan.Pending) == 0 {
+		t.Fatalf("expected empty-ledger pending daemon plan, got %#v", got.Plan)
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "daemon-migrations-status-status.json")); !os.IsNotExist(err) {
+		t.Fatalf("printer must not emit daemon-migrations-status-status.json, lstat err=%v", err)
 	}
 }

@@ -68,7 +68,9 @@ Printed scripts also emit gated `status-status` companions immediately after
 those post-apply / post-rollback retains (`post-apply-status-status.json` /
 `post-rollback-status-status.json` with `--require-up-to-date` and
 `--require-matches-embedded-latest`). `$RUN/daemon-migrations-status.json`
-stays ungated. See
+stays ungated. The hermetic SQLite curl stub now emits a valid empty-ledger
+Plan for that optional retain so operators can later inspect it by hand.
+See
 [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md).
 Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.

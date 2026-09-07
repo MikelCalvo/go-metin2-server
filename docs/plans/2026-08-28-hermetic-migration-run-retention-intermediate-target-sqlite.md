@@ -65,7 +65,9 @@ proof for mid-catalog targets.
    `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json`.~~ Done — see
    [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
    Intermediate proofs now assert `$RUN/post-apply-status-status.json` /
-   `$RUN/post-rollback-status-status.json`.
+   `$RUN/post-rollback-status-status.json`. The hermetic curl stub now emits a
+   valid empty-ledger Plan for `$RUN/daemon-migrations-status.json` (still no
+   gated daemon inspect).
 
 ## What this is not yet
 

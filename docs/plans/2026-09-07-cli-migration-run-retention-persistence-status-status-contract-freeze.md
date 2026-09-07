@@ -272,7 +272,9 @@ and the hermetic SQLite curl stub emits a compact empty eight-store
 retained `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json`.~~
 Done — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 Printed scripts now emit gated `$RUN/post-apply-status-status.json` /
-`$RUN/post-rollback-status-status.json` companions.
+`$RUN/post-rollback-status-status.json` companions. The hermetic curl stub now
+also emits a valid empty-ledger Plan for `$RUN/daemon-migrations-status.json`
+(still no gated daemon inspect).
 
 ## Exit criteria for this freeze
 

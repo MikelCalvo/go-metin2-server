@@ -59,7 +59,7 @@ ungated: a lab `gamed` with DB preflight disabled reports an empty-ledger
 plan (`current_version: 0`, pending catalog) even after a successful CLI
 apply, and leftover-lock triage still follows post-status.
 
-The hermetic SQLite curl stub currently answers
+The hermetic SQLite curl stub **at freeze time** answered
 `*/local/db/migrations/status` with
 `{"current_version":0,"latest_version":0,"up_to_date":false,"pending":[]}`.
 That body is internally inconsistent (`latest_version` must be positive;
@@ -71,7 +71,8 @@ expand the stub to a valid empty-ledger Plan against the inspecting
 catalog. Prefer expanding the stub in the same GREEN as printer wiring so
 operators can later inspect `$RUN/daemon-migrations-status.json` with the
 new command without a second stub slice. Do **not** print a gated
-`--require-up-to-date` on the daemon curl.
+`--require-up-to-date` on the daemon curl. The later stub-expansion GREEN
+chose `PlanUpToLatest(nil)` and still left the daemon retain ungated.
 
 Opening RED without freezing command / flag names, the live no-format inner
 shape, Plan-shape reuse, require-gate semantics, printer placement, stub
@@ -269,23 +270,12 @@ re-run it by hand.
 
 GREEN **should** still expand the hermetic curl stub
 `*/local/db/migrations/status` body to a compact one-line JSON Plan that
-passes ungated `status-status` Plan-shape consistency:
-
-- `latest_version` equals `len(Catalog())` of the inspecting binary
-- `current_version: 0`
-- `up_to_date: false`
-- `pending` is the full catalog up-plan (or GREEN may emit a minimal
-  internally consistent empty-ledger Plan produced by
-  `PlanUpToLatest(nil)` / `PlanToVersion(nil, 0)`). Prefer
-  `PlanUpToLatest(nil)` so the stub matches a real disabled-preflight
-  daemon.
-- Keep the stub a `PATH` `curl` shim. Do **not** start `gamed` or open a
-  database from the stub.
-
-If emitting the full pending catalog makes the stub awkward, GREEN may
-leave the daemon curl body unchanged **only if** the printer still does
-not inspect that file. Do not wire a daemon `status-status` redirect
-against today's `latest_version: 0` body.
+passes ungated `status-status` Plan-shape consistency. That follow-on is
+now Done: the stub emits `PlanUpToLatest(nil)` (`current_version: 0`,
+catalog-tip `latest_version`, `up_to_date: false`, pending catalog
+up-plan). Keep the stub a `PATH` `curl` shim. Do **not** start `gamed` or
+open a database from the stub. Printed scripts still do not inspect
+`$RUN/daemon-migrations-status.json`.
 
 Do **not** invent a new retained filename beyond
 `post-apply-status-status.json` / `post-rollback-status-status.json`.
@@ -429,9 +419,10 @@ after those retains, and tagged SQLite proofs assert
 `$RUN/post-apply-status-status.json` / `$RUN/post-rollback-status-status.json`.
 Live `status` / `GET /local/db/migrations/status` stay no-format. Daemon
 `$RUN/daemon-migrations-status.json` stays ungated (no inspect redirect). The
-hermetic curl stub body for that optional daemon capture is unchanged.
-Follow-up owned separately: expand that stub to a valid empty-ledger Plan so
-operators can later inspect `$RUN/daemon-migrations-status.json` by hand.
+hermetic curl stub now emits a compact empty-ledger Plan from `PlanUpToLatest(nil)`
+so operators can later inspect that retained file by hand with `status-status`.
+Follow-up owned separately: freeze production-engine selection / operator
+runbook hardening before any stock driver registration.
 
 ## Exit criteria for this freeze
 
