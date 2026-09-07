@@ -166,7 +166,8 @@
         "point_type": 1,
         "point_index": 1,
         "point_delta": 50,
-        "message": "consume:27001:+50"
+        "message": "consume:27001:+50",
+        "special_effect_type": 1
       }
     },
     {

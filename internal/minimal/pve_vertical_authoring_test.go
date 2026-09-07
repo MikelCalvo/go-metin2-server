@@ -20,6 +20,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	effectproto "github.com/MikelCalvo/go-metin2-server/internal/proto/effect"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
@@ -957,8 +958,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored potion ITEM_USE: %v", err)
 	}
-	if len(useOut) != 5 {
-		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, potion QUICKSLOT_DEL, and info chat for last-stack authored potion, got %d", len(useOut))
+	if len(useOut) != 6 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, potion QUICKSLOT_DEL, SPECIAL_EFFECT, and info chat for last-stack authored potion, got %d", len(useOut))
 	}
 	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, useOut[0]))
 	if err != nil {
@@ -988,7 +989,14 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if potionQuickslotDel.Position != pveVerticalPotionQuickslotPosition {
 		t.Fatalf("unexpected authored potion QUICKSLOT_DEL: %+v want position=%d", potionQuickslotDel, pveVerticalPotionQuickslotPosition)
 	}
-	assertPveVerticalSelfOnlyInfoChat(t, useOut[4:], "consume:27001:+50", "authored potion ITEM_USE")
+	useEffect, err := effectproto.DecodeSpecial(decodeSingleFrame(t, useOut[4]))
+	if err != nil {
+		t.Fatalf("decode authored potion SPECIAL_EFFECT: %v", err)
+	}
+	if useEffect.Type != effectproto.SpecialEffectHPUpRed || useEffect.VID != hero.VID {
+		t.Fatalf("unexpected authored potion SPECIAL_EFFECT: %+v", useEffect)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, useOut[5:], "consume:27001:+50", "authored potion ITEM_USE")
 	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
 	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterUse {
 		t.Fatalf("expected live HP %d after authored potion ITEM_USE, got ok=%v snapshot=%+v", wantHPAfterUse, ok, pointsSnapshot)
@@ -1573,8 +1581,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("unexpected authored cube-granted potion ITEM_USE: %v", err)
 	}
-	if len(craftedUseOut) != 4 {
-		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, and info chat for cube-granted last-stack potion, got %d", len(craftedUseOut))
+	if len(craftedUseOut) != 5 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, SPECIAL_EFFECT, and info chat for cube-granted last-stack potion, got %d", len(craftedUseOut))
 	}
 	craftedUseEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, craftedUseOut[0]))
 	if err != nil {
@@ -1597,7 +1605,14 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if craftedUseDel.Position != itemproto.InventoryPosition(0) {
 		t.Fatalf("unexpected authored cube-granted potion ITEM_DEL: %+v", craftedUseDel)
 	}
-	assertPveVerticalSelfOnlyInfoChat(t, craftedUseOut[3:], "consume:27001:+50", "authored cube-granted potion ITEM_USE")
+	craftedUseEffect, err := effectproto.DecodeSpecial(decodeSingleFrame(t, craftedUseOut[3]))
+	if err != nil {
+		t.Fatalf("decode authored cube-granted potion SPECIAL_EFFECT: %v", err)
+	}
+	if craftedUseEffect.Type != effectproto.SpecialEffectHPUpRed || craftedUseEffect.VID != hero.VID {
+		t.Fatalf("unexpected authored cube-granted potion SPECIAL_EFFECT: %+v", craftedUseEffect)
+	}
+	assertPveVerticalSelfOnlyInfoChat(t, craftedUseOut[4:], "consume:27001:+50", "authored cube-granted potion ITEM_USE")
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected authored cube-granted potion ITEM_USE to queue no peer frames, got %d", len(queued))
 	}
@@ -1928,7 +1943,7 @@ func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []ite
 	if !ok || potion.Name != "Small Red Potion" || !potion.Stackable || potion.MaxCount != 200 || potion.ShopBuyPrice != 5 || potion.ShopSellPrice != 2 || potion.EquipSlot != "" || potion.UseEffect == nil {
 		t.Fatalf("expected %s 27001 to author use_effect without equip_slot, got %+v", context, potion)
 	}
-	wantEffect := &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50"}
+	wantEffect := &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "consume:27001:+50", SpecialEffectType: effectproto.SpecialEffectHPUpRed}
 	if !reflect.DeepEqual(potion.UseEffect, wantEffect) {
 		t.Fatalf("unexpected %s 27001 use_effect: got %+v want %+v", context, potion.UseEffect, wantEffect)
 	}

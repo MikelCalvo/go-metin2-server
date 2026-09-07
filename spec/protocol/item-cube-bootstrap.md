@@ -214,7 +214,8 @@ craft, and persists the same live snapshot
 composed PvE vertical gameplay proof now also packet-buys catalog slot
 `2` after authored sword `SHOP SELL`, then `/cube add 0 0` / `/cube make`
 on a second authored `CubeMaster` window, grants `27001 x1`, `/close_cube`,
-and packet-uses that cube-granted last stack
+and packet-uses that cube-granted last stack, including its authored self-only
+HP-up-red `SPECIAL_EFFECT` after the consumed-cell `ITEM_DEL`
 (`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`,
 `docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`). The
 first composed CubeMaster inspect still stays non-mutating `r_info` /

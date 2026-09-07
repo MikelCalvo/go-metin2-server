@@ -6525,7 +6525,7 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 	}
 	wantTemplates := []itemcatalog.Template{
 		{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
-		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50", SpecialEffectType: 1}},
 		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200, ShopBuyPrice: 10},
 	}
 	if !reflect.DeepEqual(canonical.ItemTemplates, wantTemplates) {
@@ -6602,7 +6602,7 @@ func TestCanonicalizePveVerticalAuthoringExampleExpandsQuestLoop(t *testing.T) {
 		Title:      "QA Merchant",
 		EntryCount: 3,
 		Entries: []ShopCatalogEntrySummary{
-			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}},
+			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50", SpecialEffectType: 1}},
 			{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
 			{Slot: 2, ItemVnum: 27002, ItemName: "Small Blue Potion", Count: 2, Price: 20, Stackable: true, MaxCount: 200, ShopBuyPrice: 10},
 		},
