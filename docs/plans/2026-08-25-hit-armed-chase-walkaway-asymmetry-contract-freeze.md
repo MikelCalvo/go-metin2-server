@@ -54,4 +54,5 @@ See [hit-armed chase walkaway twin](2026-08-25-hit-armed-chase-walkaway-twin.md)
 - ~~chase replan twin that moves the owner between arm and first due step~~ Done: see [chase replan owner-moved twin](2026-08-25-chase-replan-owner-moved-between-arm-and-due.md)
 - ~~combat-range-loss chase/homeward twin after chase displace~~ Done: see [combat-range loss homeward after chase](2026-09-04-combat-range-loss-chase-homeward.md)
 - ~~AOI / visibility-loss chase/homeward twin after chase displace~~ Done: see [visibility-loss homeward after chase](2026-09-04-visibility-loss-chase-homeward.md)
+- ~~authored warp INTERACT chase/homeward twin after chase displace~~ Done: see [warp INTERACT homeward after chase](2026-09-07-warp-interact-chase-homeward.md)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching

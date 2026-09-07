@@ -19,6 +19,8 @@ import (
 // / death-floor release. applySelectedCharacterTransfer snapshots the subject's
 // engagements before sharedWorld.transfer clears engaged_by, then re-syncs
 // homeward after clearActiveCombatTarget so within_radius actors still re-arm.
+// Authored warp INTERACT reuses the same helper and now has
+// TestGameRuntimeWarpInteractClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace.
 func TestGameRuntimeTransferClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("TransferHomewardOwner", 0x01030501, 0x02040501, 1900, 2800, 0, 101, 201)

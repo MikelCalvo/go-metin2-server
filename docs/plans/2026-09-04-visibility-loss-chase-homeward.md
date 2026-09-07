@@ -55,3 +55,4 @@ go test ./internal/minimal -run 'TestGameRuntime(CombatRangeLoss|VisibilityLoss|
   (cancelled for Track A bootstrap as re-arm-from-now)
 - cross-map MOVE / `GC WARP`, pack AI, pathfinding, target switching
 - inventing a new leave scheduler; this is coverage for already-live AOI clear
+- ~~authored warp INTERACT chase/homeward twin after chase displace~~ Done: see [warp INTERACT homeward after chase](2026-09-07-warp-interact-chase-homeward.md)
