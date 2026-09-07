@@ -107,6 +107,7 @@ Keep operator evidence outside live data trees:
     migration-apply-audit.json
     apply-audit-status.json
     post-apply-status.json
+    post-apply-status-status.json
     persistence-status-after.json
     persistence-status-after-status.json
 
@@ -197,11 +198,17 @@ metin2-migrate persistence-status-status \
 ```
 
 See [CLI persistence-status-status](../plans/2026-09-07-cli-persistence-status-status-contract-freeze.md).
-Read-only `status-status` for retained `post-apply-status.json` /
-`post-rollback-status.json` is frozen next — see
-[CLI status-status contract freeze](../plans/2026-09-07-cli-status-status-contract-freeze.md).
-GREEN stays follow-on; the tree listing above still does not include
-`post-apply-status-status.json` / `post-rollback-status-status.json`.
+Re-inspect a retained `post-apply-status.json` later with:
+
+```bash
+metin2-migrate status-status \
+  --status /var/metin2/migration-runs/YYYYMMDDTHHMMSSZ-<commit12>/post-apply-status.json \
+  --require-up-to-date \
+  --require-matches-embedded-latest
+```
+
+See [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md).
+`$RUN/daemon-migrations-status.json` stays an ungated live capture.
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
 
@@ -222,7 +229,7 @@ metin2-migrate version \
       --allow-rollback
 ```
 
-That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, defaults `--lock-file` to `migration-rollback.lock` when omitted, and keeps the same correlation checklist retains.
+That mode prints rollback artifact names (`rollback-plan-artifact.json`, `rollback-apply-preflight.json`, `migration-rollback-audit.json`, `post-rollback-status.json`, `post-rollback-status-status.json`), includes `--allow-rollback` on the printed preflight/apply lines, defaults `--lock-file` to `migration-rollback.lock` when omitted, and keeps the same correlation checklist retains.
 
 Default export/quarantine printer base is `/var/metin2/exports` via:
 

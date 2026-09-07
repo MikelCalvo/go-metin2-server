@@ -85,6 +85,11 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 		`> "$RUN/apply-audit-status.json"`,
 		`metin2-migrate status`,
 		`> "$RUN/post-apply-status.json"`,
+		`metin2-migrate status-status`,
+		`--status "$RUN/post-apply-status.json"`,
+		`--require-up-to-date`,
+		`--require-matches-embedded-latest`,
+		`> "$RUN/post-apply-status-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`--persistence-status "$RUN/persistence-status-after.json"`,
 		`> "$RUN/persistence-status-after-status.json"`,
@@ -123,17 +128,19 @@ func TestRunMigrationRunRetentionPrintsLabTreeCommands(t *testing.T) {
 	idxPreflight := strings.Index(body, `> "$RUN/apply-preflight.json"`)
 	idxApply := strings.Index(body, `metin2-migrate apply \`)
 	idxPostStatus := strings.Index(body, `> "$RUN/post-apply-status.json"`)
+	idxPostStatusStatus := strings.Index(body, `> "$RUN/post-apply-status-status.json"`)
 	idxStatusAfter := strings.Index(body, `> "$RUN/persistence-status-after.json"`)
 	idxStatusAfterStatus := strings.Index(body, `> "$RUN/persistence-status-after-status.json"`)
 	idxLockStatus := strings.Index(body, `apply-lock-status --lock-file "$RUN/$LOCK_FILE"`)
-	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxStatusBeforeStatus < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxStatusAfter < 0 || idxStatusAfterStatus < 0 || idxLockStatus < 0 {
+	if idxMkdir < 0 || idxAuthd < 0 || idxRuntime < 0 || idxStatusBefore < 0 || idxStatusBeforeStatus < 0 || idxGamedLog < 0 || idxAuthdLog < 0 || idxNotes < 0 || idxCatalog < 0 || idxPreflight < 0 || idxApply < 0 || idxPostStatus < 0 || idxPostStatusStatus < 0 || idxStatusAfter < 0 || idxStatusAfterStatus < 0 || idxLockStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxStatusBeforeStatus && idxStatusBeforeStatus < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxStatusAfter && idxStatusAfter < idxStatusAfterStatus && idxStatusAfterStatus < idxLockStatus) {
-		t.Fatalf("expected mkdir -> authd/runtime/status-before -> before-status-status -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> status-after -> after-status-status -> conditional lock triage ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d beforeStatus=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d after=%d afterStatus=%d lock=%d\n%s",
-			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxStatusBeforeStatus, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxStatusAfter, idxStatusAfterStatus, idxLockStatus, body)
+	if !(idxMkdir < idxAuthd && idxAuthd < idxRuntime && idxRuntime < idxStatusBefore && idxStatusBefore < idxStatusBeforeStatus && idxStatusBeforeStatus < idxGamedLog && idxGamedLog < idxAuthdLog && idxAuthdLog < idxNotes && idxNotes < idxCatalog && idxCatalog < idxPreflight && idxPreflight < idxApply && idxApply < idxPostStatus && idxPostStatus < idxPostStatusStatus && idxPostStatusStatus < idxStatusAfter && idxStatusAfter < idxStatusAfterStatus && idxStatusAfterStatus < idxLockStatus) {
+		t.Fatalf("expected mkdir -> authd/runtime/status-before -> before-status-status -> daemon logs -> notes -> catalog -> preflight -> apply -> post-status -> post-status-status -> status-after -> after-status-status -> conditional lock triage ordering, got idxs mkdir=%d authd=%d runtime=%d before=%d beforeStatus=%d gamedLog=%d authdLog=%d notes=%d catalog=%d preflight=%d apply=%d post=%d postStatusStatus=%d after=%d afterStatus=%d lock=%d\n%s",
+			idxMkdir, idxAuthd, idxRuntime, idxStatusBefore, idxStatusBeforeStatus, idxGamedLog, idxAuthdLog, idxNotes, idxCatalog, idxPreflight, idxApply, idxPostStatus, idxPostStatusStatus, idxStatusAfter, idxStatusAfterStatus, idxLockStatus, body)
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
+	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-apply-status.json")
 }
 
 func TestRunMigrationRunRetentionReadsRegularFile(t *testing.T) {
@@ -423,6 +430,11 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		`--audit-file "$RUN/migration-rollback-audit.json"`,
 		`> "$RUN/rollback-apply-audit-status.json"`,
 		`> "$RUN/post-rollback-status.json"`,
+		`metin2-migrate status-status`,
+		`--status "$RUN/post-rollback-status.json"`,
+		`--require-up-to-date`,
+		`--require-matches-embedded-latest`,
+		`> "$RUN/post-rollback-status-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`,
 		`--persistence-status "$RUN/persistence-status-after.json"`,
 		`> "$RUN/persistence-status-after-status.json"`,
@@ -477,6 +489,7 @@ func TestRunMigrationRunRetentionPrintsRollbackTreeCommands(t *testing.T) {
 		t.Fatalf("expected --allow-rollback on apply block:\n%s", applyBlock)
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
+	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-rollback-status.json")
 }
 
 func TestRunMigrationRunRetentionRejectsAllowRollbackWithLatestTarget(t *testing.T) {
@@ -573,6 +586,11 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 		`> "$RUN/apply-preflight.json"`,
 		`--audit-file "$RUN/migration-apply-audit.json"`,
 		`> "$RUN/post-apply-status.json"`,
+		`metin2-migrate status-status`,
+		`--status "$RUN/post-apply-status.json"`,
+		`--require-up-to-date`,
+		`--require-matches-embedded-latest`,
+		`> "$RUN/post-apply-status-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
 		`--persistence-status "$RUN/persistence-status-before.json"`,
 		`> "$RUN/persistence-status-before-status.json"`,
@@ -599,6 +617,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateForwardTarget(t *testing.T) {
 		}
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
+	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-apply-status.json")
 }
 
 func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) {
@@ -639,6 +658,11 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 		`--allow-rollback`,
 		`--audit-file "$RUN/migration-rollback-audit.json"`,
 		`> "$RUN/post-rollback-status.json"`,
+		`metin2-migrate status-status`,
+		`--status "$RUN/post-rollback-status.json"`,
+		`--require-up-to-date`,
+		`--require-matches-embedded-latest`,
+		`> "$RUN/post-rollback-status-status.json"`,
 		`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-before.json"`,
 		`--persistence-status "$RUN/persistence-status-before.json"`,
 		`> "$RUN/persistence-status-before-status.json"`,
@@ -666,6 +690,7 @@ func TestRunMigrationRunRetentionPrintsIntermediateRollbackTarget(t *testing.T) 
 		}
 	}
 	assertMigrationRunRetentionPrintsUngatedPersistenceStatusStatus(t, body)
+	assertMigrationRunRetentionPrintsGatedStatusStatus(t, body, "post-rollback-status.json")
 }
 
 func TestRunMigrationRunRetentionHonorsCustomDaemonLogPaths(t *testing.T) {
@@ -729,6 +754,29 @@ func TestRunMigrationRunRetentionRejectsRelativeDaemonLogPaths(t *testing.T) {
 				t.Fatalf("expected %s reason, got %q", tc.flag, stderr.String())
 			}
 		})
+	}
+}
+
+func assertMigrationRunRetentionPrintsGatedStatusStatus(t *testing.T, body, postStatus string) {
+	t.Helper()
+	postStatusStatus := strings.TrimSuffix(postStatus, ".json") + "-status.json"
+	idxRetain := strings.Index(body, `> "$RUN/`+postStatus+`"`)
+	idxInspect := strings.Index(body, `metin2-migrate status-status`)
+	idxStatusFlag := strings.Index(body, `--status "$RUN/`+postStatus+`"`)
+	idxRequireUpToDate := strings.Index(body, `--require-up-to-date`)
+	idxRequireEmbedded := strings.Index(body, `--require-matches-embedded-latest`)
+	idxCompanion := strings.Index(body, `> "$RUN/`+postStatusStatus+`"`)
+	idxAfterRetain := strings.Index(body, `curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"`)
+	idxLockTriage := strings.Index(body, "echo '== optional lab stale-lock triage / aside-rename =='")
+	if idxRetain < 0 || idxInspect < 0 || idxStatusFlag < 0 || idxRequireUpToDate < 0 || idxRequireEmbedded < 0 || idxCompanion < 0 || idxAfterRetain < 0 || idxLockTriage < 0 {
+		t.Fatalf("expected gated status-status companion immediately after retained %s, got:\n%s", postStatus, body)
+	}
+	if !(idxRetain < idxInspect && idxInspect < idxStatusFlag && idxStatusFlag < idxRequireUpToDate && idxRequireUpToDate < idxRequireEmbedded && idxRequireEmbedded < idxCompanion && idxCompanion < idxAfterRetain && idxAfterRetain < idxLockTriage) {
+		t.Fatalf("expected post-status retain -> gated status-status -> persistence-status-after -> leftover-lock triage, got idxs retain=%d inspect=%d status=%d requireUp=%d requireEmbedded=%d companion=%d after=%d lock=%d\n%s",
+			idxRetain, idxInspect, idxStatusFlag, idxRequireUpToDate, idxRequireEmbedded, idxCompanion, idxAfterRetain, idxLockTriage, body)
+	}
+	if strings.Contains(body, `--status "$RUN/daemon-migrations-status.json"`) || strings.Contains(body, `daemon-migrations-status-status.json`) {
+		t.Fatalf("migration-run-retention must not print a status-status redirect beside daemon-migrations-status.json, got:\n%s", body)
 	}
 }
 

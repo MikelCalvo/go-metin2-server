@@ -152,7 +152,7 @@ Read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` is now 
 
 Read-only `persistence-status-status` printer + hermetic curl-stub expansion for retained `$RUN/persistence-status-*.json` is now GREEN — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md). Printed-script SQLite proofs retain `persistence-status-before-status.json` / `persistence-status-after-status.json` beside the live curls.
 
-Read-only `status-status` for retained `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json` is frozen next — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md). GREEN stays follow-on; printed scripts still do not emit `post-*-status-status.json`.
+Read-only `status-status` for retained `$RUN/post-apply-status.json` / `$RUN/post-rollback-status.json` is now GREEN — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md). Printed-script SQLite proofs retain `post-apply-status-status.json` / `post-rollback-status-status.json` beside the live Plan JSON. Follow-up owned separately: expand the hermetic `GET /local/db/migrations/status` curl stub to a valid empty-ledger Plan (still no gated daemon inspect).
 
 ## Anti-goals / ordering constraints
 

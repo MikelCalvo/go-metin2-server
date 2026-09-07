@@ -91,6 +91,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runCatalogStatus(args[1:], stdout, stderr)
 	case "status":
 		return runStatus(args[1:], stdout, stderr)
+	case "status-status":
+		return runStatusStatus(args[1:], stdout, stderr)
 	case "plan":
 		return runPlan(args[1:], stdin, stdout, stderr)
 	case "plan-artifact":
@@ -2151,6 +2153,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  catalog                print metadata-only embedded migration catalog summary")
 	fmt.Fprintln(w, "  catalog-status         inspect a retained migration catalog summary without mutating it")
 	fmt.Fprintln(w, "  status                 read database schema_migrations metadata and print a dry-run plan")
+	fmt.Fprintln(w, "  status-status          inspect a retained metin2-migrate status Plan without opening a database")
 	fmt.Fprintln(w, "  empty-ledger-snapshot  print an explicit empty schema_migrations ledger snapshot")
 	fmt.Fprintln(w, "  ledger-snapshot        export metadata-only schema_migrations ledger snapshot from a database/sql target")
 	fmt.Fprintln(w, "  ledger-snapshot-status inspect a retained schema_migrations ledger snapshot without mutating it")
@@ -2187,6 +2190,8 @@ func printUsage(w io.Writer) {
 	printCatalogStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printStatusStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printEmptyLedgerSnapshotUsage(w)
 	fmt.Fprintln(w, "")

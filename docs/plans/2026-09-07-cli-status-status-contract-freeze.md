@@ -421,9 +421,17 @@ git diff --check
 
 ## Status
 
-Freeze-only on `lane/persistence`. GREEN stays follow-on; printed scripts
-still do not emit `post-apply-status-status.json` /
-`post-rollback-status-status.json`.
+GREEN on `lane/persistence`: read-only `metin2-migrate status-status` inspects
+retained no-format Plan JSON (`post-apply-status.json` /
+`post-rollback-status.json`), `migration-run-retention` prints gated
+`--require-up-to-date --require-matches-embedded-latest` companions immediately
+after those retains, and tagged SQLite proofs assert
+`$RUN/post-apply-status-status.json` / `$RUN/post-rollback-status-status.json`.
+Live `status` / `GET /local/db/migrations/status` stay no-format. Daemon
+`$RUN/daemon-migrations-status.json` stays ungated (no inspect redirect). The
+hermetic curl stub body for that optional daemon capture is unchanged.
+Follow-up owned separately: expand that stub to a valid empty-ledger Plan so
+operators can later inspect `$RUN/daemon-migrations-status.json` by hand.
 
 ## Exit criteria for this freeze
 

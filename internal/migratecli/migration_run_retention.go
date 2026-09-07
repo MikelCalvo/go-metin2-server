@@ -433,6 +433,12 @@ func renderMigrationRunRetentionScript(plan migrationRunRetentionPlan) string {
 	b.WriteString(`  --dsn "$DSN" \` + "\n")
 	b.WriteString(`  --target-version "$TARGET_VERSION" \` + "\n")
 	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", postStatus)
+	postStatusStatus := strings.TrimSuffix(postStatus, ".json") + "-status.json"
+	b.WriteString(`metin2-migrate status-status \` + "\n")
+	fmt.Fprintf(&b, "  --status \"$RUN/%s\" \\\n", postStatus)
+	b.WriteString(`  --require-up-to-date \` + "\n")
+	b.WriteString(`  --require-matches-embedded-latest \` + "\n")
+	fmt.Fprintf(&b, "  > \"$RUN/%s\"\n", postStatusStatus)
 	b.WriteString(`curl -sS "$OPS/local/persistence/status" > "$RUN/persistence-status-after.json"` + "\n")
 	b.WriteString(`metin2-migrate persistence-status-status \` + "\n")
 	b.WriteString(`  --persistence-status "$RUN/persistence-status-after.json" \` + "\n")

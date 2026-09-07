@@ -103,6 +103,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 		"migration-apply-audit.json",
 		"apply-audit-status.json",
 		"post-apply-status.json",
+		"post-apply-status-status.json",
 		"persistence-status-after.json",
 		"persistence-status-before-status.json",
 		"persistence-status-after-status.json",
@@ -122,6 +123,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToTip(t *testing
 
 	assertSQLiteLedgerAtCatalogTip(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), catalogTipVersion(t))
+	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", catalogTipVersion(t))
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -210,6 +212,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 		"migration-rollback-audit.json",
 		"rollback-apply-audit-status.json",
 		"post-rollback-status.json",
+		"post-rollback-status-status.json",
 		"persistence-status-after.json",
 		"persistence-status-before-status.json",
 		"persistence-status-after-status.json",
@@ -226,6 +229,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToZero(t *test
 
 	assertSQLiteLedgerEmpty(t, dsn)
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 0)
+	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 0)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -318,6 +322,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 		"migration-apply-audit.json",
 		"apply-audit-status.json",
 		"post-apply-status.json",
+		"post-apply-status-status.json",
 		"persistence-status-after.json",
 		"persistence-status-before-status.json",
 		"persistence-status-after-status.json",
@@ -334,6 +339,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptAppliesToIntermediateTa
 
 	assertSQLiteLedgerAtVersion(t, dsn, 7, "auth_login_ticket_handoff")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-apply-status.json"), 7)
+	assertMigrationRunRetentionStatusStatus(t, runDir, "post-apply-status.json", "post-apply-status-status.json", 7)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -422,6 +428,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 		"migration-rollback-audit.json",
 		"rollback-apply-audit-status.json",
 		"post-rollback-status.json",
+		"post-rollback-status-status.json",
 		"persistence-status-after.json",
 		"persistence-status-before-status.json",
 		"persistence-status-after-status.json",
@@ -438,6 +445,7 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 
 	assertSQLiteLedgerAtVersion(t, dsn, 8, "static_actor_content_state")
 	assertPostStatusCurrentVersion(t, filepath.Join(runDir, "post-rollback-status.json"), 8)
+	assertMigrationRunRetentionStatusStatus(t, runDir, "post-rollback-status.json", "post-rollback-status-status.json", 8)
 	assertCatalogStatusMatchesRetainedCatalog(t, runDir)
 }
 
@@ -684,6 +692,34 @@ func assertOneMigrationRunRetentionPersistenceStatusStatus(t *testing.T, runDir,
 	}
 	if !inner.OK || inner.LiveSelectedCharacterCount != 0 {
 		t.Fatalf("expected drained ok inner snapshot in %s, got %#v", companionName, inner)
+	}
+	body := string(raw)
+	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "memory://", "postgres://", "password="} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("%s must not expose %q, got %s", companionName, forbidden, body)
+		}
+	}
+}
+
+func assertMigrationRunRetentionStatusStatus(t *testing.T, runDir, statusName, companionName string, wantCurrent int) {
+	t.Helper()
+	statusRaw, err := os.ReadFile(filepath.Join(runDir, statusName))
+	if err != nil {
+		t.Fatalf("read %s: %v", statusName, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(runDir, companionName))
+	if err != nil {
+		t.Fatalf("read %s: %v", companionName, err)
+	}
+	var got statusStatusGot
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("decode %s: %v\nbody:\n%s", companionName, err, raw)
+	}
+	if got.Format != statusStatusFormat || !got.Present || got.Plan == nil || got.StatusSHA256 != sha256Hex(statusRaw) || !got.MatchesEmbeddedLatest {
+		t.Fatalf("unexpected %s envelope: %#v", companionName, got)
+	}
+	if !got.Plan.UpToDate || got.Plan.CurrentVersion != wantCurrent || len(got.Plan.Pending) != 0 {
+		t.Fatalf("expected up-to-date inner plan current_version=%d in %s, got %#v", wantCurrent, companionName, got.Plan)
 	}
 	body := string(raw)
 	for _, forbidden := range []string{"CREATE TABLE", "DROP TABLE", "memory://", "postgres://", "password="} {
