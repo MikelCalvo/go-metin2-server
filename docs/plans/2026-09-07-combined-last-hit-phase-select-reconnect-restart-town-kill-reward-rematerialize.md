@@ -56,5 +56,10 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 ## What this is not yet
 
 - party share, random loot tables, or level-up choreography
-- daemon-restart rematerialize of a parked last-hit drop while the dummy is
-  still dead
+
+Follow-up landed in
+`docs/plans/2026-09-07-combined-last-hit-daemon-restart-kill-reward-rematerialize.md`:
+combined last-hit `gamed` process restart rematerializes the still-dead dummy
+plus parked exclusive handle, skips dummy/ground rematerialize while the
+owner is still at the floor, then `/restart_here` catch-up lets ordinary
+owner pickup succeed.
