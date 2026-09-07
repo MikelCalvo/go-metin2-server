@@ -56,6 +56,10 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- kill-reward rematerialize after `/phase_select` / reconnect (Leave still
-  deletes currently owned ground handles)
 - party share, random loot tables, or level-up choreography
+
+Follow-up landed in
+`docs/plans/2026-09-07-combined-last-hit-phase-select-reconnect-kill-reward-rematerialize.md`:
+combined last-hit `/phase_select` and reconnect now park exclusive kill-reward
+handles on floor-leave instead of deleting them, then `/restart_here`
+rematerializes self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP`.

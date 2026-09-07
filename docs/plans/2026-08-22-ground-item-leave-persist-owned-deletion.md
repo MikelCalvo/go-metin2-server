@@ -36,4 +36,4 @@ Focused coverage:
 
 ## Status
 
-Shipped: graceful Leave / stale reclaim now fire `onGroundItemsChanged` after owned-ground deletion so the FileStore drops those rows; rematerialize crash proofs abandon without that persist hook. SQL import/backfill and party-shaped owner-delivery stay deferred.
+Shipped: graceful **live** Leave / stale reclaim now fire `onGroundItemsChanged` after owned-ground deletion so the FileStore drops those rows; rematerialize crash proofs abandon without that persist hook. Floor-leave `/phase_select`, abrupt reconnect, and stale reclaim at the bootstrap `0`-HP floor instead park exclusive handles (`OwnerID = 0`) so later matching owner `Join` rebinds them (`docs/plans/2026-09-07-combined-last-hit-phase-select-reconnect-kill-reward-rematerialize.md`). SQL import/backfill and party-shaped owner-delivery stay deferred.

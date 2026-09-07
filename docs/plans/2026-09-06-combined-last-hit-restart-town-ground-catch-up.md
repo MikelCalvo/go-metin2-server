@@ -66,10 +66,11 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 
 ## What this is not yet
 
-- kill-reward rematerialize after `/phase_select` / reconnect (Leave still
-  deletes currently owned ground handles)
 - party share, random loot tables, or level-up choreography
 
 Reconnect / `/phase_select` still-dead dummy catch-up after combined last-hit
 is now owned by
 `2026-09-07-combined-last-hit-phase-select-reconnect-still-dead-catch-up.md`.
+Combined last-hit `/phase_select` / reconnect kill-reward rematerialize is now
+owned by
+`2026-09-07-combined-last-hit-phase-select-reconnect-kill-reward-rematerialize.md`.

@@ -10411,6 +10411,134 @@ func TestSharedWorldRegistryLeaveRemovesOwnedGroundItemsAndSkipsDeadVisiblePeers
 	}
 }
 
+func TestSharedWorldRegistryLeaveAtHPFloorParksOwnedGroundItems(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("FloorLeaveParkOwner", 0x010301c1, 0x020401c1, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("FloorLeaveParkPeer", 0x010301c2, 0x020401c2, 1200, 2200, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	peerPending := newPendingServerFrames()
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected owner and peer to join shared world, got owner=%d peer=%d", ownerID, peerID)
+	}
+	peerPending.flush()
+
+	const itemVID uint32 = 0x07000041
+	const goldVID uint32 = 0x07000042
+	if !registry.RegisterGroundItem(ownerID, "floor-leave-park-owner", owner, itemVID, inventory.ItemInstance{ID: 0x30010041, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground item registration to succeed before floor leave")
+	}
+	if !registry.RegisterGroundGold(ownerID, "floor-leave-park-owner", owner, goldVID, 500) {
+		t.Fatal("expected owner ground gold registration to succeed before floor leave")
+	}
+	peerPending.flush()
+
+	flooredOwner := owner
+	flooredOwner.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(ownerID, flooredOwner)
+	registry.Leave(ownerID)
+
+	if !registry.GroundItemExists(itemVID) || !registry.GroundItemExists(goldVID) {
+		t.Fatal("expected floor-leave to park owned ground entries instead of deleting them")
+	}
+	queued := peerPending.flush()
+	if len(queued) != 1 {
+		t.Fatalf("expected living peer to receive only owner delete after floor-leave park, got %d", len(queued))
+	}
+	ownerDel, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode floor-leave park owner delete: %v", err)
+	}
+	if ownerDel.VID != owner.VID {
+		t.Fatalf("unexpected floor-leave park owner delete: %+v", ownerDel)
+	}
+	for idx, raw := range queued {
+		if groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatalf("expected floor-leave park not to fan out ground delete, got %+v at frame %d", groundDel, idx)
+		}
+	}
+
+	rejoinPending := newPendingServerFrames()
+	rejoinID, _ := registry.Join(owner, rejoinPending, nil)
+	if rejoinID == 0 {
+		t.Fatal("expected live owner rejoin after floor-leave park")
+	}
+	if !registry.GroundItemExists(itemVID) || !registry.GroundItemExists(goldVID) {
+		t.Fatal("expected parked ground entries to survive live owner rejoin")
+	}
+	if _, ok := registry.GroundItemPickupFor(peerID, peer, itemVID); ok {
+		t.Fatal("expected exclusive parked item to keep blocking the peer after owner rejoin")
+	}
+	visible := registry.VisibleGroundItemFrames(owner)
+	if len(visible) != 4 {
+		t.Fatalf("expected live rejoin to rematerialize parked item and gold add/ownership pairs, got %d frames", len(visible))
+	}
+}
+
+func TestSharedWorldRegistryJoinReclaimAtHPFloorParksOwnedGroundItems(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	owner := peerVisibilityCharacter("FloorReclaimParkOwner", 0x010301c3, 0x020401c3, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("FloorReclaimParkPeer", 0x010301c4, 0x020401c4, 1200, 2200, 0, 102, 202)
+	ownerID, _ := registry.Join(owner, newPendingServerFrames(), nil)
+	peerPending := newPendingServerFrames()
+	peerID, _ := registry.Join(peer, peerPending, nil)
+	if ownerID == 0 || peerID == 0 {
+		t.Fatalf("expected owner and peer to join shared world, got owner=%d peer=%d", ownerID, peerID)
+	}
+	peerPending.flush()
+
+	const itemVID uint32 = 0x07000043
+	if !registry.RegisterGroundItem(ownerID, "floor-reclaim-park-owner", owner, itemVID, inventory.ItemInstance{ID: 0x30010043, Vnum: 3001, Count: 1}) {
+		t.Fatal("expected owner ground item registration to succeed before floor reclaim")
+	}
+	peerPending.flush()
+
+	flooredOwner := owner
+	flooredOwner.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(ownerID, flooredOwner)
+	if _, ok := registry.sessionDirectory.Remove(ownerID); !ok {
+		t.Fatal("expected owner session entry to be removable for floor reclaim park setup")
+	}
+
+	freshOwnerPending := newPendingServerFrames()
+	freshOwnerID, peers := registry.Join(flooredOwner, freshOwnerPending, nil)
+	if freshOwnerID == 0 || freshOwnerID == ownerID {
+		t.Fatalf("expected stale floored owner to be reclaimed with a fresh entity id, got old=%d fresh=%d", ownerID, freshOwnerID)
+	}
+	if len(peers) != 1 || peers[0].Name != peer.Name {
+		t.Fatalf("expected fresh floored owner join to see existing peer, got %#v", peers)
+	}
+	if !registry.GroundItemExists(itemVID) {
+		t.Fatal("expected floor reclaim to park owned ground item instead of deleting it")
+	}
+	if _, ok := registry.GroundItemPickupFor(peerID, peer, itemVID); ok {
+		t.Fatal("expected exclusive parked item to keep blocking the peer after floor reclaim")
+	}
+	peerQueued := peerPending.flush()
+	if len(peerQueued) != 5 {
+		t.Fatalf("expected peer to receive owner delete plus 4-frame still-dead reentry burst and no ground delete, got %d frames", len(peerQueued))
+	}
+	ownerDel, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, peerQueued[0]))
+	if err != nil {
+		t.Fatalf("decode floor-reclaim park owner delete: %v", err)
+	}
+	if ownerDel.VID != owner.VID {
+		t.Fatalf("unexpected floor-reclaim park owner delete: %+v", ownerDel)
+	}
+	reentryDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerQueued[4]))
+	if err != nil {
+		t.Fatalf("decode floor-reclaim park trailing dead replay: %v", err)
+	}
+	if reentryDead.VID != owner.VID {
+		t.Fatalf("expected floor-reclaim park trailing DEAD(owner_vid), got %+v", reentryDead)
+	}
+	for idx, raw := range peerQueued {
+		if groundDel, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatalf("expected floor reclaim park not to fan out ground delete, got %+v at frame %d", groundDel, idx)
+		}
+	}
+}
+
 func TestSharedWorldRegistryTransferSkipsDestinationGroundItemsForDeadRecipient(t *testing.T) {
 	topology := worldruntime.NewBootstrapTopology(1).WithRadiusVisibilityPolicy(400, 200)
 	registry := newSharedWorldRegistryWithTopology(topology)

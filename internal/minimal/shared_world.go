@@ -4074,7 +4074,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) boo
 			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
-		if r.removeOwnedGroundItemsLocked(entityID, r.visiblePeersForOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers)) {
+		if r.removeOrParkOwnedGroundItemsLocked(entityID, currentCharacter, r.visiblePeersForOwnedGroundItemsLocked(entityID, visibilityDiff.RemovedVisiblePeers)) {
 			groundChanged = true
 		}
 	}
@@ -4183,7 +4183,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 			}
 			r.enqueueToCharacterLocked(peerCharacter, [][]byte{removeRaw})
 		}
-		groundChanged = r.removeOwnedGroundItemsLocked(id, r.visiblePeersForOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers))
+		groundChanged = r.removeOrParkOwnedGroundItemsLocked(id, currentCharacter, r.visiblePeersForOwnedGroundItemsLocked(id, visibilityDiff.RemovedVisiblePeers))
 	}
 	hook := r.onGroundItemsChanged
 	r.mu.Unlock()
@@ -4238,6 +4238,31 @@ func (r *sharedWorldRegistry) visiblePeersForOwnedGroundItemsLocked(ownerID uint
 		return peers[i].Name < peers[j].Name
 	})
 	return peers
+}
+
+func (r *sharedWorldRegistry) removeOrParkOwnedGroundItemsLocked(ownerID uint64, owner loginticket.Character, visiblePeers []loginticket.Character) bool {
+	if characterAtBootstrapHPFloor(owner) {
+		r.parkOwnedGroundItemsLocked(ownerID)
+		return false
+	}
+	return r.removeOwnedGroundItemsLocked(ownerID, visiblePeers)
+}
+
+// parkOwnedGroundItemsLocked keeps OwnerID-matched pending handles in the world
+// when a floored owner leaves or is reclaimed, clearing only the process-local
+// OwnerID so later Join can rebind via durable owner identity. Absolute
+// exclusive/despawn timers and FileStore rows stay unchanged.
+func (r *sharedWorldRegistry) parkOwnedGroundItemsLocked(ownerID uint64) {
+	if ownerID == 0 || len(r.groundItemsByVID) == 0 {
+		return
+	}
+	for vid, ground := range r.groundItemsByVID {
+		if ground.OwnerID != ownerID {
+			continue
+		}
+		ground.OwnerID = 0
+		r.groundItemsByVID[vid] = ground
+	}
 }
 
 func (r *sharedWorldRegistry) removeOwnedGroundItemsLocked(ownerID uint64, visiblePeers []loginticket.Character) bool {
