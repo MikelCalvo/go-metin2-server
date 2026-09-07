@@ -88,7 +88,9 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	const pveVerticalMobHitsToKill = 4 // max_hp 20 / formula damage 5
 	const pveVerticalMobFormulaDamage = int32(5)
 	const pveVerticalMobRespawnDelay = 2 * time.Second
-	const pveVerticalKillRewardGold = uint64(60) // loot.qa_pve_vertical_reward.reward_gold
+	const pveVerticalKillRewardGold = uint64(60)       // loot.qa_pve_vertical_reward.reward_gold
+	const pveVerticalPackRewardExperience = uint64(40) // loot.qa_pve_vertical_pack_reward.reward_experience
+	const pveVerticalPackRewardGold = uint64(20)       // loot.qa_pve_vertical_pack_reward.reward_gold
 	imported, err := runtime.ImportContentBundle(authored)
 	if err != nil {
 		t.Fatalf("import PvE vertical authoring bundle: %v", err)
@@ -107,6 +109,18 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		imported.SpawnGroups[2].CombatProfile != "qa_pve_vertical_practice_mob" {
 		t.Fatalf("expected imported PvE vertical mobs to use formula combat profile, got %+v", imported.SpawnGroups)
 	}
+	if imported.SpawnGroups[1].RewardExperience != pveVerticalPackRewardExperience ||
+		imported.SpawnGroups[1].RewardGold != pveVerticalPackRewardGold ||
+		len(imported.SpawnGroups[1].RewardDropVnums) != 0 ||
+		imported.SpawnGroups[1].RewardQuestRef != "" ||
+		imported.SpawnGroups[1].RewardQuestFlag != "" ||
+		imported.SpawnGroups[2].RewardExperience != pveVerticalPackRewardExperience ||
+		imported.SpawnGroups[2].RewardGold != pveVerticalPackRewardGold ||
+		len(imported.SpawnGroups[2].RewardDropVnums) != 0 ||
+		imported.SpawnGroups[2].RewardQuestRef != "" ||
+		imported.SpawnGroups[2].RewardQuestFlag != "" {
+		t.Fatalf("expected imported pack members to carry EXP/gold-only loot.qa_pve_vertical_pack_reward, got %+v", imported.SpawnGroups[1:])
+	}
 	if len(imported.CombatProfiles) != 1 || imported.CombatProfiles[0].Profile != "qa_pve_vertical_practice_mob" || imported.CombatProfiles[0].MaxHP != pveVerticalMobMaxHP || imported.CombatProfiles[0].DamagePerNormalAttack != 5 || imported.CombatProfiles[0].AggroRadius != 150 || imported.CombatProfiles[0].LeashRadius != 350 || imported.CombatProfiles[0].ChaseDelayMs != 2000 || imported.CombatProfiles[0].ReturnDelayMs != 2000 || imported.CombatProfiles[0].HomewardDelayMs != 2000 || imported.CombatProfiles[0].MaxStep != 50 || imported.CombatProfiles[0].ReactionDelayMs != 2000 || imported.CombatProfiles[0].RetaliationPointDelta != -2 {
 		t.Fatalf("expected imported portable formula combat profile max_hp=20 damage=5 aggro_radius=150 leash_radius=350 chase/return/homeward/reaction_delay_ms=2000 max_step=50 retaliation_point_delta=-2, got %+v", imported.CombatProfiles)
 	}
@@ -115,7 +129,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		t.Fatalf("unexpected imported PvE vertical cube recipes: %#v", imported.CubeRecipes)
 	}
 
-	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID uint32
+	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID, pack2VID uint32
 	var foundPackMembers int
 	for _, actor := range runtime.StaticActors() {
 		switch actor.Name {
@@ -139,12 +153,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 			teleporterVID = uint32(actor.EntityID)
 		case "QAPveVerticalMob":
 			mobVID = uint32(actor.EntityID)
-		case "QAPveVerticalPack 1", "QAPveVerticalPack 2":
+		case "QAPveVerticalPack 1":
+			foundPackMembers++
+		case "QAPveVerticalPack 2":
+			pack2VID = uint32(actor.EntityID)
 			foundPackMembers++
 		}
 	}
-	if guideVID == 0 || hunterVID == 0 || resetVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 || talkVID == 0 || infoVID == 0 || teleporterVID == 0 {
-		t.Fatalf("expected guide/hunter/reset/merchant/warehouse/cube/mob/talk/info/teleporter actors after import, got %+v", runtime.StaticActors())
+	if guideVID == 0 || hunterVID == 0 || resetVID == 0 || merchantVID == 0 || warehouseVID == 0 || cubeVID == 0 || mobVID == 0 || talkVID == 0 || infoVID == 0 || teleporterVID == 0 || pack2VID == 0 {
+		t.Fatalf("expected guide/hunter/reset/merchant/warehouse/cube/mob/talk/info/teleporter/pack-2 actors after import, got %+v", runtime.StaticActors())
 	}
 	if foundPackMembers != 2 {
 		t.Fatalf("expected denser multi-count pack members QAPveVerticalPack 1/2 after import, found=%d actors=%+v", foundPackMembers, runtime.StaticActors())
@@ -294,6 +311,68 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for self-only PvE warp, got %d", len(queued))
 	}
+
+	beforePackGold, ok := runtime.CurrencySnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected currency snapshot before warp-tile pack kill")
+	}
+	beforePackPoints, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected points snapshot before warp-tile pack kill")
+	}
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: pack2VID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected warp-tile pack-2 target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+	var packKillOut [][]byte
+	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		packKillOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: pack2VID})))
+		if err != nil {
+			t.Fatalf("unexpected warp-tile pack-2 kill attack error on hit %d: %v", hit, err)
+		}
+		if hit == 1 {
+			assertPveVerticalFormulaFirstHitFrames(t, packKillOut, pack2VID, hero.VID, pveVerticalMobFormulaDamage, "warp-tile pack 2")
+		}
+	}
+	wantGoldAfterPackKill := beforePackGold.Gold + pveVerticalPackRewardGold
+	wantExperienceAfterPackKill := beforePackPoints.Points[bootstrapExperiencePointType] + int32(pveVerticalPackRewardExperience)
+	assertPveVerticalEXPGoldOnlyKillReward(
+		t,
+		packKillOut,
+		hero,
+		pack2VID,
+		pveVerticalMobFormulaDamage,
+		int32(pveVerticalPackRewardExperience),
+		wantExperienceAfterPackKill,
+		int32(pveVerticalPackRewardGold),
+		wantGoldAfterPackKill,
+		"warp-tile pack 2",
+	)
+	assertPveVerticalCurrency(t, runtime, accounts, hero.Name, wantGoldAfterPackKill, "warp-tile pack 2 kill")
+	pointsSnapshot, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != wantExperienceAfterPackKill {
+		t.Fatalf("expected live experience %d after warp-tile pack 2 kill, got ok=%v snapshot=%+v", wantExperienceAfterPackKill, ok, pointsSnapshot)
+	}
+	account, err := accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after warp-tile pack 2 kill: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapExperiencePointType] != wantExperienceAfterPackKill {
+		t.Fatalf("expected persisted experience %d after warp-tile pack 2 kill, got %d", wantExperienceAfterPackKill, account.Characters[0].Points[bootstrapExperiencePointType])
+	}
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "warp-tile pack 2 kill")
+	killedPack, ok := runtime.SpawnGroupByRef("practice.qa_pve_vertical_pack.m02")
+	if !ok || !killedPack.Dead || uint32(killedPack.EntityID) != pack2VID {
+		t.Fatalf("expected warp-tile pack 2 to stay dead after the accepted kill, ok=%v snapshot=%+v", ok, killedPack)
+	}
+	livingPack, ok := runtime.SpawnGroupByRef("practice.qa_pve_vertical_pack.m01")
+	if !ok || livingPack.Dead {
+		t.Fatalf("expected untargeted pack 1 to stay alive after pack 2 kill, ok=%v snapshot=%+v", ok, livingPack)
+	}
+	currentTime = currentTime.Add(pveVerticalMobRespawnDelay)
+	_ = flushServerFrames(t, flow)
 
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
 		Func: 1,
@@ -571,7 +650,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || len(beforeTurnInInventory.Inventory) != 1 || beforeTurnInInventory.Inventory[0].Vnum != 27001 || beforeTurnInInventory.Inventory[0].Count != 1 || beforeTurnInInventory.Inventory[0].Slot != 0 {
 		t.Fatalf("expected live inventory to hold the credited kill drop before QuestHunter turn-in, got ok=%v snapshot=%+v", ok, beforeTurnInInventory)
 	}
-	account, err := accounts.Load("pve-vertical")
+	account, err = accounts.Load("pve-vertical")
 	if err != nil {
 		t.Fatalf("load persisted PvE vertical account after credited kill-drop pickup: %v", err)
 	}
@@ -661,7 +740,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if !ok || currencySnapshot.Gold != wantGoldAfter {
 		t.Fatalf("expected live gold %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantGoldAfter, ok, currencySnapshot)
 	}
-	pointsSnapshot, ok := runtime.PointsSnapshot(hero.Name)
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
 	if !ok || pointsSnapshot.Points[bootstrapExperiencePointType] != wantExperienceAfter {
 		t.Fatalf("expected live experience %d after QuestHunter turn-in, got ok=%v snapshot=%+v", wantExperienceAfter, ok, pointsSnapshot)
 	}
@@ -2062,6 +2141,47 @@ func assertPveVerticalFormulaFirstHitFrames(t *testing.T, frames [][]byte, mobVI
 	}
 	assertDamageInfoFrame(t, frames[2], mobVID, wantMobDamage, context+" mob damage-info")
 	assertDamageInfoFrame(t, frames[3], ownerVID, -pveVerticalMobRetaliationDelta, context+" owner retaliation damage-info")
+}
+
+func assertPveVerticalEXPGoldOnlyKillReward(
+	t *testing.T,
+	frames [][]byte,
+	killer loginticket.Character,
+	targetVID uint32,
+	wantDamage int32,
+	wantExperienceAmount int32,
+	wantExperienceValue int32,
+	wantGoldAmount int32,
+	wantGoldValue uint64,
+	context string,
+) {
+	t.Helper()
+	remaining := stripKillingHitDeathPrefix(t, frames, targetVID, wantDamage, context)
+	if len(remaining) != 2 {
+		t.Fatalf("expected %s killing hit to emit EXP then gold after death/clear, got %d remaining frames", context, len(remaining))
+	}
+	experienceChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, remaining[0]))
+	if err != nil {
+		t.Fatalf("decode %s experience point-change: %v", context, err)
+	}
+	if experienceChange.VID != killer.VID || experienceChange.Type != bootstrapExperiencePointType || experienceChange.Amount != wantExperienceAmount || experienceChange.Value != wantExperienceValue {
+		t.Fatalf("unexpected %s experience point-change: %+v want amount=%d value=%d", context, experienceChange, wantExperienceAmount, wantExperienceValue)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, remaining[1]))
+	if err != nil {
+		t.Fatalf("decode %s gold point-change: %v", context, err)
+	}
+	if goldChange.VID != killer.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != wantGoldAmount || uint64(goldChange.Value) != wantGoldValue {
+		t.Fatalf("unexpected %s gold point-change: %+v want amount=%d value=%d", context, goldChange, wantGoldAmount, wantGoldValue)
+	}
+	for _, frame := range frames {
+		if chat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame)); err == nil {
+			t.Fatalf("expected no quest chat on %s EXP/gold-only pack kill, got %+v", context, chat)
+		}
+		if _, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, frame)); err == nil {
+			t.Fatalf("expected no GROUND_ADD on %s EXP/gold-only pack kill", context)
+		}
+	}
 }
 
 func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []itemcatalog.Template, context string) {
