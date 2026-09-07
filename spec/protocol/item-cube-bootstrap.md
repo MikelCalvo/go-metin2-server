@@ -154,6 +154,12 @@ Fail-closed (no frames / no binding change unless noted):
 - del on already-empty craft slot
 - non-digit / wrong-arity args
 
+The dedicated NPC-service CubeMaster proof now also binds those same
+bootstrap materials after authored `INTERACT` (`cube open 20022`) with
+`/cube add 0 5` / `/cube add 1 6` → `cube info 0 0 0` then
+`cube info 100 0 0` and no gold/inventory mutation
+(`docs/plans/2026-09-07-npc-service-authored-cube-add-make.md`).
+
 See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-add-del-slot-binding-implementation.md`.
 
@@ -194,6 +200,13 @@ Fail-closed:
   `Not enough Yang or the item is not in place.`
 - reward cannot place → self-only `CHAT_TYPE_INFO`
   `You have too many items.` (no material/gold mutation)
+
+The dedicated NPC-service CubeMaster proof now also consumes that bound
+recipe through `/cube make` after authored `INTERACT`, grants `27001 x1`,
+debits `100` gold, and persists the same live snapshot
+(`docs/plans/2026-09-07-npc-service-authored-cube-add-make.md`). The
+composed PvE vertical gameplay proof still stops at non-mutating `r_info`
+/ `m_info`.
 
 See `docs/plans/2026-08-25-cube-make-percent-100-contract-freeze.md`,
 `docs/plans/2026-08-25-cube-make-percent-100-implementation.md`,
