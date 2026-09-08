@@ -56,8 +56,9 @@ go test ./internal/minimal -run 'TestGameRuntime(KillingHitAfterChaseDisplaceKee
 
 - absolute chase / return / homeward due-at rematerialize across daemon restart
   (cancelled for Track A bootstrap as re-arm-from-now)
-- a new daemon-restart still-dead-at-displaced-coords RED: persist/restore
-  already carries current X/Y with `combat_current_hp=0` + `respawn_ready_at`
+- daemon-restart still-dead-at-displaced-coords is now GREEN
+  (`TestGameRuntimeKillingHitAfterChaseDisplaceStillDeadPersistsAcrossDaemonRestart`;
+  see `2026-09-08-kill-after-chase-still-dead-restart.md`)
 - cross-map MOVE / `GC WARP` for mobs, pack AI, pathfinding, target switching
 - inventing a new death scheduler; this is coverage for already-live kill +
   respawn after chase
