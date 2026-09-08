@@ -202,6 +202,25 @@ func TestExchangePlaceIncomingDisplayedItemPreferringSlotsCompatibleMergeKeepsDe
 			t.Fatalf("already-full exchange merge mutated working inventory:\ngot:  %#v\nwant: %#v", items, before)
 		}
 	})
+
+	t.Run("partial compatible merge rejects without mutation when no free cell", func(t *testing.T) {
+		items := []inventory.ItemInstance{{ID: 561, Vnum: 27001, Count: 198, Slot: 5}}
+		for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+			if slot == 5 {
+				continue
+			}
+			items = append(items, inventory.ItemInstance{ID: uint64(3000 + slot), Vnum: 29000 + uint32(slot), Count: 1, Slot: slot})
+		}
+		before := append([]inventory.ItemInstance(nil), items...)
+		source := inventory.ItemInstance{ID: 562, Vnum: 27001, Count: 3, Slot: 7}
+		display := exchangeDisplayedItem{ItemID: source.ID, Vnum: source.Vnum, Count: source.Count, Slot: source.Slot}
+		if exchangePlaceIncomingDisplayedItemPreferringSlots(&items, display, template, nil, source) {
+			t.Fatal("expected partial compatible exchange merge without free capacity to fail closed")
+		}
+		if !reflect.DeepEqual(items, before) {
+			t.Fatalf("partial exchange merge mutated working inventory:\ngot:  %#v\nwant: %#v", items, before)
+		}
+	})
 }
 
 func TestGameRuntimeItemMoveCompatibleMergeKeepsDestinationInstancePresence(t *testing.T) {

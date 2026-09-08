@@ -10363,10 +10363,13 @@ func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemIn
 	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
 		return false
 	}
+	// Finalization stages placement on an isolated inventory. A rejected
+	// multi-cell compatible merge must not leave partial counts behind.
+	working := append([]inventory.ItemInstance(nil), (*items)...)
 	remaining := display.Count
 	if template.Stackable {
-		for idx := range *items {
-			item := (*items)[idx]
+		for idx := range working {
+			item := working[idx]
 			if item.Vnum == display.Vnum && item.Count > template.MaxCount {
 				return false
 			}
@@ -10381,9 +10384,10 @@ func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemIn
 			if err := item.Validate(); err != nil {
 				return false
 			}
-			(*items)[idx] = item
+			working[idx] = item
 			remaining -= room
 			if remaining == 0 {
+				*items = working
 				return true
 			}
 		}
@@ -10394,7 +10398,7 @@ func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemIn
 	if !template.Stackable && remaining != 1 {
 		return false
 	}
-	slot, ok := exchangePreferredOrNextFreeInventorySlot(*items, preferredSlots)
+	slot, ok := exchangePreferredOrNextFreeInventorySlot(working, preferredSlots)
 	if !ok {
 		return false
 	}
@@ -10408,13 +10412,14 @@ func exchangePlaceIncomingDisplayedItemPreferringSlots(items *[]inventory.ItemIn
 	if err != nil {
 		return false
 	}
-	*items = append(*items, placed)
-	sort.Slice(*items, func(i int, j int) bool {
-		if (*items)[i].Slot != (*items)[j].Slot {
-			return (*items)[i].Slot < (*items)[j].Slot
+	working = append(working, placed)
+	sort.Slice(working, func(i int, j int) bool {
+		if working[i].Slot != working[j].Slot {
+			return working[i].Slot < working[j].Slot
 		}
-		return (*items)[i].ID < (*items)[j].ID
+		return working[i].ID < working[j].ID
 	})
+	*items = working
 	return true
 }
 

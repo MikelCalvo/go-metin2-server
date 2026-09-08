@@ -1313,10 +1313,14 @@ func exchangePlaceIncomingDisplayedItemReason(items *[]inventory.ItemInstance, d
 	if items == nil || display.Count == 0 || display.Count > template.MaxCount {
 		return exchangeRecipientRejectOther
 	}
+	// Validation runs against a disposable working inventory before commit. Keep
+	// it atomic: a later placement failure must not leak a partial compatible
+	// stack merge into the finalization snapshot.
+	working := append([]inventory.ItemInstance(nil), (*items)...)
 	remaining := display.Count
 	if template.Stackable {
-		for idx := range *items {
-			item := (*items)[idx]
+		for idx := range working {
+			item := working[idx]
 			if item.Vnum == display.Vnum && item.Count > template.MaxCount {
 				return exchangeRecipientRejectOther
 			}
@@ -1331,9 +1335,10 @@ func exchangePlaceIncomingDisplayedItemReason(items *[]inventory.ItemInstance, d
 			if err := item.Validate(); err != nil {
 				return exchangeRecipientRejectOther
 			}
-			(*items)[idx] = item
+			working[idx] = item
 			remaining -= room
 			if remaining == 0 {
+				*items = working
 				return exchangeRecipientRejectNone
 			}
 		}
@@ -1344,11 +1349,11 @@ func exchangePlaceIncomingDisplayedItemReason(items *[]inventory.ItemInstance, d
 	if !template.Stackable && remaining != 1 {
 		return exchangeRecipientRejectOther
 	}
-	slot, ok := exchangeNextFreeInventorySlot(*items)
+	slot, ok := exchangeNextFreeInventorySlot(working)
 	if !ok {
 		// Locked compatible stacks are skipped for merge; when that leaves no free
 		// cell, keep the older silent/no-frame reject instead of Space chat.
-		if template.Stackable && exchangeHasLockedCompatibleStack(*items, display.Vnum) {
+		if template.Stackable && exchangeHasLockedCompatibleStack(working, display.Vnum) {
 			return exchangeRecipientRejectOther
 		}
 		return exchangeRecipientRejectSpace
@@ -1357,13 +1362,14 @@ func exchangePlaceIncomingDisplayedItemReason(items *[]inventory.ItemInstance, d
 	if err != nil {
 		return exchangeRecipientRejectOther
 	}
-	*items = append(*items, placed)
-	sort.Slice(*items, func(i int, j int) bool {
-		if (*items)[i].Slot != (*items)[j].Slot {
-			return (*items)[i].Slot < (*items)[j].Slot
+	working = append(working, placed)
+	sort.Slice(working, func(i int, j int) bool {
+		if working[i].Slot != working[j].Slot {
+			return working[i].Slot < working[j].Slot
 		}
-		return (*items)[i].ID < (*items)[j].ID
+		return working[i].ID < working[j].ID
 	})
+	*items = working
 	return exchangeRecipientRejectNone
 }
 

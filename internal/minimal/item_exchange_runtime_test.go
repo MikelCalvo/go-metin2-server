@@ -1981,6 +1981,33 @@ func TestExchangeRecipientCanAcceptRejectsOverTemplateMaxCompatibleStack(t *test
 	}
 }
 
+func TestExchangeRecipientCanAcceptPartialCompatibleMergeWithoutFreeSlotStaysAtomic(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	registry.SetItemTemplates(map[uint32]itemcatalog.Template{
+		27045: {Vnum: 27045, Name: "Partial Receiver Potion", Stackable: true, MaxCount: 200},
+	})
+	recipient := loginticket.Character{
+		ID:        0x010307c1,
+		VID:       0x020407c1,
+		Name:      "ExchangePartialReceiver",
+		Job:       0,
+		RaceNum:   0,
+		Empire:    1,
+		Level:     10,
+		Points:    [255]int32{bootstrapPlayerPointValueIndex: 100},
+		Inventory: merchantBuyerFullInventory(),
+	}
+	recipient.Inventory[0] = inventory.ItemInstance{ID: 789, Vnum: 27045, Count: 198, Slot: 0}
+	before := cloneExchangeCharacter(recipient)
+	incoming := map[uint8]exchangeDisplayedItem{7: {ItemID: 790, Vnum: 27045, Count: 3, Slot: 5}}
+	if registry.exchangeRecipientCanAcceptLocked(recipient, incoming, 0) {
+		t.Fatal("expected partial compatible merge without a free cell to reject finalization")
+	}
+	if !reflect.DeepEqual(recipient, before) {
+		t.Fatalf("receiver preflight mutated live recipient:\ngot:  %#v\nwant: %#v", recipient, before)
+	}
+}
+
 func TestGameRuntimeItemExchangeAcceptRevalidatesDisplayedItemAgainstCurrentSelectionWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
