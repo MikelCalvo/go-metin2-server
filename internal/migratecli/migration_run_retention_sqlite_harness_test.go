@@ -461,6 +461,86 @@ func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRollsBackToIntermediate
 	assertMigrationRunRetentionSQLDrivers(t, runDir)
 }
 
+func TestMigrationRunRetentionSQLiteHermeticPrintedScriptRejectsUnlinkedDriverBeforeDSN(t *testing.T) {
+	binDir := t.TempDir()
+	_ = mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+	mustInstallMigrationRunRetentionCurlStub(t, binDir)
+
+	runsBase := filepath.Join(t.TempDir(), "migration-runs-unlinked-driver")
+	if err := os.MkdirAll(runsBase, 0o755); err != nil {
+		t.Fatalf("mkdir migration-runs base: %v", err)
+	}
+	buildInfoPath := filepath.Join(t.TempDir(), "build-info.json")
+	mustWriteFile(t, buildInfoPath, []byte(`{
+  "version": "v0.1.0-retention",
+  "commit": "unlinked0123456789abcdef",
+  "build_date": "2026-09-08T08:00:00Z"
+}
+`))
+
+	var printStdout bytes.Buffer
+	var printStderr bytes.Buffer
+	printCode := Run(
+		[]string{
+			"migration-run-retention",
+			"--build-info", buildInfoPath,
+			"--ops-base-url", "http://127.0.0.1:6060",
+			"--authd-ops-base-url", "http://127.0.0.1:6061",
+			"--migration-runs-base", runsBase,
+			"--gamed-log-path", filepath.Join(t.TempDir(), "missing-gamed.log"),
+			"--authd-log-path", filepath.Join(t.TempDir(), "missing-authd.log"),
+		},
+		nil,
+		&printStdout,
+		&printStderr,
+	)
+	if printCode != exitOK {
+		t.Fatalf("expected migration-run-retention exit %d, got %d stderr=%q", exitOK, printCode, printStderr.String())
+	}
+	if printStderr.Len() != 0 {
+		t.Fatalf("expected no stderr from migration-run-retention, got %q", printStderr.String())
+	}
+
+	const unlinkedDriver = "go_metin2_migration_run_retention_unlinked"
+	env := environmentWithout("DSN")
+	env = append(env,
+		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"DRIVER="+unlinkedDriver,
+	)
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, printStdout.String(), env)
+	if code == exitOK {
+		t.Fatalf("expected printed script to reject unlinked driver, got exit 0 stdout=%q stderr=%q", stdout, stderr)
+	}
+	if !strings.Contains(stderr, "drivers: database driver is unavailable") || !strings.Contains(stderr, unlinkedDriver) {
+		t.Fatalf("expected unlinked-driver stderr before any missing-DSN failure, got exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if strings.Contains(stderr, "export DSN") {
+		t.Fatalf("unlinked driver must stop before DSN expansion, got stderr=%q", stderr)
+	}
+
+	runDir := mustFindSingleRetentionTree(t, runsBase, "unlinked0123")
+	for _, name := range []string{
+		"ledger-snapshot.json",
+		"ledger-snapshot-status.json",
+		"migration-plan-artifact.json",
+		"plan-artifact-status.json",
+		"apply-preflight.json",
+		"apply-preflight-status.json",
+		"migration-apply-audit.json",
+		"apply-audit-status.json",
+		"post-apply-status.json",
+		"post-apply-status-status.json",
+		"migration-apply.lock",
+	} {
+		if _, err := os.Lstat(filepath.Join(runDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("unlinked-driver failure must stop before producing %s, lstat err=%v", name, err)
+		}
+	}
+	if _, err := os.Lstat(filepath.Join(runDir, "sql-drivers.json")); err != nil {
+		t.Fatalf("expected shell redirection to leave a partial sql-drivers.json, lstat err=%v", err)
+	}
+}
+
 func compactEmptyLedgerPlanJSON() string {
 	plan, err := dbmigrations.PlanUpToLatest(nil)
 	if err != nil {

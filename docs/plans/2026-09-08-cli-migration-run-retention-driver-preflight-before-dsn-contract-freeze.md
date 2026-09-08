@@ -165,8 +165,11 @@ git diff --check
 
 ## Status
 
-Docs/spec freeze only. No production Go code or failing RED test is introduced
-by this commit.
+Implemented in the follow-up GREEN commit. The print-only renderer now emits
+the linked-driver gate before the DSN expansion for both forward and rollback
+scripts; untagged ordering tests and tagged SQLite positive/negative execution
+proofs cover the contract. No stock driver registration, target connection,
+daemon mutation endpoint, or retained-file status format was introduced.
 
 ## Exit criteria for this freeze
 

@@ -96,6 +96,7 @@ Keep operator evidence outside live data trees:
     notes.md
     migration-catalog.json
     migration-catalog-status.json
+    sql-drivers.json
     ledger-snapshot.json
     ledger-snapshot-status.json
     migration-plan-artifact.json
@@ -214,9 +215,12 @@ See [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md
 Before `ledger-snapshot` can open the target, the printed script runs
 `metin2-migrate drivers --require-driver "$DRIVER"` and retains the complete
 linked-driver envelope as `$RUN/sql-drivers.json`. In the current rendered
-script that gate follows both the required `DRIVER` and `DSN` shell variables;
-it is a CLI-binary driver-linkage gate, not a daemon curl or a retained-file
-status companion.
+script it follows the required `DRIVER` but precedes expansion of the required
+`DSN`; an unlinked driver therefore stops before target credentials are needed.
+It is a CLI-binary driver-linkage gate, not a daemon curl or a retained-file
+status companion. A failed shell redirection can leave an empty or incomplete
+`sql-drivers.json` in a failed partial run tree; discard/restart that tree
+after correcting the binary or driver selection.
 See [CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:

@@ -832,10 +832,10 @@ func assertMigrationRunRetentionPrintsGatedSQLDrivers(t *testing.T, body string)
 	idxCompanion := strings.Index(body, `> "$RUN/sql-drivers.json"`)
 	idxLedger := strings.Index(body, `metin2-migrate ledger-snapshot`)
 	if idxDriverRequire < 0 || idxDSNRequire < 0 || idxInspect < 0 || idxRequireDriver < 0 || idxCompanion < 0 || idxLedger < 0 {
-		t.Fatalf("expected gated drivers --require-driver immediately after DRIVER/DSN require and before ledger-snapshot, got:\n%s", body)
+		t.Fatalf("expected gated drivers --require-driver between DRIVER requirement and later DSN requirement / ledger-snapshot, got:\n%s", body)
 	}
-	if !(idxDriverRequire < idxDSNRequire && idxDSNRequire < idxInspect && idxInspect < idxRequireDriver && idxRequireDriver < idxCompanion && idxCompanion < idxLedger) {
-		t.Fatalf("expected DRIVER/DSN require -> drivers --require-driver -> sql-drivers.json -> ledger-snapshot, got idxs driver=%d dsn=%d inspect=%d require=%d companion=%d ledger=%d\n%s",
+	if !(idxDriverRequire < idxInspect && idxInspect < idxRequireDriver && idxRequireDriver < idxCompanion && idxCompanion < idxDSNRequire && idxDSNRequire < idxLedger) {
+		t.Fatalf("expected DRIVER require -> drivers --require-driver -> sql-drivers.json -> DSN require -> ledger-snapshot, got idxs driver=%d dsn=%d inspect=%d require=%d companion=%d ledger=%d\n%s",
 			idxDriverRequire, idxDSNRequire, idxInspect, idxRequireDriver, idxCompanion, idxLedger, body)
 	}
 	if strings.Contains(body, `curl -sS "$OPS/local/db/drivers"`) || strings.Contains(body, "sql-drivers-status.json") {

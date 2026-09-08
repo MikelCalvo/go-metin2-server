@@ -72,11 +72,16 @@ stays ungated. The hermetic SQLite curl stub now emits a valid empty-ledger
 Plan for that optional retain so operators can later inspect it by hand.
 See
 [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md).
-The printed script now runs `metin2-migrate drivers --require-driver "$DRIVER"`
-immediately after requiring `DRIVER` / `DSN`, retains its complete envelope as
-`$RUN/sql-drivers.json`, and only then permits `ledger-snapshot` to open the
-target. This gates the applying CLI binary before any DSN-touching command;
-it does not curl `GET /local/db/drivers` or emit `sql-drivers-status.json`.
+The printed script requires `DRIVER`, then runs
+`metin2-migrate drivers --require-driver "$DRIVER"` and retains its complete
+envelope as `$RUN/sql-drivers.json` **before it expands or requires `DSN`**.
+Only a successful linked-driver gate permits the later DSN requirement and
+`ledger-snapshot` target open. This lets an unlinked binary/driver failure stop
+without supplying target credentials; it does not curl `GET /local/db/drivers`
+or emit `sql-drivers-status.json`. A failed driver-gate redirection can leave
+an empty or incomplete `sql-drivers.json` in an otherwise partial `$RUN` tree;
+the nonzero script exit is authoritative, and the operator must discard and
+restart that tree after correcting the binary or driver selection.
 See [CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
 Export `DRIVER` / `DSN` before running any printed
 DB-touching commands, then retain the redirected artifacts under `$RUN`.

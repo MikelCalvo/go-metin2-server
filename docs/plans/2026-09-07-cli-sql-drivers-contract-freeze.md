@@ -263,9 +263,11 @@ break; printer GREEN does not curl `/local/db/drivers`.
 ### G. Ordering (untagged printer tests)
 
 Keep today's mkdir → identity/runtime/status-before → daemon logs →
-notes → catalog → `DRIVER`/`DSN` require → ledger-snapshot → … order,
-with the new inspect line **immediately after** the DRIVER/DSN require
-and **before** ledger-snapshot.
+notes → catalog → `DRIVER` requirement → linked-driver inspection → `DSN`
+requirement → ledger-snapshot → … order. The initial sql-driver slice placed
+the inspection after both requirements; the later
+[driver-preflight ordering hardening](2026-09-08-cli-migration-run-retention-driver-preflight-before-dsn-contract-freeze.md)
+moved it before DSN expansion while keeping it before `ledger-snapshot`.
 
 Forward, rollback-to-zero, and intermediate printer tests that already
 pin the `ledger-snapshot --driver "$DRIVER"` line must also pin:
@@ -342,8 +344,8 @@ Focused untagged coverage:
 - `--require-driver` empty / extra args / unknown flag → exit `2`
 - usage / unknown-command text lists `drivers`
 - `migration-run-retention` forward + rollback printers emit gated
-  `--require-driver "$DRIVER"` immediately after the DRIVER/DSN require
-  and before `ledger-snapshot`
+  `--require-driver "$DRIVER"` after the DRIVER requirement, before DSN
+  expansion, and before `ledger-snapshot`
 - stdout still omits DSNs / executable SQL
 
 Loopback coverage:
@@ -383,8 +385,8 @@ GREEN on `lane/persistence` in `c19e5565` (`feat(persistence): inspect linked SQ
 - Stock binaries remain empty (`drivers: []`); harness-only `sqlite` remains
   opt-in `//go:build sqlite_harness`.
 - Printed `migration-run-retention` scripts retain `$RUN/sql-drivers.json`
-  immediately after DRIVER/DSN require and before `ledger-snapshot`; they do
-  not curl the daemon route or emit `sql-drivers-status.json`.
+  after the DRIVER requirement and before DSN expansion / `ledger-snapshot`;
+  they do not curl the daemon route or emit `sql-drivers-status.json`.
 - Focused config/CLI/ops/minimal coverage, tagged SQLite hermetic retention,
   touched-package tests, vet, formatting, and direct stock/tagged CLI runs
   are GREEN.
