@@ -13887,24 +13887,13 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
-		if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
-			MaxHP:                 snapshot.MaxHP,
-			DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
-			AttackValue:           snapshot.AttackValue,
-			DefenseValue:          snapshot.DefenseValue,
-			Level:                 snapshot.Level,
-			Rank:                  snapshot.Rank,
-			RespawnDelay:          respawnDelay,
-			AggroRadius:           snapshot.AggroRadius,
-			LeashRadius:           snapshot.LeashRadius,
-			ChaseDelay:            chaseDelay,
-			ReturnDelay:           returnDelay,
-			HomewardDelay:         homewardDelay,
-			MaxStep:               snapshot.MaxStep,
-			ReactionDelay:         reactionDelay,
-			RetaliationPointDelta: snapshot.RetaliationPointDelta,
-			DeathReward:           snapshot.DeathReward,
-		}) {
+		defaults := worldruntime.StaticActorCombatProfileDefaultsFromSnapshot(snapshot)
+		defaults.RespawnDelay = respawnDelay
+		defaults.ChaseDelay = chaseDelay
+		defaults.ReturnDelay = returnDelay
+		defaults.HomewardDelay = homewardDelay
+		defaults.ReactionDelay = reactionDelay
+		if !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}

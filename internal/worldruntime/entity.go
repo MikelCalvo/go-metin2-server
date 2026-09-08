@@ -284,6 +284,31 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 	return snapshot
 }
 
+// StaticActorCombatProfileDefaultsFromSnapshot converts one already-validated
+// portable profile snapshot into the runtime registration shape. It clones
+// nested reward metadata so callers cannot mutate registered profile state
+// through their content snapshot.
+func StaticActorCombatProfileDefaultsFromSnapshot(snapshot StaticActorCombatProfileSnapshot) StaticActorCombatProfileDefaults {
+	return StaticActorCombatProfileDefaults{
+		MaxHP:                 snapshot.MaxHP,
+		DamagePerNormalAttack: snapshot.DamagePerNormalAttack,
+		AttackValue:           snapshot.AttackValue,
+		DefenseValue:          snapshot.DefenseValue,
+		Level:                 snapshot.Level,
+		Rank:                  snapshot.Rank,
+		RespawnDelay:          time.Duration(snapshot.RespawnDelayMs) * time.Millisecond,
+		AggroRadius:           snapshot.AggroRadius,
+		LeashRadius:           snapshot.LeashRadius,
+		ChaseDelay:            time.Duration(snapshot.ChaseDelayMs) * time.Millisecond,
+		ReturnDelay:           time.Duration(snapshot.ReturnDelayMs) * time.Millisecond,
+		HomewardDelay:         time.Duration(snapshot.HomewardDelayMs) * time.Millisecond,
+		MaxStep:               snapshot.MaxStep,
+		ReactionDelay:         time.Duration(snapshot.ReactionDelayMs) * time.Millisecond,
+		RetaliationPointDelta: snapshot.RetaliationPointDelta,
+		DeathReward:           snapshot.DeathReward.Clone(),
+	}
+}
+
 func ValidStaticActorCombatProfileName(profile string) bool {
 	return validStaticActorCombatProfileName(profile)
 }
