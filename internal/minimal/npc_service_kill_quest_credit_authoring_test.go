@@ -223,7 +223,7 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	if byVnum[11200].EquipSlot != "weapon" || byVnum[11200].UseEffect != nil {
 		t.Fatalf("expected imported NPC service 11200 to author weapon equip_slot, got %+v", byVnum[11200])
 	}
-	wantPotionEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50"}
+	wantPotionEffect := &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50", SpecialEffectType: 1}
 	if byVnum[27001].EquipSlot != "" || !reflect.DeepEqual(byVnum[27001].UseEffect, wantPotionEffect) {
 		t.Fatalf("expected imported NPC service 27001 to author use_effect, got %+v", byVnum[27001])
 	}

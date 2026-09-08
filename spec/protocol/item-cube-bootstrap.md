@@ -208,9 +208,11 @@ Fail-closed:
 The dedicated NPC-service CubeMaster proof now also packet-buys those
 materials from gated `Merchant` catalog slot `2`, then consumes that
 bound stacked cell through `/cube make` after authored `INTERACT`,
-grants `27001 x1`, debits `20` gold on the buy plus `100` gold on the
-craft, and persists the same live snapshot
-(`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`). The
+grants `27001 x1`, `/close_cube`s, and packet-uses that cube-granted last
+stack, including its authored self-only HP-up-red `SPECIAL_EFFECT` after
+the consumed-cell `ITEM_DEL`
+(`docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`,
+`docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md`). The
 composed PvE vertical gameplay proof now also packet-buys catalog slot
 `2` after authored sword `SHOP SELL`, then `/cube add 0 0` / `/cube make`
 on a second authored `CubeMaster` window, grants `27001 x1`, `/close_cube`,
@@ -287,6 +289,7 @@ keeps only the remaining craft-protocol gaps deferred.
 - `docs/plans/2026-09-06-pve-vertical-authored-cube-r-info.md`
 - `docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`
 - `docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`
+- `docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md`
 - `docs/qa/manual-client-checklist.md` section 4.5.16
 - `spec/protocol/npc-service-interactions-bootstrap.md`
 - `spec/protocol/packet-matrix.md` (command-chat cube family note)

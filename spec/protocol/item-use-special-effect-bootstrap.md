@@ -63,4 +63,4 @@ Current coverage:
 
 - `internal/proto/effect` freezes the `SPECIAL_EFFECT` wire layout and decode guards
 - `internal/itemstore` round-trips `use_effect.special_effect_type` deterministically and rejects out-of-range values
-- `internal/minimal` proves packet-originated `ITEM_USE` emits the template-authored self-only `SPECIAL_EFFECT` after the point/item refresh and before the placeholder info chat
+- `internal/minimal` proves packet-originated `ITEM_USE` emits the template-authored self-only `SPECIAL_EFFECT` after the point/item refresh and before the placeholder info chat; the dedicated NPC-service CubeMaster proof now also packet-uses cube-granted `27001` after `/close_cube` with authored HP-up-red type `1` (`docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md`)

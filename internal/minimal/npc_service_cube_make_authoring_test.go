@@ -13,6 +13,7 @@ import (
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	effectproto "github.com/MikelCalvo/go-metin2-server/internal/proto/effect"
 	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
@@ -243,6 +244,88 @@ func TestNpcServiceBundleCubeMasterAddMakeConsumesGrantsAndPersists(t *testing.T
 	flag, ok, err = runtime.QuestStateFlag(hero.Name, "quest:first_steps", "met_guide")
 	if err != nil || !ok || flag.Value != 1 {
 		t.Fatalf("expected met_guide=1 after authored cube make, got ok=%v flag=%+v err=%v", ok, flag, err)
+	}
+
+	beforeCraftedUsePoints, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok {
+		t.Fatal("expected points snapshot before NPC-service cube-granted potion ITEM_USE")
+	}
+	wantHPAfterCraftedUse := beforeCraftedUsePoints.Points[bootstrapPlayerPointValueIndex] + 50
+	wantPersistedHPAfterCraftedUse := persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] + 50
+
+	assertCloseCubeCommandChat(t, flow, "/close_cube", "npc-service cube close after authored make")
+	closedCraftCubeRInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed-cube r_info after authored CubeMaster make: %v", err)
+	}
+	if len(closedCraftCubeRInfoOut) != 0 {
+		t.Fatalf("expected closed-cube r_info after authored make to emit no frames, got %d", len(closedCraftCubeRInfoOut))
+	}
+	assertNpcServiceCubeCraftUnchanged(t, runtime, accounts, login, hero, wantGoldAfterMake, []inventory.ItemInstance{
+		{ID: liveInventory.Inventory[0].ID, Vnum: 27001, Count: 1, Slot: inventory.SlotIndex(0)},
+	}, "after authored cube close")
+	pointsSnapshot, ok := runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != beforeCraftedUsePoints.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected live HP unchanged after authored cube close, got ok=%v snapshot=%+v", ok, pointsSnapshot)
+	}
+
+	craftedUseOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(0)})))
+	if err != nil {
+		t.Fatalf("unexpected NPC-service cube-granted potion ITEM_USE: %v", err)
+	}
+	if len(craftedUseOut) != 5 {
+		t.Fatalf("expected ITEM_USE echo, point-change, ITEM_DEL, SPECIAL_EFFECT, and info chat for cube-granted last-stack potion, got %d", len(craftedUseOut))
+	}
+	craftedUseEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, craftedUseOut[0]))
+	if err != nil {
+		t.Fatalf("decode NPC-service cube-granted potion ITEM_USE echo: %v", err)
+	}
+	if craftedUseEcho.Position != itemproto.InventoryPosition(0) || craftedUseEcho.CharacterVID != hero.VID || craftedUseEcho.VictimVID != hero.VID || craftedUseEcho.Vnum != 27001 {
+		t.Fatalf("unexpected NPC-service cube-granted potion ITEM_USE echo: %+v", craftedUseEcho)
+	}
+	craftedUsePoint, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, craftedUseOut[1]))
+	if err != nil {
+		t.Fatalf("decode NPC-service cube-granted potion point-change: %v", err)
+	}
+	if craftedUsePoint.VID != hero.VID || craftedUsePoint.Type != bootstrapPlayerPointType || craftedUsePoint.Amount != 50 || craftedUsePoint.Value != wantHPAfterCraftedUse {
+		t.Fatalf("unexpected NPC-service cube-granted potion point-change: %+v want value=%d", craftedUsePoint, wantHPAfterCraftedUse)
+	}
+	craftedUseDel, err := itemproto.DecodeDel(decodeSingleFrame(t, craftedUseOut[2]))
+	if err != nil {
+		t.Fatalf("decode NPC-service cube-granted potion ITEM_DEL: %v", err)
+	}
+	if craftedUseDel.Position != itemproto.InventoryPosition(0) {
+		t.Fatalf("unexpected NPC-service cube-granted potion ITEM_DEL: %+v", craftedUseDel)
+	}
+	craftedUseEffect, err := effectproto.DecodeSpecial(decodeSingleFrame(t, craftedUseOut[3]))
+	if err != nil {
+		t.Fatalf("decode NPC-service cube-granted potion SPECIAL_EFFECT: %v", err)
+	}
+	if craftedUseEffect.Type != effectproto.SpecialEffectHPUpRed || craftedUseEffect.VID != hero.VID {
+		t.Fatalf("unexpected NPC-service cube-granted potion SPECIAL_EFFECT: %+v", craftedUseEffect)
+	}
+	assertCubeInfoChatFrame(t, craftedUseOut[4], "consume:27001:+50", "npc-service cube-granted potion ITEM_USE")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected NPC-service cube-granted potion ITEM_USE to queue no peer frames, got %d", len(queued))
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantHPAfterCraftedUse {
+		t.Fatalf("expected live HP %d after NPC-service cube-granted potion ITEM_USE, got ok=%v snapshot=%+v", wantHPAfterCraftedUse, ok, pointsSnapshot)
+	}
+	assertNpcServiceCubeCraftUnchanged(t, runtime, accounts, login, hero, wantGoldAfterMake, nil, "after cube-granted potion ITEM_USE")
+	persisted, err = accounts.Load(login)
+	if err != nil {
+		t.Fatalf("load persisted NPC-service cube-craft account after cube-granted potion ITEM_USE: %v", err)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected persisted HP %d after NPC-service cube-granted potion ITEM_USE (live=%d), got %d", wantPersistedHPAfterCraftedUse, wantHPAfterCraftedUse, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	flag, ok, err = runtime.QuestStateFlag(hero.Name, "quest:first_steps", "met_guide")
+	if err != nil || !ok || flag.Value != 1 {
+		t.Fatalf("expected met_guide=1 after NPC-service cube-granted potion ITEM_USE, got ok=%v flag=%+v err=%v", ok, flag, err)
 	}
 }
 

@@ -43,9 +43,15 @@ is already extending it.
    `cube success 27001 1` / follow-up `cube info 0 0 0`, and persists the
    same live snapshot. Quest flag stays `met_guide = 1`.
 
+The later cube-grant use follow-up
+`docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md` closes that
+window and packet-uses the granted last stack.
+
 ## What this is not yet
 
 - cube `add` / `make` inside the composed PvE vertical gameplay proof
+- cube-grant last-stack `ITEM_USE` on this dedicated proof (now owned; see
+  `docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md`)
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0`
 - FileStore `CubeRecipeStorePath` config knob
 - merchant sell-back of leftover cube materials
