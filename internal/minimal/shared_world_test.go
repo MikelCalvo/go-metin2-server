@@ -7833,6 +7833,185 @@ func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPA
 	assertDamageInfoFrame(t, killingOut[2], targetVID, 5, "formula-profile killing hit")
 }
 
+func TestGameSessionFlowAuthoredFormulaProfileDelayedRetaliationFloorRestartHereResumes(t *testing.T) {
+	const profile = "qa_formula_practice_mob"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate shared_world test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read formula combat-profile bundle: %v", err)
+	}
+	var bundle contentbundle.Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode formula combat-profile bundle: %v", err)
+	}
+	if len(bundle.SpawnGroups) != 1 {
+		t.Fatalf("expected one formula spawn group, got %#v", bundle.SpawnGroups)
+	}
+
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("FormulaFloorOwner", 0x010301fc, 0x020401fc, 1200, 2200, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 4
+	issuePeerTicket(t, ticketStore, "formula-floor-owner", 0xfcfcfcfc, owner)
+	if err := accounts.Save(accountstore.Account{Login: "formula-floor-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed formula floor owner account: %v", err)
+	}
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	gameRuntime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected formula floor runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000802, 0)
+	gameRuntime.now = func() time.Time { return currentTime }
+	bundle.SpawnGroups[0].MapIndex = bootstrapMapIndex
+	bundle.SpawnGroups[0].X = owner.X
+	bundle.SpawnGroups[0].Y = owner.Y
+	if _, err := gameRuntime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import formula combat-profile bundle: %v", err)
+	}
+	actors := gameRuntime.StaticActors()
+	if len(actors) != 1 || actors[0].CombatProfile != profile || actors[0].CombatMaxHP != 20 || actors[0].CombatNormalDamage != 5 {
+		t.Fatalf("expected imported formula spawn actor defaults, got %#v", actors)
+	}
+	targetVID := uint32(actors[0].EntityID)
+
+	flow, enterOut := enterGameWithLoginTicket(t, gameRuntime.SessionFactory(), "formula-floor-owner", 0xfcfcfcfc)
+	defer closeSessionFlow(t, flow)
+	if len(enterOut) != 8 {
+		t.Fatalf("expected formula floor owner bootstrap with visible formula mob, got %d frames", len(enterOut))
+	}
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula floor target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected formula floor target acknowledgement, got %d frames", len(selectOut))
+	}
+
+	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected formula floor first-hit error: %v", err)
+	}
+	if len(firstHit) != 4 {
+		t.Fatalf("expected formula floor first hit target, retaliation, and damage info, got %d frames", len(firstHit))
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, firstHit[0]))
+	if err != nil {
+		t.Fatalf("decode formula floor first-hit refresh: %v", err)
+	}
+	if refresh.TargetVID != targetVID || refresh.HPPercent != 75 {
+		t.Fatalf("expected formula floor first hit to preserve 75%% target HP, got %+v", refresh)
+	}
+	firstRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, firstHit[1]))
+	if err != nil {
+		t.Fatalf("decode formula floor first-hit retaliation: %v", err)
+	}
+	if firstRetaliation.VID != owner.VID || firstRetaliation.Type != bootstrapPlayerPointType || firstRetaliation.Amount != -2 || firstRetaliation.Value != 2 {
+		t.Fatalf("expected formula floor immediate authored -2 retaliation to leave 2 HP, got %+v", firstRetaliation)
+	}
+	assertDamageInfoFrame(t, firstHit[2], targetVID, 5, "formula floor first-hit mob damage")
+	assertDamageInfoFrame(t, firstHit[3], owner.VID, 2, "formula floor first-hit owner retaliation")
+
+	currentTime = currentTime.Add(2 * time.Second)
+	floorOut := flushServerFrames(t, flow)
+	if len(floorOut) != 4 {
+		t.Fatalf("expected authored delayed formula retaliation to reach owner floor with 4 frames, got %d", len(floorOut))
+	}
+	if next := assertOwnerFloorDeathSequence(t, floorOut, 0, owner.VID, -2, "formula profile delayed retaliation floor"); next != 4 {
+		t.Fatalf("expected formula profile floor sequence to consume 4 frames, got next=%d", next)
+	}
+	persistedFloor, err := accounts.Load("formula-floor-owner")
+	if err != nil {
+		t.Fatalf("load formula floor owner account: %v", err)
+	}
+	if len(persistedFloor.Characters) != 1 || persistedFloor.Characters[0].Points[bootstrapPlayerPointValueIndex] != 0 {
+		t.Fatalf("expected formula profile floor to persist owner HP 0, got %+v", persistedFloor)
+	}
+
+	restartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/restart_here"})))
+	if err != nil {
+		t.Fatalf("unexpected formula profile /restart_here error: %v", err)
+	}
+	if len(restartOut) != 8 {
+		t.Fatalf("expected formula profile /restart_here self and actor catch-up frames, got %d", len(restartOut))
+	}
+	restartedHP, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, restartOut[3]))
+	if err != nil {
+		t.Fatalf("decode formula profile restart HP: %v", err)
+	}
+	wantRecoveredHP := initialStatsForRace(owner.RaceNum).MaxHP
+	if restartedHP.VID != owner.VID || restartedHP.Value != wantRecoveredHP {
+		t.Fatalf("expected formula profile /restart_here HP %d, got %+v", wantRecoveredHP, restartedHP)
+	}
+
+	staleAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected formula profile stale attack error after restart: %v", err)
+	}
+	if len(staleAttack) != 0 {
+		t.Fatalf("expected formula profile stale attack after restart to fail closed, got %d frames", len(staleAttack))
+	}
+	retargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula profile fresh target error after restart: %v", err)
+	}
+	if len(retargetOut) != 1 {
+		t.Fatalf("expected formula profile fresh target acknowledgement after restart, got %d frames", len(retargetOut))
+	}
+	retarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, retargetOut[0]))
+	if err != nil {
+		t.Fatalf("decode formula profile fresh target after restart: %v", err)
+	}
+	if retarget.TargetVID != targetVID || retarget.HPPercent != 75 {
+		t.Fatalf("expected formula profile fresh target to preserve damaged 75%% HP, got %+v", retarget)
+	}
+
+	resumedHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected formula profile resumed hit error: %v", err)
+	}
+	if len(resumedHit) != 4 {
+		t.Fatalf("expected formula profile resumed hit target, retaliation, and damage info, got %d frames", len(resumedHit))
+	}
+	resumedRefresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, resumedHit[0]))
+	if err != nil {
+		t.Fatalf("decode formula profile resumed target refresh: %v", err)
+	}
+	if resumedRefresh.TargetVID != targetVID || resumedRefresh.HPPercent != 50 {
+		t.Fatalf("expected formula profile resumed hit to reach 50%% HP, got %+v", resumedRefresh)
+	}
+	resumedRetaliation, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, resumedHit[1]))
+	if err != nil {
+		t.Fatalf("decode formula profile resumed retaliation: %v", err)
+	}
+	if resumedRetaliation.VID != owner.VID || resumedRetaliation.Type != bootstrapPlayerPointType || resumedRetaliation.Amount != -2 || resumedRetaliation.Value != wantRecoveredHP-2 {
+		t.Fatalf("expected formula profile resumed immediate authored -2 retaliation, got %+v want value %d", resumedRetaliation, wantRecoveredHP-2)
+	}
+	assertDamageInfoFrame(t, resumedHit[2], targetVID, 5, "formula profile resumed-hit mob damage")
+	assertDamageInfoFrame(t, resumedHit[3], owner.VID, 2, "formula profile resumed-hit owner retaliation")
+
+	currentTime = currentTime.Add(2 * time.Second)
+	flushNonFloorDelayedRetaliationFrames(t, flow, owner.VID, -2, wantRecoveredHP-4, "formula profile resumed delayed retaliation")
+}
+
 func TestGameRuntimeAuthoredFormulaCombatProfileDeathRespawnPersistsAcrossDaemonRestart(t *testing.T) {
 	const profile = "qa_formula_practice_mob"
 	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)

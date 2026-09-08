@@ -1106,6 +1106,8 @@ Run this when the target build can import `docs/examples/bootstrap-combat-profil
 - [ ] After proximity lock or an accepted hit, wait through authored `reaction_delay_ms = 2000` (not bootstrap `1s`) for the first delayed retaliation beat, and wait through authored `chase_delay_ms = 2000` (not bootstrap `5s`) for the first chase `MOVE`
 - [ ] Approach and select `QAFormulaMob`; confirm the first self-only `GC TARGET` ack reports full HP (`100`)
 - [ ] Land one accepted normal hit and confirm the target refresh steps by formula damage (`20 -> 15`, visible as `75` percent) plus one self plain `DAMAGE_INFO(..., damage = 5)` companion
+- [ ] In a separate low-HP run, begin the owner at `4` HP, land that first accepted hit, and confirm the authored immediate `-2` retaliation leaves `2` HP; after the authored two-second reaction delay, confirm the authored delayed `-2` reaches `0` with the ordinary `PLAYER_POINT_CHANGE` -> `DEAD(owner_vid)` -> `TARGET(0, 0)` sequence
+- [ ] Issue `/restart_here`, confirm the stale pre-restart `ATTACK` stays silent, then fresh-select the still-damaged formula mob (`75` percent) and land one new hit; both its immediate and its newly armed two-second delayed retaliation must remain authored `-2` rather than falling back to the built-in `-1`
 - [ ] Continue accepted hits on the owned cadence until death and confirm it takes exactly four formula hits (`20 / 5`) rather than the built-in one-damage practice-mob loop
 - [ ] Confirm the killing hit still uses death + clear before the profile-default reward frames
 
