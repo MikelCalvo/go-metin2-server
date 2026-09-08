@@ -7833,6 +7833,197 @@ func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPA
 	assertDamageInfoFrame(t, killingOut[2], targetVID, 5, "formula-profile killing hit")
 }
 
+func TestGameRuntimeAuthoredFormulaCombatProfileDeathRespawnPersistsAcrossDaemonRestart(t *testing.T) {
+	const profile = "qa_formula_practice_mob"
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("locate shared_world test file")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "docs", "examples", "bootstrap-combat-profile-formula-bundle.json"))
+	if err != nil {
+		t.Fatalf("read formula combat-profile bundle: %v", err)
+	}
+	var bundle contentbundle.Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode formula combat-profile bundle: %v", err)
+	}
+	if len(bundle.SpawnGroups) != 1 {
+		t.Fatalf("expected one formula spawn group, got %#v", bundle.SpawnGroups)
+	}
+
+	store := loginticket.NewFileStore(t.TempDir())
+	killer := peerVisibilityCharacter("FormulaRestartKiller", 0x010301fa, 0x020401fa, 1100, 2100, 0, 101, 201)
+	killer.Points[bootstrapPlayerPointValueIndex] = 50
+	lateViewer := peerVisibilityCharacter("FormulaRestartViewer", 0x010301fb, 0x020401fb, 1100, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "formula-restart-killer", 0xfafafafa, killer)
+	issuePeerTicket(t, store, "formula-restart-viewer", 0xfbfbfbfb, lateViewer)
+
+	staticActorStore := staticstore.NewFileStore(t.TempDir() + "/static-actors.json")
+	interactionStore := interactionstore.NewFileStore(t.TempDir() + "/interaction-definitions.json")
+	gameRuntime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("unexpected formula combat-profile runtime error: %v", err)
+	}
+	currentTime := time.Unix(1700000800, 0)
+	gameRuntime.now = func() time.Time { return currentTime }
+	bundle.SpawnGroups[0].MapIndex = bootstrapMapIndex
+	bundle.SpawnGroups[0].X = 1200
+	bundle.SpawnGroups[0].Y = 2200
+	if _, err := gameRuntime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import formula combat-profile bundle: %v", err)
+	}
+	actors := gameRuntime.StaticActors()
+	if len(actors) != 1 || actors[0].SpawnGroupRef != "practice.qa_formula_mob" || actors[0].CombatProfile != profile || actors[0].CombatMaxHP != 20 || actors[0].CombatNormalDamage != 5 || actors[0].CombatAttackValue != 9 || actors[0].CombatDefenseValue != 4 {
+		t.Fatalf("expected imported formula spawn actor defaults, got %#v", actors)
+	}
+	originalEntityID := actors[0].EntityID
+	targetVID := uint32(originalEntityID)
+
+	killerFlow, killerEnter := enterGameWithLoginTicket(t, gameRuntime.SessionFactory(), "formula-restart-killer", 0xfafafafa)
+	if len(killerEnter) != 8 {
+		t.Fatalf("expected killer bootstrap with visible formula spawn mob, got %d frames", len(killerEnter))
+	}
+	selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected formula spawn target error: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected one formula spawn target acknowledgement, got %d frames", len(selectOut))
+	}
+
+	for attackIndex := 0; attackIndex < 4; attackIndex++ {
+		if attackIndex > 0 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		attackOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+			AttackType: combatproto.ClientAttackTypeNormal,
+			TargetVID:  targetVID,
+		})))
+		if err != nil {
+			t.Fatalf("unexpected formula spawn hit %d error: %v", attackIndex+1, err)
+		}
+		if attackIndex < 3 {
+			if len(attackOut) != 4 {
+				t.Fatalf("expected formula spawn live hit %d to emit target, retaliation, and damage info, got %d frames", attackIndex+1, len(attackOut))
+			}
+			refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[0]))
+			if err != nil {
+				t.Fatalf("decode formula spawn live-hit target refresh %d: %v", attackIndex+1, err)
+			}
+			wantPercent := uint8(100 - (attackIndex+1)*25)
+			if refresh.TargetVID != targetVID || refresh.HPPercent != wantPercent {
+				t.Fatalf("expected formula spawn live hit %d hp percent %d, got %+v", attackIndex+1, wantPercent, refresh)
+			}
+			continue
+		}
+		if len(attackOut) < 3 {
+			t.Fatalf("expected formula spawn killing hit to begin with death/clear/damage-info, got %d frames", len(attackOut))
+		}
+		dead, err := worldproto.DecodeDead(decodeSingleFrame(t, attackOut[0]))
+		if err != nil {
+			t.Fatalf("decode formula spawn killing death frame: %v", err)
+		}
+		if dead.VID != targetVID {
+			t.Fatalf("expected formula spawn killing death for %d, got %+v", targetVID, dead)
+		}
+		cleared, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attackOut[1]))
+		if err != nil {
+			t.Fatalf("decode formula spawn killing clear frame: %v", err)
+		}
+		if cleared.TargetVID != 0 || cleared.HPPercent != 0 {
+			t.Fatalf("expected formula spawn killing hit target clear, got %+v", cleared)
+		}
+		assertDamageInfoFrame(t, attackOut[2], targetVID, 5, "formula spawn killing hit")
+		for _, raw := range attackOut[3:] {
+			if point, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil && point.Amount == -2 {
+				t.Fatalf("expected formula spawn killing hit to omit retaliation point-change, got %+v", point)
+			}
+		}
+	}
+	closeSessionFlow(t, killerFlow)
+
+	beforeRestart, ok := gameRuntime.SpawnGroupByRef("practice.qa_formula_mob")
+	if !ok || !beforeRestart.Dead || beforeRestart.CombatHPPercent != 0 {
+		t.Fatalf("expected formula spawn to be dead before restart, ok=%v snapshot=%+v", ok, beforeRestart)
+	}
+	respawns := gameRuntime.StaticActorRespawns()
+	if len(respawns) != 1 || respawns[0].EntityID != originalEntityID {
+		t.Fatalf("expected one formula-profile respawn before restart, got %+v", respawns)
+	}
+	wantReadyAt := respawns[0].ReadyAt.UTC()
+	persisted, err := staticActorStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted formula spawn state: %v", err)
+	}
+	if len(persisted.StaticActors) != 1 || persisted.StaticActors[0].CombatCurrentHP == nil || *persisted.StaticActors[0].CombatCurrentHP != 0 || persisted.StaticActors[0].RespawnReadyAt == nil || !persisted.StaticActors[0].RespawnReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected persisted formula still-dead state at %s, got %+v", wantReadyAt, persisted.StaticActors)
+	}
+
+	worldruntime.UnregisterStaticActorCombatProfileForTest(profile)
+	reloaded, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, staticActorStore, interactionStore)
+	if err != nil {
+		t.Fatalf("reload formula combat-profile runtime: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+	afterRestart, ok := reloaded.SpawnGroupByRef("practice.qa_formula_mob")
+	if !ok || !afterRestart.Dead || afterRestart.CombatProfile != profile || afterRestart.CombatMaxHP != 20 || afterRestart.CombatNormalDamage != 5 || afterRestart.CombatAttackValue != 9 || afterRestart.CombatDefenseValue != 4 {
+		t.Fatalf("expected restarted formula spawn to remain dead with formula defaults, ok=%v snapshot=%+v", ok, afterRestart)
+	}
+	respawns = reloaded.StaticActorRespawns()
+	if len(respawns) != 1 || respawns[0].EntityID != afterRestart.EntityID || !respawns[0].ReadyAt.Equal(wantReadyAt) {
+		t.Fatalf("expected formula-profile respawn deadline to survive restart, got %+v want %s", respawns, wantReadyAt)
+	}
+
+	lateFlow, lateEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), "formula-restart-viewer", 0xfbfbfbfb)
+	defer closeSessionFlow(t, lateFlow)
+	if len(lateEnter) != 9 {
+		t.Fatalf("expected late viewer still-dead formula spawn bootstrap, got %d frames", len(lateEnter))
+	}
+	deniedTarget, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(afterRestart.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected formula still-dead target dispatch error: %v", err)
+	}
+	if len(deniedTarget) != 0 {
+		t.Fatalf("expected formula still-dead target to fail closed, got %d frames", len(deniedTarget))
+	}
+
+	currentTime = wantReadyAt.Add(time.Millisecond)
+	respawnFrames := flushServerFrames(t, lateFlow)
+	if len(respawnFrames) != 4 {
+		t.Fatalf("expected formula-profile respawn rebuild frames, got %d", len(respawnFrames))
+	}
+	if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, respawnFrames[0])); err != nil {
+		t.Fatalf("decode formula-profile respawn delete: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, respawnFrames[1])); err != nil {
+		t.Fatalf("decode formula-profile respawn add: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, respawnFrames[2])); err != nil {
+		t.Fatalf("decode formula-profile respawn additional info: %v", err)
+	}
+	if _, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, respawnFrames[3])); err != nil {
+		t.Fatalf("decode formula-profile respawn update: %v", err)
+	}
+	respawned, ok := reloaded.SpawnGroupByRef("practice.qa_formula_mob")
+	if !ok || respawned.Dead || respawned.CombatHPPercent != 100 || respawned.CombatProfile != profile || respawned.CombatMaxHP != 20 || respawned.CombatNormalDamage != 5 {
+		t.Fatalf("expected formula-profile respawn at full formula HP, ok=%v snapshot=%+v", ok, respawned)
+	}
+	if respawns := reloaded.StaticActorRespawns(); len(respawns) != 0 {
+		t.Fatalf("expected formula-profile respawn to clear pending timer, got %+v", respawns)
+	}
+	freshTarget, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(respawned.EntityID)})))
+	if err != nil {
+		t.Fatalf("unexpected formula respawn fresh-target error: %v", err)
+	}
+	if len(freshTarget) != 1 {
+		t.Fatalf("expected fresh formula respawn target acknowledgement, got %d frames", len(freshTarget))
+	}
+}
+
 func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t *testing.T) {
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
