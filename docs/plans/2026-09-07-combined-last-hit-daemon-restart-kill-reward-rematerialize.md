@@ -80,3 +80,6 @@ go test ./internal/minimal -run 'TestGameSessionFlowPracticeMobKillingHitAlsoFlo
 - party share, random loot tables, or level-up choreography
 - inverting live-owner Leave deletion for ordinary player drops
 - a second ownership model besides FileStore `OwnerID = 0` parking + Join rebind
+
+Town return after that same FileStore rematerialize is now owned by
+`2026-09-08-combined-last-hit-daemon-restart-restart-town-kill-reward-rematerialize.md`.

@@ -62,4 +62,6 @@ Follow-up landed in
 combined last-hit `gamed` process restart rematerializes the still-dead dummy
 plus parked exclusive handle, skips dummy/ground rematerialize while the
 owner is still at the floor, then `/restart_here` catch-up lets ordinary
-owner pickup succeed.
+owner pickup succeed. The same FileStore rematerialize can also recover with
+`/restart_town` after source-map relocate-back
+(`docs/plans/2026-09-08-combined-last-hit-daemon-restart-restart-town-kill-reward-rematerialize.md`).
