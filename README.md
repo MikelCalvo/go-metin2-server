@@ -1,304 +1,105 @@
+<div align="center">
+
 # go-metin2-server
 
-Clean-room Metin2 server emulator in Go, targeting TMP4-era client compatibility.
+**Rebuilding the Metin2 server experience in Go — one playable milestone at a time.**
 
-This project is a public rewrite built around project-owned protocol notes, small verified slices, and a gradual path from a stable boot flow to a real shared-world game server. Legacy trees and captures may be used only as external behavior oracles; this repository must not copy legacy source code.
+[![CI](https://github.com/MikelCalvo/go-metin2-server/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikelCalvo/go-metin2-server/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](go.mod)
+[![Stage](https://img.shields.io/badge/stage-pre--alpha-orange)](#the-road-to-a-playable-server)
+[![Approach](https://img.shields.io/badge/approach-clean--room-6366f1)](docs/clean-room-policy.md)
 
-## Current status
+[Progress](#the-road-to-a-playable-server) · [What's working](#whats-working-today) · [How we build](docs/agent-workflow.md) · [Get involved](#follow-or-contribute)
 
-`go-metin2-server` is **pre-alpha**. It is not a playable legacy-compatible server yet, but it is well past the packet-experiment stage.
+</div>
 
-The current `main` branch owns:
+---
 
-- real `authd` and `gamed` daemon entrypoints,
-- secure legacy handshake, auth/login, character selection, loading, and game-entry flows,
-- a shared in-process world runtime with player visibility, movement, chat, transfer, reconnect, and static/non-player actor seams,
-- broad bootstrap inventory, equipment, quickslot, item-use, ground-item, shop, exchange/refine, durable safebox, first host-only `MYSHOP` presentation, and reward slices,
-- authored static actors, interactions, merchant catalogs, content bundles, spawn groups, and stationary practice-mob profiles,
-- first combat/death/respawn/restart/reward behavior around practice mobs,
-- loopback-only debug/operator endpoints for runtime inspection, content/state validation, quest-state validation, backup/restore preflights, and local QA,
-- a migration CLI for catalog summaries, offline ledger-snapshot plans, and explicit CLI-only apply runs,
-- GitHub Actions CI for formatting, tests, vet, binary builds, and Docker image builds.
+## A familiar world, a new foundation
 
-Latest repository scan for this refresh:
+An independent, clean-room Metin2 server emulator written in Go, targeting **TMP4-era client compatibility**. The goal is to rebuild the server step by step, with readable code, documented behavior, and tests behind each new piece of gameplay.
 
-- Go version: `1.26.2`
-- Go packages: `45`
-- Go files: `273`
-- Go test files: `159`
-- Markdown docs after this refresh: `344`
-- protocol docs under `spec/protocol`: `81`
-- current refreshed baseline: `4fa78924 ops: ship disabled-by-default lab daemon rc.d/systemd samples`
+**The next destination:** a small, coherent PvE experience — enter the world, fight mobs, collect rewards, use your gear, visit NPCs, and come back without losing progress.
 
-Legend used below:
+> **Pre-alpha, not a ready-to-host game server.** Parts of that loop already exist in code and automated tests, but full client compatibility, broad content, and production readiness are still ahead. This repository does not distribute a game client or proprietary game assets.
 
-- `[x]` implemented enough for the current milestone
-- `[~]` partial / bootstrap / intentionally narrow
-- `[ ]` not started or not compatibility-grade yet
+## The road to a playable server
 
-## Milestone ladder
+```text
+  ✅ Connect       🟡 Build the loop      ◇ Grow the world      ◇ Go live
+  ────────────────●───────────────────────────────────────────────────→
+  Login & entry    WE ARE HERE            Richer gameplay       Production
+```
 
-- `[x]` **M0 — Protocol-owned boot path**
-  - Frame handling, phases, secure handshake, auth/login, selection, loading, game entry, and early bootstrap packets are owned by Go code, docs, and tests.
+| Milestone | Status | What it means |
+| :--- | :--- | :--- |
+| **01 · Open the gates** | ✅ Foundation in place | Secure connection, login, character selection, and world entry. |
+| **02 · Share the world** | 🟡 Working, still growing | Players can see each other, move, chat, and travel through supported map flows. |
+| **03 · Complete the PvE loop** | 🟡 Current focus | Bring mobs, combat, loot, equipment, NPC services, and recovery together. |
+| **04 · Expand the adventure** | ◇ Ahead | Richer quests, skills, social systems, and broader gameplay compatibility. |
+| **05 · Make it ready to host** | ◇ Ahead | Production data storage, operations, releases, and wider compatibility testing. |
 
-- `[~]` **M1 — Shared-world pre-alpha**
-  - Multiple connected sessions can exist in the same in-process world, see each other, move, chat, transfer through bootstrap seams, reconnect, and rebuild visibility. This is still a single-process bootstrap runtime, not a production channel/shard architecture.
+*Milestones overlap: persistence and tooling are being developed alongside gameplay. These are direction markers, not release dates or completion percentages.*
 
-- `[~]` **M2 — Character, inventory, equipment, and economy bootstrap**
-  - Inventory/equipment replay, item move/split/merge/use/drop/pickup, quickslots, merchant buy/sell, gold mutation, a first exchange open/cancel shell plus mutual-accept finalize with fail-closed origin/partner persistence rollback, refine reject/preview plus confirm-after-preview success (`probability = 100`), destroy-failure (`probability = 0` + `RefineFailed`), injected-roll (`probability` in `1..99`), and template-authored `keep_on_fail` keep-failure paths, authored item-template guards, and persistence validation exist. Durable character safebox cells/password/money plus warehouse `open_safebox` password-challenge / reopen cooldown-distance / walk-away autoclose seams are owned on the file-backed path. Host-only accepted `MYSHOP` open presentation plus empty-sign close and open-MYSHOP exchange busy rejects exist; peer shop broadcast / browse / buy remain pending. Bootstrap ground-item exclusive ownership timers (30s owner-only, then blank public ownership) are owned for the in-memory path. Mall, full player-shop commerce, item sockets/bonuses, full restrictions, refine catalyst/downgrade outcomes, restart-restored ownership timer state, and DB-backed item persistence remain future work.
+## What's working today
 
-- `[~]` **M3 — Content and NPC authoring seam**
-  - Static actors, interaction definitions, `info`/`talk`/`warp`/`shop_preview`, merchant catalogs, content bundle import/export, portable combat profiles, reward descriptors, authoring-only fixed reward tables for EXP/gold/drop descriptors, and spawn groups can drive current bootstrap content. This is useful content infrastructure, not a quest scripting system yet.
+These are **limited pre-alpha implementations**, not claims of complete legacy parity.
 
-- `[~]` **M4 — PvE practice loop**
-  - Practice mobs can be targeted, attacked, killed, respawned, and can grant deterministic EXP/gold/fixed-drop descriptors through narrow owned contracts. Retaliation/player-death/restart seams, the spawn-position leash classifier, a pure capped return-step planner, a pure engaged chase-step planner, a loopback-only one-step return trigger, a pending-frame return-step executor, local pending return-step inspection, and the first pending-frame chase-step executor exist, with authored spawn home preserved separately from current placement for spawn-backed actors. Chase/return packet choreography, attack formulas, skills, projectile/ranged combat, randomized loot tables, PvP/duels, and full death/revive/corpse choreography remain future work.
+| | In the current `main` branch |
+| :--- | :--- |
+| 🌍 **Shared world** | Player visibility, movement, chat, map transfers, and reconnect handling. |
+| ⚔️ **First PvE encounters** | Authored practice mobs, basic aggro/chase/return behavior, attacks, death, respawn, and rewards. |
+| 🎒 **Items & economy** | Inventory, equipment, potions, loot pickup, NPC buying/selling, and early trade, storage, refining, and player-shop paths. |
+| 🏘️ **NPCs & content** | Importable content bundles, dialogue, travel, shops, warehouse services, crafting, and early quest-state behavior. |
+| 💾 **Recovery & tooling** | File-backed progress, tested restart scenarios, backup/restore tools, and SQL migration/import tooling. |
 
-- `[~]` **M5 — Operations and developer workflow**
-  - The repo has a Makefile, Dockerfile, CI, pprof/debug mux, health endpoint, local-only runtime/config/player/map/visibility/content/persistence endpoints, backup/restore preflights, crash-temp cleanup primitives, a validated migration catalog with dry-run planning, a migration CLI with explicit apply support, QA docs, and clean-room workflow docs. Release/versioning policy, production DB engine/driver selection, production deployment, metrics/logging policy, and production-safe admin tooling are still pending.
+**Still ahead:** a full quest scripting system, skills and broader combat rules, complete party/guild systems, production database-backed gameplay, and large-scale server operation.
 
-- `[ ]` **M6 — Legacy parity / production server**
-  - The project does not claim full legacy parity. The next target is a narrow playable vertical; broad parity and production operations come later.
+### What we're working toward next
 
-## Subsystem status
+- **Make the loop feel connected:** fewer isolated features, more complete player journeys.
+- **Keep progress safe:** item integrity, rewards, death/restart, and reconnect recovery.
+- **Make it provable in the real client:** repeatable manual QA alongside automated tests.
 
-### Foundation and workflow
+For implementation detail, see the [living PvE roadmap](docs/plans/2026-08-08-playable-vertical-roadmap.md) and [manual client checklist](docs/qa/manual-client-checklist.md).
 
-Status: `[x]` strong for a pre-alpha repo.
+## Built in the open, with AI agents
 
-Already present:
+We use **Hermes Agent** to coordinate five development lanes: world, combat, items, content, and persistence. Each works in its own Git worktree; a separate integrator checks and brings completed changes into `main`.
 
-- Go module with daemon entrypoints in `cmd/authd` and `cmd/gamed`.
-- Clear `internal/*` package boundaries for protocol, flows, stores, runtime, and ops.
-- Makefile and CI for format/test/vet/build/image validation.
-- Clean-room policy, testing strategy, workflow, development, debugging, and manual QA docs.
-- Lane-based development model with integration through a green `main` branch.
+**Agents write code and tests. Maintainers set direction and validate the player experience.** Automated integration is not a claim that every commit has had human review, and passing tests is not the same as a finished game.
 
-Still missing:
+→ **[Read how our agent workflow works](docs/agent-workflow.md)** — roles, checks, automation, and human oversight.
 
-- release/versioning policy,
-- production deployment guide,
-- contribution/issue taxonomy,
-- public release artifacts and migration/runbook maturity.
+## Follow or contribute
 
-### Protocol and boot path
+- ⭐ **Star the repository** to bookmark the project; use **Watch** for GitHub notifications.
+- 🧭 **Follow progress:** [milestones above](#the-road-to-a-playable-server), [development history](https://github.com/MikelCalvo/go-metin2-server/commits/main/), and [CI runs](https://github.com/MikelCalvo/go-metin2-server/actions).
+- 🐛 **Share useful findings:** reproducible client behavior, focused bug reports, and clear expected vs. actual results help more than broad parity requests. [Open an issue](https://github.com/MikelCalvo/go-metin2-server/issues).
+- 🛠️ **Contribute a small improvement:** start with the [development guide](docs/development.md), [workflow](docs/workflow.md), and [clean-room policy](docs/clean-room-policy.md). Keep changes focused and include tests where applicable.
 
-Status: `[x]` for the current milestone, `[~]` for full legacy coverage.
+<details>
+<summary><strong>Developer corner · setup, tests, and technical references</strong></summary>
 
-Already present:
-
-- frame envelope and session phase model,
-- control handshake, phase, ping/pong, and key exchange,
-- auth/login/select/loading/game-entry choreography,
-- character delete/select/bootstrap updates,
-- packet families used by current movement, chat, item, shop, interaction, combat, world, restart, and content slices,
-- maintained protocol index and packet matrix.
-
-Still missing:
-
-- many packet families outside the current verticals,
-- stronger evidence for uncertain real-client behaviors,
-- skill, quest, party/guild, messenger, trade/storage, player-shop, GM/admin, and broader world-event ownership.
-
-### Shared world, visibility, maps, and actors
-
-Status: `[~]` real in-process runtime, not production world architecture.
-
-Already present:
-
-- connected session registry, player directory, map index, topology, and visibility scopes,
-- whole-map and radius-style visibility policy support,
-- movement/sync/local-chat peer fanout,
-- transfer/rebootstrap, reconnect, quit/logout cleanup, and visibility rebuild helpers,
-- static/non-player actor directories, runtime snapshots, spawn-group read models, map occupancy and local QA endpoints,
-- fail-closed identity validation and stale-index repair/suppression paths for several player/static actor edges.
-
-Still missing:
-
-- production channel/shard ownership,
-- richer sectors and long-running resource policy,
-- robust multi-map content lifecycle,
-- world-state persistence and crash recovery,
-- real mob movement/AI lifecycle beyond stationary practice seams.
-
-### Character, inventory, equipment, items, and economy
-
-Status: `[~]` broad bootstrap coverage with many legacy details pending.
-
-Already present:
-
-- inventory/equipment bootstrap replay and self-only item refreshes; the composed PvE `Wooden Sword` keeps item identity `11200` while template-authored `appearance_vnum = 11201` drives its equipped visible weapon part,
-- item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT` (including the checked-in PvE potion output), template-backed equipment point effects (including the composed PvE Wooden Sword equip before ordinary equipped-item sell-back), drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
-- authored item-template metadata for selected display/guard behavior, including template-backed refine-dialog preview metadata that now stays fail-closed when selected-character restrictions or transfer guards disallow the carried item, template-authored direct item-use rejection feedback that tears down active merchant/exchange presentation shells before the self rejection chat, and projection into the current migration-shaped item-template export, plus content-bundle summary projection of template-authored `use_effect`, `equip_effect`, and refine guard metadata before import. Checked-in PvE/NPC-service example bundles now author `27001.use_effect`, `11200.equip_slot`, and `11200.shop_sell_price = 100` so composed import no longer strips the playable use/equip/sell/warehouse vertical,
-- fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,
-- client packet ownership for `ITEM_GIVE`, `EXCHANGE`, `REFINE`, safebox/mall storage requests, and first `CG::MYSHOP` / `GC::SHOP_SIGN` presentation seams, plus codec ownership for safebox/mall responses and server refine-information frames, including visible-target-gated `ITEM_GIVE` anti-give feedback, the first visible-peer exchange open/cancel/busy-target shell plus active-shell display-only exchange item-add/item-del/gold-add/accept frames with duplicate display-slot/source-item suppression, active-shell anti-give reject text, accept-marker reset on later display changes, accept-time stale requester and already-accepted-partner displayed-item/gold plus displayed-item template-metadata revalidation, second-accept receiver item-id collision, over-template-max compatible-stack, inventory-capacity, and gold-overflow precondition guards before any accepted trade mutation, the first mutual-accept finalize with fail-closed origin/partner persistence rollback that leaves the shell cancellable, `/quit` / `/logout` / `/phase_select` exchange-window teardown, successful carried-item-use / carried item-move / slash inventory-move / carried-equipment move / slash equipment-mutation / drag-to-item stack-consolidation / drop / merchant buy/sell and template-backed direct item-use rejection / drop-rejection / equipment-rejection / safebox-rejection / refine-feedback / item-give anti-give feedback exchange teardown, template-backed direct item-use rejection / safebox-rejection / refine-feedback / item-give anti-give merchant-window teardown, durable character safebox open/move/password/money/walk-away/reopen-gate seams with restart rematerialization, and host-only accepted `MYSHOP` open presentation plus empty-sign close with open-MYSHOP exchange busy rejects, while richer trade-target eligibility, refine keep-grade/catalyst outcomes, mall, and peer player-shop browse/buy remain intentionally narrow or fail-closed.
-
-Still missing:
-
-- richer trade-target eligibility beyond distance/merchant busy gates and stronger exchange rollback/audit policy beyond the current fail-closed mutual-accept persistence seam,
-- mall and full player-shop commerce beyond the owned host-only `MYSHOP` open/close presentation (peer `SHOP_SIGN` around-broadcast, browse, and buy remain pending),
-- item sockets/metins/bonuses/books/scrolls,
-- complete anti-flag/class/sex/level/equipment restrictions,
-- accepted refine catalyst/downgrade outcomes beyond the owned `probability = 100` success, `probability = 0` destroy-failure, `probability` in `1..99` injected-roll, and template-authored `keep_on_fail` keep-failure confirm seams,
-- durable ground ownership timers and party ownership rules,
-- compatibility-grade DB-backed item/economy persistence.
-
-### Content, NPCs, shops, and quests
-
-Status: `[~]` authored content seam, not a full content system.
-
-Already present:
-
-- static actor store and interaction definition store,
-- `info`, `talk`, `quest_flag`, `warp`, `shop_preview`, `open_safebox`, and `open_cube` interaction kinds (composed PvE `Warehouse` now also deposits/withdraws authored kill-reward gold through `/safebox_money_save` / `/safebox_money_withdraw`; composed PvE `CubeMaster` now also inspects bootstrap `/cube r_info` / `cube m_info` without mutation, then after authored sword `SHOP SELL` packet-buys catalog slot `2`, `/cube add 0 0` / `/cube make` / `/close_cube`, and packet-uses the granted `27001` last stack),
-- merchant catalogs and first shop open/buy/sell behavior,
-- first standalone deterministic quest-flag store/transition primitive with loopback validation, focused readback, and crash-temp cleanup preflights,
-- content bundle import/export with preview deltas for static actors, interaction families, quest-flag trigger/route summaries, spawn groups, combat profiles, reward drops, authoring-only fixed reward-table expansion for EXP/gold/drop descriptors, one-count regen-spawn authoring expansion into canonical spawn groups, NPC routes, warp destinations, focused portable quest-state overview/flag readers, and exact quest-flag import-preview deltas,
-- loopback-only authoring/inspection endpoints and a deterministic bootstrap NPC service bundle.
-
-Still missing:
-
-- client-visible quest runtime,
-- scripted triggers/results,
-- richer NPC service kinds,
-- live reload/update policy,
-- compatibility-grade regen/randomized drop table ingestion,
-- content tooling beyond the current validation and bundle checks.
-
-### Combat, mobs, death, restart, and rewards
-
-Status: `[~]` first PvE loop exists around practice mobs.
-
-Already present:
-
-- target selection and normal attack ingress,
-- cadence gates, runtime HP, HP percent refreshes, dead-state rejection, target clear, and delayed respawn rebuild,
-- read-only loopback combat-target snapshots that mirror current visibility/range/leash/aggro/death gates and expose resolved current HP, profile max HP, normal-hit damage, authored attack/defense formula inputs, and any currently armed delayed retaliation timer without mutating stale target state,
-- aggro-lite engagement ownership with explicit `target_engaged` fail-closed diagnostics and retaliation ticks,
-- player death floor and restart-here/restart-town bootstrap recovery seams,
-- deterministic EXP/gold/fixed-drop reward descriptors for accepted non-player deaths,
-- loopback spawn-leash tooling for materialized spawn groups: read-only exact inspection (`/local/spawn-groups/{entity_id}/leash?radius=...`) and map-local inspection (`/local/maps/{map_index}/spawn-group-leashes?radius=...`), read-only pending return-step inspection (`/local/spawn-group-return-steps`, `/local/spawn-group-return-steps/{entity_id}`, `/local/maps/{map_index}/spawn-group-return-steps`), a controlled one-step return trigger (`POST /local/spawn-groups/{entity_id}/return-step?max_step=...`) and server-owned pending return-step executor for `return_required` live spawn-backed actors that share the same capped-step persistence/visibility rebuild plus selected-target, engagement, and stale-retaliation reset semantics, a controlled exact-home trigger (`POST /local/spawn-groups/{entity_id}/return-home`) that restores preserved authored home from `within_radius` drift or `return_required` displacement while resetting selected combat-target/engagement ownership, and a first fail-closed combat gate with explicit `target_return_required` diagnostics for spawn actors outside their current owned leash,
-- codec-owned presentation families for fly effects, PvP/duel, stun, character position / change-speed, and target markers, plus a first presentation-only `CHARACTER_POSITION(position=0|3|4)` self/peer stance echo with duplicate stand/sit no-op guarding,
-- tests around watcher/owner respawn, retarget, cleanup, reward, leash-classification, return-step planning, chase-step planning, pending-frame chase execution, authored-home respawn-return, and stale return-step cleanup cases.
-
-Still missing:
-
-- full legacy damage formulas and wider attack types beyond the owned compact combat-profile attack/defense seam (`max(1, attack_value - defense_value)`), including the playable formula QA fixture at `docs/examples/bootstrap-combat-profile-formula-bundle.json`,
-- independent mob AI: aggro radius, chase/return packet choreography, patrol, target switching, and broader live use of the current leash/chase planners beyond the first pending-frame chase executor,
-- accepted `USE_SKILL`, ranged/projectile, PvP, and duel runtime policy,
-- broad loot/drop tables,
-- full death/revive/corpse/menu choreography.
-
-### Social systems and chat
-
-Status: `[~]` chat works; social systems are bootstrap-only.
-
-Already present:
-
-- local talking chat fanout,
-- exact-name whisper routing,
-- shout/party/guild bootstrap fanout,
-- notices and info messages,
-- selected dead-player denial behavior for several paths.
-
-Still missing:
-
-- party membership/invite/leave/kick/roles,
-- party EXP/drop sharing,
-- guild roster/ranks/wars/notices,
-- friends/messenger/block systems,
-- moderation and permission model.
-
-### Persistence and production operations
-
-Status: `[~]` file-backed bootstrap persistence and useful local ops; not legacy-grade.
-
-Already present:
-
-- file-backed account snapshots and login tickets,
-- persisted selected character, position, inventory, equipment, quickslots, gold, item-template, quest-state, static actor, and interaction slices needed by current behavior,
-- strict snapshot/template validation, crash-temp reporting/cleanup, manifest-backed backup/restore preflights for several stores, and a first migration catalog with schema ledger, account/character roster, character item-state, character quest-state, item-template/refine-info, auth login-ticket handoff, static actor content-state, and bootstrap ground-item state migrations plus read-only ledger dry-run planning and a programmatic up/down migration apply primitive,
-- loopback-only local endpoints for validation, backup/restore, runtime inspection, and controlled debug actions,
-- a `metin2-migrate` CLI that prints catalog summaries and plans from offline ledger snapshots, plus an explicit CLI-only `apply` command that requires an operator-supplied driver/DSN/snapshot/target and stays outside daemon ops endpoints.
-
-Still missing:
-
-- DB-backed account/character/item stores and production migration CLI/ops execution tooling,
-- domain repository boundaries for gameplay systems,
-- production backup/restore policy,
-- crash recovery beyond current file-store primitives,
-- metrics/logging policy,
-- authenticated/admin-safe tooling beyond loopback debug surfaces.
-
-## Repository layout
-
-- `cmd/authd` / `cmd/gamed` — daemon entrypoints.
-- `cmd/metin2-migrate` — migration CLI for catalog summaries, offline ledger-snapshot plans, and explicit CLI-only apply runs.
-- `internal/proto/*` — owned packet codecs, fixtures, and wire contracts.
-- `internal/auth`, `internal/authboot`, `internal/boot`, `internal/handshake`, `internal/login`, `internal/worldentry`, `internal/game` — connection/session/auth/select/game flow.
-- `internal/service` — legacy TCP service runtime and secure session wiring.
-- `internal/config` — environment-driven daemon configuration.
-- `internal/worldruntime` — topology, maps, AOI/visibility, entities, sessions, combat-oriented actor state, and runtime scopes.
-- `internal/minimal` — integrated bootstrap game runtime used by tests and daemons.
-- `internal/player`, `internal/inventory`, `internal/itemstore` — character, inventory, item template, equipment, quickslot, and currency behavior.
-- `internal/accountstore`, `internal/loginticket` — bootstrap persistence stores.
-- `internal/staticstore`, `internal/interactionstore`, `internal/contentbundle` — authored content, static actors, interactions, merchant previews, and bundle import/export.
-- `internal/ops` — local debug/pprof/operator HTTP mux.
-- `db/migrations` — validated project-owned SQL migration catalog skeleton, first schema ledger/domain migrations including item templates, authored static actor / interaction content, and bootstrap ground-item state, read-only dry-run planner, metadata-only CLI preflight, and programmatic up/down apply primitive.
-- `docs/` — engineering notes, QA, roadmaps, workflow, development, and clean-room docs.
-- `spec/protocol/` — owned protocol contracts and packet inventory.
-
-## Development
-
-Run the main checks:
+Requires **Go 1.26**. Start with the [development guide](docs/development.md) for configuration and local daemon setup; this is not a turnkey server installation.
 
 ```bash
+git clone https://github.com/MikelCalvo/go-metin2-server.git
+cd go-metin2-server
 make test
 go vet ./...
-git diff --check
 ```
 
-Run the daemons locally:
+- [Development & configuration](docs/development.md)
+- [Testing strategy](docs/testing-strategy.md) · [Manual client QA](docs/qa/manual-client-checklist.md)
+- [Protocol reference](spec/protocol/README.md)
+- [Debugging & profiling](docs/debugging-and-profiling.md)
+- [Lab deployment](docs/workflow/lab-deployment-topology.md) · [Release/versioning notes](docs/workflow/release-versioning.md)
 
-```bash
-go run ./cmd/authd
-go run ./cmd/gamed
-```
+Operator/debug endpoints must remain loopback-only; do not expose them publicly.
 
-Important default listener addresses:
+</details>
 
-- `authd` legacy TCP: `:11002`
-- `gamed` legacy TCP: `:13000`
-- `authd` ops/pprof/local endpoints: `127.0.0.1:6061`
-- `gamed` ops/pprof/local endpoints: `127.0.0.1:6060`
+---
 
-The ops listeners carry `/local/*` operator endpoints and must stay loopback-only. Use SSH tunneling or another explicit local transport for remote access.
-
-Useful docs:
-
-- [Development guide](docs/development.md)
-- [Debugging and profiling](docs/debugging-and-profiling.md)
-- [Manual client QA checklist](docs/qa/manual-client-checklist.md)
-- [Testing strategy](docs/testing-strategy.md)
-- [Workflow](docs/workflow.md)
-- [Clean-room policy](docs/clean-room-policy.md)
-- [Protocol index](spec/protocol/README.md)
-- [Current project assessment](docs/roadmaps/2026-08-08-global-project-assessment.md)
-- [Current roadmap](docs/plans/2026-08-08-playable-vertical-roadmap.md)
-
-## Current roadmap focus
-
-The next challenge is no longer proving that the client can talk to a clean-room Go server. The next challenge is turning the owned bootstrap slices into a coherent playable loop.
-
-Near-term priorities:
-
-1. **Playable PvE vertical** — content-loaded mobs with lifecycle, targetability, death/respawn, basic AI, rewards, reconnect/restart safety, and stable visibility.
-2. **Items and economy** — finish remaining trade/exchange edges, complete peer `MYSHOP` broadcast/browse/buy, mall, ownership timers, item restrictions, refine catalyst/downgrade outcomes, and item/economy persistence edges.
-3. **Content and quests** — move beyond static interactions into quest state, richer NPC services, regen/drop tables, and validated content workflows.
-4. **DB and production ops** — introduce migration contracts, repository seams, backup/restore runbooks, crash recovery, release/deploy docs, and production-safe observability.
-5. **Social systems** — replace bootstrap party/guild fanout with membership, permissions, persistence, and gameplay effects after the PvE loop is stable.
-
-## Clean-room rule
-
-This repository must only contain code, documentation, fixtures, and tests produced for this project.
-
-Do not copy legacy Metin2 server/client source into this repository. Use legacy behavior only as an external oracle for independently written specs, tests, and Go implementations.
+**Clean-room commitment:** project-owned code, specs, fixtures, and tests only. Legacy behavior may inform independent implementations; legacy server/client source must not be copied into this repository. See the [full policy](docs/clean-room-policy.md).
