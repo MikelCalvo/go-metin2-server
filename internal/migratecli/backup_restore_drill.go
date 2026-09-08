@@ -45,6 +45,7 @@ type backupRestorePersistenceConfig struct {
 	QuestStateStorePath   string `json:"quest_state_store_path"`
 	GroundItemStorePath   string `json:"ground_item_store_path"`
 	SafeboxStorePath      string `json:"safebox_store_path"`
+	CubeRecipeStorePath   string `json:"cube_recipe_store_path,omitempty"`
 }
 
 type backupRestoreDatabaseConfig struct {
@@ -77,6 +78,7 @@ type backupRestoreDrillPlan struct {
 	QuestStateStorePath   string
 	GroundItemStorePath   string
 	SafeboxStorePath      string
+	CubeRecipeStorePath   string
 }
 
 func runBackupRestoreDrill(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
@@ -335,6 +337,13 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 	if err != nil {
 		return backupRestoreDrillPlan{}, err
 	}
+	var cubeRecipePath string
+	if strings.TrimSpace(snapshot.Persistence.CubeRecipeStorePath) != "" {
+		cubeRecipePath, err = normalizeAbsoluteCleanPath(snapshot.Persistence.CubeRecipeStorePath, "persistence.cube_recipe_store_path")
+		if err != nil {
+			return backupRestoreDrillPlan{}, err
+		}
+	}
 
 	if cleanedPathEqualsOrNests(accountDir, loginTicketDir) {
 		return backupRestoreDrillPlan{}, fmt.Errorf("%w: account_store_dir and login_ticket_store_dir must not equal or nest under each other", errInvalidBackupRestoreDrillInput)
@@ -347,6 +356,9 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		"quest_state_store_path":   filepath.Dir(questStatePath),
 		"ground_item_store_path":   filepath.Dir(groundItemPath),
 		"safebox_store_path":       filepath.Dir(safeboxPath),
+	}
+	if cubeRecipePath != "" {
+		fileParents["cube_recipe_store_path"] = filepath.Dir(cubeRecipePath)
 	}
 	seenParents := make(map[string]string, len(fileParents))
 	for label, parent := range fileParents {
@@ -374,6 +386,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		QuestStateStorePath:   questStatePath,
 		GroundItemStorePath:   groundItemPath,
 		SafeboxStorePath:      safeboxPath,
+		CubeRecipeStorePath:   cubeRecipePath,
 	}, nil
 }
 
@@ -485,6 +498,9 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "QUEST_STATE_STORE_PATH=%s\n", shellSingleQuote(plan.QuestStateStorePath))
 	fmt.Fprintf(&b, "GROUND_ITEM_STORE_PATH=%s\n", shellSingleQuote(plan.GroundItemStorePath))
 	fmt.Fprintf(&b, "SAFEBOX_STORE_PATH=%s\n", shellSingleQuote(plan.SafeboxStorePath))
+	if strings.TrimSpace(plan.CubeRecipeStorePath) != "" {
+		fmt.Fprintf(&b, "CUBE_RECIPE_STORE_PATH=%s\n", shellSingleQuote(plan.CubeRecipeStorePath))
+	}
 	b.WriteString("\n")
 	b.WriteString("TS=$(date -u +%Y%m%dT%H%M%SZ)\n")
 	b.WriteString(`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"` + "\n")

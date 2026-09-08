@@ -64,6 +64,7 @@ gamed (`env/metin2-gamed.env.sample`) adds dedicated file stores:
 - `METIN2_GAMED_QUEST_STATE_STORE_PATH=/var/metin2/data/quest-state/quest-state.json`
 - `METIN2_GAMED_GROUND_ITEM_STORE_PATH=/var/metin2/data/ground-items/ground-items.json`
 - `METIN2_GAMED_SAFEBOX_STORE_PATH=/var/metin2/data/safebox/safebox.json`
+- `METIN2_GAMED_CUBE_RECIPE_STORE_PATH=/var/metin2/data/cube-recipes/cube-recipes.json`
 - `METIN2_GAMED_PPROF_ADDR=127.0.0.1:6060`
 - `METIN2_GAMED_LEGACY_ADDR=:13000`
 

@@ -240,6 +240,47 @@ func TestRunBackupRestoreDrillReadsRegularFiles(t *testing.T) {
 	}
 }
 
+func TestRunBackupRestoreDrillAcceptsOptionalCubeRecipeStorePathWithoutBackupEndpoints(t *testing.T) {
+	payload := `{
+  "local_channel_id": 1,
+  "visibility_mode": "whole_map",
+  "visibility_radius": 0,
+  "visibility_sector_size": 0,
+  "persistence": {
+    "login_ticket_store_dir": "/state/login-tickets",
+    "account_store_dir": "/state/accounts",
+    "static_actor_store_path": "/state/static/static-actors.json",
+    "interaction_store_path": "/state/interactions/interaction-definitions.json",
+    "item_template_store_path": "/state/items/item-templates.json",
+    "quest_state_store_path": "/state/quests/quest-state.json",
+    "ground_item_store_path": "/state/ground-items/ground-items.json",
+    "safebox_store_path": "/state/safebox/safebox.json",
+    "cube_recipe_store_path": "/state/cube-recipes/cube-recipes.json"
+  },
+  "database": {"configured": false, "dsn_configured": false}
+}`
+	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"deadbeefcafe","build_date":"2026-08-21T15:30:45Z"}`)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{"backup-restore-drill", "--runtime-config", "-", "--build-info", buildInfoPath},
+		strings.NewReader(payload),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	body := stdout.String()
+	if !strings.Contains(body, `CUBE_RECIPE_STORE_PATH='/state/cube-recipes/cube-recipes.json'`) {
+		t.Fatalf("expected cube recipe path in stdout:\n%s", body)
+	}
+	if strings.Contains(body, "/local/cube-recipe") || strings.Contains(body, "/local/cube-recipes") {
+		t.Fatalf("did not expect cube-recipe backup/restore endpoints in drill script:\n%s", body)
+	}
+}
+
 func TestRunBackupRestoreDrillRejectsSharedFileStoreParents(t *testing.T) {
 	buildInfoPath := writeTempJSON(t, "build-info.json", `{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-21T15:30:45Z"}`)
 	payload := `{

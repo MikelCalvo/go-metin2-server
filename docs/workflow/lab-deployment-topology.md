@@ -34,6 +34,7 @@ Prefer explicit absolute paths for durable QA / drill runs instead of process-te
 /var/metin2/data/quest-state/quest-state.json
 /var/metin2/data/ground-items/ground-items.json          # durable pending ground handles
 /var/metin2/data/safebox/safebox.json                     # durable same-account safebox cells + warehouse gold
+/var/metin2/data/cube-recipes/cube-recipes.json           # authored cube recipes (no backup/restore endpoints yet)
 ```
 
 Example environment (service-specific overrides win over globals):
@@ -47,6 +48,7 @@ export METIN2_GAMED_ITEM_TEMPLATE_STORE_PATH=/var/metin2/data/item-templates/ite
 export METIN2_GAMED_QUEST_STATE_STORE_PATH=/var/metin2/data/quest-state/quest-state.json
 export METIN2_GAMED_GROUND_ITEM_STORE_PATH=/var/metin2/data/ground-items/ground-items.json
 export METIN2_GAMED_SAFEBOX_STORE_PATH=/var/metin2/data/safebox/safebox.json
+export METIN2_GAMED_CUBE_RECIPE_STORE_PATH=/var/metin2/data/cube-recipes/cube-recipes.json
 ```
 
 File-backed stores must use dedicated parent directories. `gamed` startup and `metin2-migrate backup-restore-drill` both fail closed when two file stores share `filepath.Dir(snapshotPath)`, because restore empties that parent.

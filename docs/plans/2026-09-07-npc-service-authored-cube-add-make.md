@@ -44,7 +44,8 @@ those seeded cells with packet `SHOP BUY` catalog slot `2`.
 
 - cube `add` / `make` inside the composed PvE vertical gameplay proof
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0`
-- FileStore `CubeRecipeStorePath` config knob
+- FileStore `CubeRecipeStorePath` config knob (now owned; see
+  [authored cube-recipe FileStore](2026-09-08-pve-vertical-authored-cube-recipe-filestore.md))
 - merchant catalog cube-material buy as a prerequisite (now owned on the
   dedicated NPC-service proof; see
   `docs/plans/2026-09-07-npc-service-authored-cube-material-buy.md`)

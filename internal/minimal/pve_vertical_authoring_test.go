@@ -59,6 +59,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	interactionPath := filepath.Join(contentRoot, "interaction-definitions", "snapshot.json")
 	itemTemplatePath := filepath.Join(contentRoot, "item-templates", "snapshot.json")
 	questStatePath := filepath.Join(contentRoot, "quest-state", "snapshot.json")
+	cubeRecipePath := filepath.Join(contentRoot, "cube-recipes", "snapshot.json")
 	ticketStore := loginticket.NewFileStore(ticketStoreDir)
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
 	hero.Gold = 40
@@ -75,6 +76,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		InteractionStorePath:  interactionPath,
 		ItemTemplateStorePath: itemTemplatePath,
 		QuestStateStorePath:   questStatePath,
+		CubeRecipeStorePath:   cubeRecipePath,
 	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		cfg,
@@ -142,6 +144,12 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	assertPveVerticalAuthoredUseAndEquipTemplates(t, imported.ItemTemplates, "imported PvE vertical authoring bundle")
 	if !reflect.DeepEqual(imported.CubeRecipes, cubestore.BootstrapSnapshot().NPCs) {
 		t.Fatalf("unexpected imported PvE vertical cube recipes: %#v", imported.CubeRecipes)
+	}
+	if !runtime.cubeRecipesAuthored {
+		t.Fatal("expected imported PvE vertical cube recipes to mark the FileStore snapshot authored")
+	}
+	if got := runtime.RuntimeConfigSnapshot().Persistence.CubeRecipeStorePath; got != cubeRecipePath {
+		t.Fatalf("expected PvE vertical cube recipe store path %q, got %q", cubeRecipePath, got)
 	}
 
 	var guideVID, hunterVID, resetVID, merchantVID, warehouseVID, cubeVID, mobVID, talkVID, infoVID, teleporterVID, pack2VID uint32
@@ -2037,6 +2045,15 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if restartedMerchantVID == 0 || restartedCubeVID == 0 || !restartedPack2Found {
 		t.Fatalf("expected daemon-restarted content snapshot to load Merchant, CubeMaster, and QAPveVerticalPack 2, got %+v", reloaded.StaticActors())
 	}
+	if !reloaded.cubeRecipesAuthored {
+		t.Fatal("expected authored cube recipes to rematerialize from CubeRecipeStorePath after daemon restart")
+	}
+	if !reflect.DeepEqual(reloaded.cubeRecipes, cubestore.BootstrapSnapshot()) {
+		t.Fatalf("unexpected rematerialized PvE vertical cube recipes after daemon restart: %#v", reloaded.cubeRecipes)
+	}
+	if got := reloaded.RuntimeConfigSnapshot().Persistence.CubeRecipeStorePath; got != cubeRecipePath {
+		t.Fatalf("expected daemon-restarted cube recipe store path %q, got %q", cubeRecipePath, got)
+	}
 	closedCubeRInfoAfterDaemonRestartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
 		Message: "/cube r_info",
@@ -2047,6 +2064,28 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(closedCubeRInfoAfterDaemonRestartOut) != 0 {
 		t.Fatalf("expected authored PvE vertical daemon restart to leave cube closed, got %d r_info frames", len(closedCubeRInfoAfterDaemonRestartOut))
 	}
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	restartedCubeOut := interactPveVertical(t, flow, restartedCubeVID, "authored PvE vertical daemon-restart CubeMaster")
+	if len(restartedCubeOut) != 2 {
+		t.Fatalf("expected daemon-restarted CubeMaster to emit chat + cube open, got %d", len(restartedCubeOut))
+	}
+	restartedCubeChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, restartedCubeOut[0]))
+	if err != nil || restartedCubeChat.Message != "The craftsman lights the forge." {
+		t.Fatalf("unexpected daemon-restarted CubeMaster chat: %+v err=%v", restartedCubeChat, err)
+	}
+	assertCubeCommandChatFrame(t, restartedCubeOut[1], "cube open 20022", "authored PvE vertical daemon-restart cube open")
+	restartedCubeRInfoOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected authored cube r_info after daemon restart: %v", err)
+	}
+	if len(restartedCubeRInfoOut) != 1 {
+		t.Fatalf("expected 1 cube r_list frame after daemon-restarted CubeMaster open, got %d", len(restartedCubeRInfoOut))
+	}
+	assertCubeCommandChatFrame(t, restartedCubeRInfoOut[0], "cube r_list 20022 1 27001,1", "authored PvE vertical daemon-restart cube r_list")
+	assertCloseCubeCommandChat(t, flow, "/close_cube", "authored PvE vertical daemon-restart cube close")
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	restartedMerchantOut := interactPveVertical(t, flow, restartedMerchantVID, "authored PvE vertical daemon-restart Merchant")
 	if len(restartedMerchantOut) != 1 {

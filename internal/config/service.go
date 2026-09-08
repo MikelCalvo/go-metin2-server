@@ -27,6 +27,7 @@ type Service struct {
 	QuestStateStorePath   string
 	GroundItemStorePath   string
 	SafeboxStorePath      string
+	CubeRecipeStorePath   string
 	DatabaseDriver        string
 	DatabaseDSN           string
 }
@@ -149,6 +150,7 @@ func ValidatePersistenceConfig(cfg Service) error {
 		{Name: "quest_state_store_path", Role: persistencePathRoleFile, Path: questStateStorePathOrDefault(cfg.QuestStateStorePath)},
 		{Name: "ground_item_store_path", Role: persistencePathRoleFile, Path: groundItemStorePathOrDefault(cfg.GroundItemStorePath)},
 		{Name: "safebox_store_path", Role: persistencePathRoleFile, Path: safeboxStorePathOrDefault(cfg.SafeboxStorePath)},
+		{Name: "cube_recipe_store_path", Role: persistencePathRoleFile, Path: cubeRecipeStorePathOrDefault(cfg.CubeRecipeStorePath)},
 	})
 }
 
@@ -369,6 +371,7 @@ func LoadService(name string, defaultPprofAddr string, defaultLegacyAddr string,
 		QuestStateStorePath:   loadPathOverride(upperName, "QUEST_STATE_STORE_PATH", defaultQuestStateStorePath()),
 		GroundItemStorePath:   loadPathOverride(upperName, "GROUND_ITEM_STORE_PATH", defaultGroundItemStorePath()),
 		SafeboxStorePath:      loadPathOverride(upperName, "SAFEBOX_STORE_PATH", defaultSafeboxStorePath()),
+		CubeRecipeStorePath:   loadPathOverride(upperName, "CUBE_RECIPE_STORE_PATH", defaultCubeRecipeStorePath()),
 		DatabaseDriver:        loadPathOverride(upperName, "DB_DRIVER", ""),
 		DatabaseDSN:           loadPathOverride(upperName, "DB_DSN", ""),
 	}
@@ -457,6 +460,21 @@ func safeboxStorePathOrDefault(path string) string {
 
 func DefaultSafeboxStorePath() string {
 	return defaultSafeboxStorePath()
+}
+
+func defaultCubeRecipeStorePath() string {
+	return filepath.Join(os.TempDir(), "go-metin2-server-cube-recipes", "cube-recipes.json")
+}
+
+func cubeRecipeStorePathOrDefault(path string) string {
+	if trimmed := strings.TrimSpace(path); trimmed != "" {
+		return trimmed
+	}
+	return defaultCubeRecipeStorePath()
+}
+
+func DefaultCubeRecipeStorePath() string {
+	return defaultCubeRecipeStorePath()
 }
 
 func loadOverride(upperName string, suffix string, fallback string) string {

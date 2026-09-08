@@ -3757,6 +3757,7 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
 		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
+		CubeRecipeStorePath:   filepath.Join(root, "cube-recipes", "cube-recipes.json"),
 	}
 
 	runtime, err := NewGameRuntime(cfg)
@@ -3788,6 +3789,9 @@ func TestGameRuntimeConfigSnapshotReportsPersistenceStoreLocations(t *testing.T)
 	}
 	if snapshot.Persistence.SafeboxStorePath != cfg.SafeboxStorePath {
 		t.Fatalf("expected safebox store path %q, got %q", cfg.SafeboxStorePath, snapshot.Persistence.SafeboxStorePath)
+	}
+	if snapshot.Persistence.CubeRecipeStorePath != cfg.CubeRecipeStorePath {
+		t.Fatalf("expected cube recipe store path %q, got %q", cfg.CubeRecipeStorePath, snapshot.Persistence.CubeRecipeStorePath)
 	}
 }
 

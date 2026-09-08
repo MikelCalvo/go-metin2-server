@@ -460,6 +460,7 @@ type PersistenceConfigSnapshot struct {
 	QuestStateStorePath   string `json:"quest_state_store_path"`
 	GroundItemStorePath   string `json:"ground_item_store_path"`
 	SafeboxStorePath      string `json:"safebox_store_path"`
+	CubeRecipeStorePath   string `json:"cube_recipe_store_path"`
 }
 
 type DatabaseConfigSnapshot struct {
@@ -3132,6 +3133,7 @@ func runtimePersistenceConfigSnapshot(r *gameRuntime) PersistenceConfigSnapshot 
 		QuestStateStorePath:   questStateStorePath(r.questStateStore),
 		GroundItemStorePath:   groundItemStorePath(r.groundItemStore),
 		SafeboxStorePath:      safeboxStorePath(r.safeboxStore),
+		CubeRecipeStorePath:   cubeRecipeStorePath(r.cubeStore),
 	}
 }
 
@@ -3206,6 +3208,16 @@ func groundItemStorePath(store worldruntime.GroundItemStore) string {
 }
 
 func safeboxStorePath(store safeboxstore.Store) string {
+	if store == nil {
+		return ""
+	}
+	if locator, ok := store.(interface{ Path() string }); ok {
+		return locator.Path()
+	}
+	return ""
+}
+
+func cubeRecipeStorePath(store cubestore.Store) string {
 	if store == nil {
 		return ""
 	}
@@ -4176,11 +4188,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
 	}
 	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
-	// Cube recipes stay hermetic MemoryStore + in-memory bootstrap fallback
-	// until a later slice wires an explicit CubeRecipeStorePath / FileStore
-	// config knob. Do not Save the lab snapshot here: a committed store row
-	// would look authored on export even when no bundle cube_recipes exist.
-	cubeRecipes := cubestore.NewMemoryStore()
+	cubeRecipePath := serviceCubeRecipeStorePath(cfg)
+	if strings.TrimSpace(cfg.CubeRecipeStorePath) == "" {
+		// Hermetic constructors that omit an explicit path must not share the
+		// process-wide default FileStore; otherwise one test's authored cube
+		// recipes rematerialize into the next runtime via /tmp pollution.
+		cubeRecipePath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-cube-recipes-%d-%d", os.Getpid(), time.Now().UnixNano()), "cube-recipes.json")
+	}
+	cubeRecipes := cubestore.NewFileStore(cubeRecipePath)
 	sharedWorld := newSharedWorldRegistryWithTopology(topology)
 	runtime := &gameRuntime{
 		sharedWorld:            sharedWorld,
@@ -13096,8 +13111,10 @@ func (r *gameRuntime) replaceCubeRecipes(snapshot cubestore.Snapshot) error {
 	if len(normalized.NPCs) == 0 {
 		r.cubeRecipes = cubestore.BootstrapSnapshot()
 		r.cubeRecipesAuthored = false
-		if clearer, ok := r.cubeStore.(interface{ Clear() }); ok {
-			clearer.Clear()
+		if r.cubeStore != nil {
+			if err := r.cubeStore.Save(normalized); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -15047,6 +15064,7 @@ func servicePersistenceConfigWithDefaults(cfg config.Service) config.Service {
 	cfg.QuestStateStorePath = serviceQuestStateStorePath(cfg)
 	cfg.GroundItemStorePath = serviceGroundItemStorePath(cfg)
 	cfg.SafeboxStorePath = serviceSafeboxStorePath(cfg)
+	cfg.CubeRecipeStorePath = serviceCubeRecipeStorePath(cfg)
 	return cfg
 }
 
@@ -15129,6 +15147,17 @@ func serviceSafeboxStorePath(cfg config.Service) string {
 		return path
 	}
 	return defaultSafeboxStorePath()
+}
+
+func defaultCubeRecipeStorePath() string {
+	return config.DefaultCubeRecipeStorePath()
+}
+
+func serviceCubeRecipeStorePath(cfg config.Service) string {
+	if path := strings.TrimSpace(cfg.CubeRecipeStorePath); path != "" {
+		return path
+	}
+	return defaultCubeRecipeStorePath()
 }
 
 func (r *gameRuntime) loadPersistedGroundItems() error {

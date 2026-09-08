@@ -41,7 +41,10 @@ restart.
    the initial in-process import. After the interaction cooldown, a Merchant
    `INTERACT` opens its normal `GC::SHOP START` window.
 7. The restarted cube presentation begins closed: `/cube r_info` is
-   self-silent until a new CubeMaster `INTERACT`.
+   self-silent until a new CubeMaster `INTERACT`. After that open, authored
+   recipes rematerialize from `CubeRecipeStorePath` as
+   `cube r_list 20022 1 27001,1` instead of relying on the lab MemoryStore
+   fallback (`docs/plans/2026-09-08-pve-vertical-authored-cube-recipe-filestore.md`).
 
 ## Scope boundaries
 
@@ -51,9 +54,8 @@ restart.
   the fresh runtime's persisted snapshots.
 - This does not add a content FileStore format or alter the existing bundle
   canonicalization contract.
-- This does not extend cube recipes beyond their current in-memory runtime
-  bootstrap ownership; the persisted `CubeMaster` actor/interaction content is
-  sufficient for the closed-window recovery smoke.
+- Cube-recipe FileStore backup/restore ops endpoints are still out of scope;
+  this slice only persists authored recipes and rematerializes `/cube r_info`.
 
 ## Verification
 

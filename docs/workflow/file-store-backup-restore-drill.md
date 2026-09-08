@@ -14,6 +14,7 @@ Use this workflow when you need to preserve or replace the current file-backed P
 - standalone quest flags (`queststate`)
 - pending ground item/gold handles (`worldruntime` ground-item FileStore)
 - durable same-account safebox cells + warehouse gold (`safeboxstore`; tip `0015_character_safebox_money`)
+- authored cube recipes rematerialize from `CubeRecipeStorePath` across `gamed` process restart (`docs/plans/2026-09-08-pve-vertical-authored-cube-recipe-filestore.md`); this drill decoder accepts optional `persistence.cube_recipe_store_path` so retained runtime-config JSON cannot fail unknown-field rejection, but it does **not** yet cover cube-recipe backup/restore endpoints
 
 The current boundary is deliberately narrow:
 

@@ -56,7 +56,8 @@ Checked-in negatives:
 ## Explicit non-goals
 
 - binary cube headers / OR-materials / complicated recipes
-- FileStore `CubeRecipeStorePath` config knob (still MemoryStore + import)
+- ~~FileStore `CubeRecipeStorePath` config knob (still MemoryStore + import)~~
+  Later closed by [authored cube-recipe FileStore](2026-09-08-pve-vertical-authored-cube-recipe-filestore.md).
 - new ops summary endpoints for recipe rows
 - changing `/cube make` execution semantics
 - pack AI / synchronized respawn

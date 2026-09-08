@@ -38,7 +38,8 @@ cube craft smoke beside warehouse / merchant / warp / quest turn-in.
 - binary cube headers / OR-materials
 - branching craft dialog trees
 - pack AI / synchronized respawn / random rectangle placement
-- FileStore `CubeRecipeStorePath` config knob (still MemoryStore + import)
+- FileStore `CubeRecipeStorePath` config knob (now owned; see
+  [authored cube-recipe FileStore](2026-09-08-pve-vertical-authored-cube-recipe-filestore.md))
 
 Authored portable `cube_recipes` for CubeMaster are now owned by
 [authored cube recipes](2026-09-06-pve-vertical-authored-cube-recipes.md).

@@ -126,6 +126,9 @@ func TestLoadServiceUsesBootstrapPersistenceDefaultsWhenEnvIsMissing(t *testing.
 	if cfg.SafeboxStorePath != defaultSafeboxStorePath() {
 		t.Fatalf("expected default safebox store path, got %q", cfg.SafeboxStorePath)
 	}
+	if cfg.CubeRecipeStorePath != defaultCubeRecipeStorePath() {
+		t.Fatalf("expected default cube recipe store path, got %q", cfg.CubeRecipeStorePath)
+	}
 }
 
 func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
@@ -138,6 +141,7 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 	t.Setenv("METIN2_GROUND_ITEM_STORE_PATH", "/global/ground-items.json")
 	t.Setenv("METIN2_SAFEBOX_STORE_PATH", "/global/safebox.json")
+	t.Setenv("METIN2_CUBE_RECIPE_STORE_PATH", "/global/cube-recipes.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/global/tickets" {
@@ -163,6 +167,9 @@ func TestLoadServiceUsesGlobalBootstrapPersistenceOverrides(t *testing.T) {
 	}
 	if cfg.SafeboxStorePath != "/global/safebox.json" {
 		t.Fatalf("expected global safebox store path, got %q", cfg.SafeboxStorePath)
+	}
+	if cfg.CubeRecipeStorePath != "/global/cube-recipes.json" {
+		t.Fatalf("expected global cube recipe store path, got %q", cfg.CubeRecipeStorePath)
 	}
 }
 
@@ -191,6 +198,7 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	t.Setenv("METIN2_QUEST_STATE_STORE_PATH", "/global/quest-state.json")
 	t.Setenv("METIN2_GROUND_ITEM_STORE_PATH", "/global/ground-items.json")
 	t.Setenv("METIN2_SAFEBOX_STORE_PATH", "/global/safebox.json")
+	t.Setenv("METIN2_CUBE_RECIPE_STORE_PATH", "/global/cube-recipes.json")
 	t.Setenv("METIN2_GAMED_LOGIN_TICKET_STORE_DIR", "/service/tickets")
 	t.Setenv("METIN2_GAMED_ACCOUNT_STORE_DIR", "/service/accounts")
 	t.Setenv("METIN2_GAMED_STATIC_ACTOR_STORE_PATH", "/service/static-actors.json")
@@ -199,6 +207,7 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	t.Setenv("METIN2_GAMED_QUEST_STATE_STORE_PATH", "/service/quest-state.json")
 	t.Setenv("METIN2_GAMED_GROUND_ITEM_STORE_PATH", "/service/ground-items.json")
 	t.Setenv("METIN2_GAMED_SAFEBOX_STORE_PATH", "/service/safebox.json")
+	t.Setenv("METIN2_GAMED_CUBE_RECIPE_STORE_PATH", "/service/cube-recipes.json")
 
 	cfg := LoadService("gamed", ":6060", ":13000", "127.0.0.1")
 	if cfg.LoginTicketStoreDir != "/service/tickets" {
@@ -225,6 +234,9 @@ func TestLoadServicePrefersServiceSpecificBootstrapPersistenceOverrides(t *testi
 	if cfg.SafeboxStorePath != "/service/safebox.json" {
 		t.Fatalf("expected service-specific safebox store path, got %q", cfg.SafeboxStorePath)
 	}
+	if cfg.CubeRecipeStorePath != "/service/cube-recipes.json" {
+		t.Fatalf("expected service-specific cube recipe store path, got %q", cfg.CubeRecipeStorePath)
+	}
 }
 
 func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
@@ -239,6 +251,7 @@ func TestValidatePersistenceConfigAcceptsDistinctExplicitPaths(t *testing.T) {
 		QuestStateStorePath:   filepath.Join(root, "quest-state", "quest-state.json"),
 		GroundItemStorePath:   filepath.Join(root, "ground-items", "ground-items.json"),
 		SafeboxStorePath:      filepath.Join(root, "safebox", "safebox.json"),
+		CubeRecipeStorePath:   filepath.Join(root, "cube-recipes", "cube-recipes.json"),
 	}
 
 	if err := ValidatePersistenceConfig(cfg); err != nil {
@@ -615,6 +628,7 @@ func clearPersistenceEnv(t *testing.T) {
 		"QUEST_STATE_STORE_PATH",
 		"GROUND_ITEM_STORE_PATH",
 		"SAFEBOX_STORE_PATH",
+		"CUBE_RECIPE_STORE_PATH",
 	} {
 		t.Setenv("METIN2_"+suffix, "")
 		t.Setenv("METIN2_GAMED_"+suffix, "")

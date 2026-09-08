@@ -48,7 +48,8 @@ on the cube-grant path.
 
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0` in the
   composed proof
-- FileStore `CubeRecipeStorePath` config knob
+- ~~FileStore `CubeRecipeStorePath` config knob~~ Later closed by
+  [authored cube-recipe FileStore](2026-09-08-pve-vertical-authored-cube-recipe-filestore.md).
 - merchant sell-back of leftover cube materials
 - binary cube headers / OR-materials
 - refine / mall / party ownership

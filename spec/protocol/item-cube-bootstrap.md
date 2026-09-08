@@ -133,10 +133,13 @@ last stack, then reconnects with empty inventory, rematerialized HP/gold, and
 a still-closed cube. The composed authoring proof also rebuilds a fresh
 `gamed` runtime from those same FileStores with a stale ticket: empty
 inventory, post-consume HP/gold, and `met_guide = 1` rematerialize, while
-persisted Merchant / CubeMaster / pack content loads normally and the cube
-remains closed until fresh interaction
+persisted Merchant / CubeMaster / pack content loads normally, authored
+cube recipes rematerialize from `CubeRecipeStorePath`, and the cube remains
+closed until a fresh CubeMaster `INTERACT` then emits
+`cube r_list 20022 1 27001,1`
 (`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`,
-`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`).
+`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`,
+`docs/plans/2026-09-08-pve-vertical-authored-cube-recipe-filestore.md`).
 
 See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`.
@@ -231,11 +234,13 @@ HP-up-red `SPECIAL_EFFECT` after the consumed-cell `ITEM_DEL`. Reconnect then re
 empty inventory, the post-consume HP/gold snapshot, and a still-closed cube.
 A fresh `gamed` runtime against the same FileStores with a stale ticket must
 rebuild that same empty inventory / HP / gold / quest snapshot, load persisted
-Merchant / CubeMaster / pack content, and keep `/cube r_info` silent until a
-new CubeMaster open
+Merchant / CubeMaster / pack content, rematerialize authored cube recipes from
+`CubeRecipeStorePath`, keep `/cube r_info` silent until a new CubeMaster open,
+then emit `cube r_list 20022 1 27001,1`
 (`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`,
 `docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`,
-`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`). The
+`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`,
+`docs/plans/2026-09-08-pve-vertical-authored-cube-recipe-filestore.md`). The
 first composed CubeMaster inspect still stays non-mutating `r_info` /
 `m_info` because inventory is empty and gold is too low for materials.
 

@@ -53,7 +53,8 @@ window and packet-uses the granted last stack.
 - cube-grant last-stack `ITEM_USE` on this dedicated proof (now owned; see
   `docs/plans/2026-09-08-npc-service-authored-cube-grant-use.md`)
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0`
-- FileStore `CubeRecipeStorePath` config knob
+- FileStore `CubeRecipeStorePath` config knob (now owned; see
+  [authored cube-recipe FileStore](2026-09-08-pve-vertical-authored-cube-recipe-filestore.md))
 - merchant sell-back of leftover cube materials
 - binary cube headers / OR-materials
 
