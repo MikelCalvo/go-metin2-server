@@ -106,7 +106,7 @@ Frozen target behavior:
 - the player sends the existing `INTERACT (0x0501)` request
 - the runtime resolves a deterministic authored `shop_preview` definition behind that actor
 - the live session receives the current bootstrap merchant-window open response (`GC::SHOP START`) built from that structured catalog
-- later `SHOP BUY` / `SHOP END` requests reuse the same active merchant context and the same authored catalog identity frozen by the merchant docs
+- later `SHOP BUY` / `SHOP END` requests reuse the same active merchant context and the same authored catalog identity frozen by the merchant docs. The dedicated NPC-service merchant proof now packet-buys catalog slot `1` (`Wooden Sword` `11200` @ `500g`) after `QuestGuide` unlock, then packet-equips/unequips that bought last stack through the ordinary template-backed `appearance_vnum = 11201` / `equip_effect` burst (`TestNpcServiceBundleMerchantSwordBuyEquipsAppearanceAndEquipEffect`, `docs/plans/2026-09-08-npc-service-authored-sword-appearance-equip.md`)
 - the same catalog still owns a deterministic compact preview render for QA/debug and lower-level resolution surfaces
 - foreign turn-in fields such as scalar `reward_item_vnum` / `reward_item_count` shorthand fail closed at store / content-bundle validation before runtime mutation; the checked-in negative dry-run is `docs/examples/bootstrap-invalid-shop-preview-foreign-reward-item-vnum-bundle.json`
 

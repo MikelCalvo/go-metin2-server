@@ -52,7 +52,6 @@ composed loop already owns cube-grant last-stack use.
 
 ## What this is not yet
 
-- NPC-service `11200` `appearance_vnum` / `equip_effect` parity with PvE
 - leftover `27002` merchant sell-back
 - `/cube make all`, injected-roll `1..99`, or authored `percent = 0`
 - FileStore `CubeRecipeStorePath` config knob

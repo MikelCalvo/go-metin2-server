@@ -6775,7 +6775,7 @@ func TestSummarizeReturnsOpenCubeRouteForCheckedInNPCServiceExample(t *testing.T
 		EntryCount: 3,
 		Entries: []ShopCatalogEntrySummary{
 			{Slot: 0, ItemVnum: 27001, ItemName: "Small Red Potion", Count: 1, Price: 50, Stackable: true, MaxCount: 200, ShopBuyPrice: 5, ShopSellPrice: 2, UseEffect: &itemcatalog.UseEffect{PointType: 1, PointIndex: 1, PointDelta: 50, Message: "consume:27001:+50", SpecialEffectType: 1}},
-			{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1, ShopSellPrice: 100, EquipSlot: "weapon"},
+			{Slot: 1, ItemVnum: 11200, ItemName: "Wooden Sword", Count: 1, Price: 500, Stackable: false, MaxCount: 1, ShopSellPrice: 100, AppearanceVnum: 11201, EquipSlot: "weapon", EquipEffect: &itemcatalog.PointEffect{PointType: 1, PointIndex: 1, PointDelta: 10}},
 			{Slot: 2, ItemVnum: 27002, ItemName: "Small Blue Potion", Count: 2, Price: 20, Stackable: true, MaxCount: 200, ShopBuyPrice: 10},
 		},
 	}
