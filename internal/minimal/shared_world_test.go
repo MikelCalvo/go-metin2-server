@@ -8633,6 +8633,10 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *t
 	if err != nil {
 		t.Fatalf("unexpected game runtime error: %v", err)
 	}
+	// Keep cadence-driven flush hooks quiescent while this test verifies that a
+	// failed import itself emits no staged delete/add/clear-target frames.
+	currentTime := time.Unix(1700000950, 0)
+	runtime.now = func() time.Time { return currentTime }
 	flow, enterOut := enterGameWithLoginTicket(t, runtime.SessionFactory(), "spawn-sel-rb", 0x55553131)
 	defer closeSessionFlow(t, flow)
 	if len(enterOut) != 5 {

@@ -17,5 +17,9 @@ coverage.out
 .env.local
 .pprof/
 
+# Python helper caches
+__pycache__/
+*.pyc
+
 # Local agent/planning state
 .hermes/

@@ -10,11 +10,45 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+      changed_docs: ${{ steps.classify.outputs.changed_docs }}
+    steps:
+      - name: Check out history for change detection
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test CI helper tools
+        run: python3 -m unittest discover -s scripts -v
+
+      - name: Classify changed paths
+        id: classify
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ -z "${BASE}" ] || [ "${BASE}" = "0000000000000000000000000000000000000000" ]; then
+            # A new branch push has no predecessor, so run the complete suite.
+            result='{"docs_only": false, "changed_docs": []}'
+          else
+            result="$(python3 scripts/ci_change_classifier.py --base "${BASE}" --head "${HEAD}")"
+          fi
+          echo "${result}"
+          RESULT="${result}" python3 -c 'import json, os; result=json.loads(os.environ["RESULT"]); print("docs_only=" + str(result["docs_only"]).lower()); print("changed_docs=" + json.dumps(result["changed_docs"]))' >> "$GITHUB_OUTPUT"
+
   go-checks:
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -84,10 +118,13 @@ jobs:
 
   docker-build:
     runs-on: ubuntu-latest
-    needs: go-checks
+    needs: [changes, go-checks]
+    if: needs.changes.result == 'success' && needs.go-checks.result == 'success' && needs.changes.outputs.docs_only != 'true'
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve release identity
         id: identity
@@ -203,4 +240,54 @@ jobs:
           if [ "${label_run_attempt}" != "${GITHUB_RUN_ATTEMPT}" ]; then
             echo "debug image run_attempt label ${label_run_attempt} != ${GITHUB_RUN_ATTEMPT}" >&2
             exit 1
+          fi
+
+  docs-links:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.result == 'success'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Check changed Markdown links
+        env:
+          CHANGED_DOCS: ${{ needs.changes.outputs.changed_docs }}
+        run: |
+          set -eu
+          CHANGED_DOCS="${CHANGED_DOCS}" python3 -c '
+          import json, os, subprocess
+          files = json.loads(os.environ["CHANGED_DOCS"])
+          if not files: raise SystemExit(0)
+          raise SystemExit(subprocess.run(["python3", "scripts/check_markdown_links.py", *files]).returncode)
+          '
+
+  verify:
+    # Stable aggregate check; repository admins can require this in protection.
+    # Adding the job does not itself modify GitHub branch protection.
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [changes, go-checks, docker-build, docs-links]
+    steps:
+      - name: Verify the applicable checks
+        env:
+          DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
+          CHANGES: ${{ needs.changes.result }}
+          GO: ${{ needs.go-checks.result }}
+          DOCKER: ${{ needs.docker-build.result }}
+          DOCS: ${{ needs.docs-links.result }}
+        run: |
+          set -eu
+          echo "changes=${CHANGES} go=${GO} docker=${DOCKER} docs=${DOCS} docs_only=${DOCS_ONLY}"
+          if [ "${CHANGES}" != success ]; then
+            exit 1
+          fi
+          if [ "${DOCS_ONLY}" = true ]; then
+            [ "${DOCS}" = success ]
+            [ "${GO}" = skipped ]
+            [ "${DOCKER}" = skipped ]
+          else
+            [ "${GO}" = success ]
+            [ "${DOCKER}" = success ]
+            [ "${DOCS}" = success ]
           fi

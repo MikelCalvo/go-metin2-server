@@ -9,7 +9,7 @@
 [![Stage](https://img.shields.io/badge/stage-pre--alpha-orange)](#the-road-to-a-playable-server)
 [![Approach](https://img.shields.io/badge/approach-clean--room-6366f1)](docs/clean-room-policy.md)
 
-[Progress](#the-road-to-a-playable-server) · [What's working](#whats-working-today) · [How we build](docs/agent-workflow.md) · [Get involved](#follow-or-contribute)
+[Roadmap](docs/roadmap.md) · [PvE smoke run](docs/qa/smoke.md) · [What's working](#whats-working-today) · [How we build](docs/agent-workflow.md) · [Get involved](#follow-or-contribute)
 
 </div>
 
@@ -61,7 +61,7 @@ These are **limited pre-alpha implementations**, not claims of complete legacy p
 - **Keep progress safe:** item integrity, rewards, death/restart, and reconnect recovery.
 - **Make it provable in the real client:** repeatable manual QA alongside automated tests.
 
-For implementation detail, see the [living PvE roadmap](docs/plans/2026-08-08-playable-vertical-roadmap.md) and [manual client checklist](docs/qa/manual-client-checklist.md).
+Start with the short [roadmap](docs/roadmap.md) and [real-client PvE smoke run](docs/qa/smoke.md).
 
 ## Built in the open, with AI agents
 
@@ -92,6 +92,7 @@ go vet ./...
 
 - [Development & configuration](docs/development.md)
 - [Testing strategy](docs/testing-strategy.md) · [Manual client QA](docs/qa/manual-client-checklist.md)
+- Detailed technical plans: [playable PvE roadmap](docs/plans/2026-08-08-playable-vertical-roadmap.md) · [master legacy-parity roadmap](docs/plans/2026-05-24-master-legacy-parity-roadmap.md)
 - [Protocol reference](spec/protocol/README.md)
 - [Debugging & profiling](docs/debugging-and-profiling.md)
 - [Lab deployment](docs/workflow/lab-deployment-topology.md) · [Release/versioning notes](docs/workflow/release-versioning.md)
