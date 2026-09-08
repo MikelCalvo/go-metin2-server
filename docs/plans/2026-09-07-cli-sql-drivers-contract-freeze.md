@@ -397,6 +397,11 @@ DB engine/driver only when repository or migrator work needs a stock
 default; keep advisory-lock coverage and SQL-backed runtime stores
 deferred until that choice exists.
 
+The next operator-runbook GREEN is print-only
+`export-quarantine-drill` post-quarantine
+`export-tree-status --require-quarantine-complete` retain — see
+[CLI export-quarantine-drill export-tree-status contract freeze](2026-09-08-cli-export-quarantine-drill-export-tree-status-contract-freeze.md).
+
 ## Exit criteria for this freeze
 
 - this plan exists and names exact command / flags / envelope / empty

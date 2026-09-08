@@ -139,3 +139,5 @@ Validation for this slice:
 ## Follow-up
 
 Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). Printed `export-quarantine-drill` scripts now emit `catalog-status --require-matches-embedded` beside the catalog retain line.
+
+Post-quarantine `export-tree-status --require-quarantine-complete` retain is frozen — see [CLI export-quarantine-drill export-tree-status contract freeze](2026-09-08-cli-export-quarantine-drill-export-tree-status-contract-freeze.md). GREEN should emit `$BASE/export-tree-status.json` plus `$BASE/export-tree-status-status.json` after the last `quarantine-export` line.

@@ -116,3 +116,5 @@ Validation for this slice:
 ## Follow-up
 
 Read-only `catalog-status` for retained `migration-catalog.json` is now GREEN — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md). The hermetic HTTP proof retains `migration-catalog-status.json` beside the existing catalog file.
+
+Post-quarantine `export-tree-status --require-quarantine-complete` retain is frozen — see [CLI export-quarantine-drill export-tree-status contract freeze](2026-09-08-cli-export-quarantine-drill-export-tree-status-contract-freeze.md). GREEN should retain `$BASE/export-tree-status.json` and `$BASE/export-tree-status-status.json` with `quarantine_complete` true over the full ten-kind set.

@@ -160,6 +160,8 @@ Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `
 
 ~~Follow-up owned separately: freeze-only read-only `status-status` for retained `post-apply-status.json` / `post-rollback-status.json`.~~ Done — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
 
+Follow-up owned separately: freeze-only `export-quarantine-drill` post-quarantine `export-tree-status --require-quarantine-complete` retain — see [CLI export-quarantine-drill export-tree-status contract freeze](2026-09-08-cli-export-quarantine-drill-export-tree-status-contract-freeze.md). GREEN stays follow-on.
+
 ## What this is not yet
 
 - upsert / merge / cascade-delete inside tip-`0002` roster replace

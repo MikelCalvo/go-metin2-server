@@ -273,6 +273,7 @@ GREEN on `lane/persistence`.
 - Follow-up owned separately and now GREEN: opt-in `--require-no-crash-temps` on `backup-tree-status` / `backup-tree-status-status` — see [CLI backup-tree-status no-crash-temps require-gate contract freeze](2026-09-06-cli-backup-tree-status-no-crash-temps-require-gate-contract-freeze.md).
 - ~~Follow-up owned separately: freeze-only read-only `persistence-status-status` for retained `persistence-status-*.json`.~~ Done — see [CLI persistence-status-status contract freeze](2026-09-07-cli-persistence-status-status-contract-freeze.md). Matching `migration-run-retention` printer + hermetic curl-stub expansion is now GREEN — see [CLI migration-run-retention persistence-status-status](2026-09-07-cli-migration-run-retention-persistence-status-status-contract-freeze.md).
 - ~~Follow-up owned separately: freeze-only read-only `status-status` for retained `post-apply-status.json` / `post-rollback-status.json`.~~ Done — see [CLI status-status contract freeze](2026-09-07-cli-status-status-contract-freeze.md).
+- Follow-up owned separately: freeze-only `export-quarantine-drill` post-quarantine `export-tree-status --require-quarantine-complete` retain — see [CLI export-quarantine-drill export-tree-status contract freeze](2026-09-08-cli-export-quarantine-drill-export-tree-status-contract-freeze.md). GREEN stays follow-on.
 
 ## Exit criteria for this freeze
 
