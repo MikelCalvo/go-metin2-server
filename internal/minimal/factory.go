@@ -29,6 +29,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	contentbundle "github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
+	"github.com/MikelCalvo/go-metin2-server/internal/equipment"
 	gameflow "github.com/MikelCalvo/go-metin2-server/internal/game"
 	"github.com/MikelCalvo/go-metin2-server/internal/handshake"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
@@ -13468,10 +13469,10 @@ func (r *gameRuntime) resolveRuntimeTemplateBackedEquipEffect(vnum uint32, equip
 }
 
 func runtimeTemplateAllowsEquip(template itemcatalog.Template, selectedPlayer *player.Runtime, equipSlot inventory.EquipmentSlot) bool {
-	if selectedPlayer == nil || !selectedPlayer.CanUseTemplate(template) || !templateAuthoredForRuntimeEquipSlot(template, equipSlot) {
+	if selectedPlayer == nil {
 		return false
 	}
-	return !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell
+	return equipment.CanEquip(template, selectedPlayer.EquipmentEligibilitySubject(), equipSlot)
 }
 
 func templateAuthoredForRuntimeEquipSlot(template itemcatalog.Template, equipSlot inventory.EquipmentSlot) bool {

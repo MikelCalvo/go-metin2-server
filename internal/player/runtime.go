@@ -3,6 +3,7 @@ package player
 import (
 	"sort"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/equipment"
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -1005,7 +1006,7 @@ func (r *Runtime) EquipItem(from inventory.SlotIndex, equipSlot inventory.Equipm
 }
 
 func (r *Runtime) EquipItemWithTemplate(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (inventory.ItemInstance, bool) {
-	if !templateAuthoredForEquipSlot(template, equipSlot) || !r.CanUseTemplate(template) || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+	if r == nil || !equipment.CanEquip(template, r.EquipmentEligibilitySubject(), equipSlot) {
 		return inventory.ItemInstance{}, false
 	}
 	fromIndex := findInventorySlot(r.liveInventory, from)
@@ -1062,7 +1063,7 @@ func (r *Runtime) CanReplaceOccupiedEquipItem(from inventory.SlotIndex, equipSlo
 // then applies the new one. Effect carrier overflow/underflow rolls the whole
 // mutation back fail-closed.
 func (r *Runtime) ReplaceOccupiedEquipItemWithTemplates(from inventory.SlotIndex, equipSlot inventory.EquipmentSlot, newTemplate itemcatalog.Template, previousTemplate itemcatalog.Template) (EquipReplaceResult, bool) {
-	if !templateAuthoredForEquipSlot(newTemplate, equipSlot) || !r.CanUseTemplate(newTemplate) || newTemplate.AntiStack || newTemplate.AntiGet || newTemplate.AntiDrop || newTemplate.AntiGive || newTemplate.AntiSell {
+	if r == nil || !equipment.CanEquip(newTemplate, r.EquipmentEligibilitySubject(), equipSlot) {
 		return EquipReplaceResult{}, false
 	}
 	if previousTemplate.Vnum == 0 || !itemcatalog.ValidTemplate(previousTemplate) || !templateAuthoredForEquipSlot(previousTemplate, equipSlot) {
@@ -1271,40 +1272,16 @@ func templateAuthoredForEquipSlot(template itemcatalog.Template, equipSlot inven
 }
 
 func (r *Runtime) CanUseTemplate(template itemcatalog.Template) bool {
-	if r == nil || !itemcatalog.ValidTemplate(template) {
-		return false
+	return r != nil && equipment.CanUse(template, r.EquipmentEligibilitySubject())
+}
+
+// EquipmentEligibilitySubject exposes the immutable character fields consumed
+// by pure equipment rules without letting those rules depend on Runtime.
+func (r *Runtime) EquipmentEligibilitySubject() equipment.Subject {
+	if r == nil {
+		return equipment.Subject{}
 	}
-	if r.persisted.Job == 0 && template.AntiWarrior {
-		return false
-	}
-	if r.persisted.Job == 1 && template.AntiAssassin {
-		return false
-	}
-	if r.persisted.Job == 2 && template.AntiSura {
-		return false
-	}
-	if r.persisted.Job == 3 && template.AntiShaman {
-		return false
-	}
-	if r.persisted.RaceNum%2 == 0 && template.AntiMale {
-		return false
-	}
-	if r.persisted.RaceNum%2 == 1 && template.AntiFemale {
-		return false
-	}
-	if r.persisted.Empire == 1 && template.AntiEmpireA {
-		return false
-	}
-	if r.persisted.Empire == 2 && template.AntiEmpireB {
-		return false
-	}
-	if r.persisted.Empire == 3 && template.AntiEmpireC {
-		return false
-	}
-	if template.MinLevel != 0 && r.persisted.Level < template.MinLevel {
-		return false
-	}
-	return true
+	return equipment.Subject{Job: r.persisted.Job, RaceNum: r.persisted.RaceNum, Empire: r.persisted.Empire, Level: r.persisted.Level}
 }
 
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
