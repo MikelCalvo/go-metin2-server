@@ -213,8 +213,10 @@ See [CLI status-status](../plans/2026-09-07-cli-status-status-contract-freeze.md
 `$RUN/daemon-migrations-status.json` stays an ungated live capture.
 Before `ledger-snapshot` can open the target, the printed script runs
 `metin2-migrate drivers --require-driver "$DRIVER"` and retains the complete
-linked-driver envelope as `$RUN/sql-drivers.json`. This is a pre-DSN gate for
-the applying CLI binary, not a daemon curl or a retained-file status companion.
+linked-driver envelope as `$RUN/sql-drivers.json`. In the current rendered
+script that gate follows both the required `DRIVER` and `DSN` shell variables;
+it is a CLI-binary driver-linkage gate, not a daemon curl or a retained-file
+status companion.
 See [CLI sql-drivers contract freeze](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
 
 Default migration-runs printer base remains `/var/metin2/migration-runs` via:
