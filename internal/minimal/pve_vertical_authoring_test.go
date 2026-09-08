@@ -52,23 +52,38 @@ func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle 
 }
 
 func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testing.T) {
-	ticketStore := loginticket.NewFileStore(t.TempDir())
+	contentRoot := t.TempDir()
+	ticketStoreDir := filepath.Join(contentRoot, "tickets")
+	accountStoreDir := filepath.Join(contentRoot, "accounts")
+	staticActorPath := filepath.Join(contentRoot, "static-actors", "snapshot.json")
+	interactionPath := filepath.Join(contentRoot, "interaction-definitions", "snapshot.json")
+	itemTemplatePath := filepath.Join(contentRoot, "item-templates", "snapshot.json")
+	questStatePath := filepath.Join(contentRoot, "quest-state", "snapshot.json")
+	ticketStore := loginticket.NewFileStore(ticketStoreDir)
 	hero := peerVisibilityCharacter("PveVerticalHero", 0x01030160, 0x02040160, 469500, 964200, 0, 101, 201)
 	hero.Gold = 40
 	hero.Points[bootstrapExperiencePointType] = 40
 	issuePeerTicket(t, ticketStore, "pve-vertical", 0x60606060, hero)
-	accounts := accountstore.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(accountStoreDir)
 	if err := accounts.Save(accountstore.Account{Login: "pve-vertical", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
 		t.Fatalf("seed PvE vertical account: %v", err)
 	}
+	cfg := config.Service{
+		LegacyAddr:            ":13000",
+		PublicAddr:            "127.0.0.1",
+		StaticActorStorePath:  staticActorPath,
+		InteractionStorePath:  interactionPath,
+		ItemTemplateStorePath: itemTemplatePath,
+		QuestStateStorePath:   questStatePath,
+	}
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
-		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		cfg,
 		ticketStore,
 		accounts,
-		staticstore.NewMemoryStore(),
-		interactionstore.NewMemoryStore(),
-		itemcatalog.NewMemoryStore(),
-		queststate.NewMemoryStore(),
+		staticstore.NewFileStore(staticActorPath),
+		interactionstore.NewFileStore(interactionPath),
+		itemcatalog.NewFileStore(itemTemplatePath),
+		queststate.NewFileStore(questStatePath),
 		nil,
 	)
 	if err != nil {
@@ -1949,6 +1964,97 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
 	}, "cube-grant consume reconnect")
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "cube-grant consume reconnect")
+
+	closeSessionFlow(t, flow)
+	const postDaemonRestartLoginKey = uint32(0x60606061)
+	reloadedTicketStore := loginticket.NewFileStore(ticketStoreDir)
+	issuePeerTicket(t, reloadedTicketStore, "pve-vertical", postDaemonRestartLoginKey, hero)
+	reloadedAccounts := accountstore.NewFileStore(accountStoreDir)
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		cfg,
+		reloadedTicketStore,
+		reloadedAccounts,
+		staticstore.NewFileStore(staticActorPath),
+		interactionstore.NewFileStore(interactionPath),
+		itemcatalog.NewFileStore(itemTemplatePath),
+		queststate.NewFileStore(questStatePath),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("reload authored PvE vertical runtime after daemon restart: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime }
+
+	flow, restartedEnter := enterGameWithLoginTicket(t, reloaded.SessionFactory(), "pve-vertical", postDaemonRestartLoginKey)
+	if len(restartedEnter) < 4 {
+		t.Fatalf("expected authored PvE vertical daemon-restart bootstrap to include self state, got %d frames", len(restartedEnter))
+	}
+	for _, raw := range restartedEnter {
+		set, err := itemproto.DecodeSet(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if set.Position.WindowType == itemproto.WindowInventory && set.Position.Cell < itemproto.InventoryMaxCell {
+			t.Fatalf("expected authored PvE vertical daemon-restart bootstrap to omit carried ITEM_SET, got %+v", set)
+		}
+	}
+	assertPveVerticalCurrency(t, reloaded, reloadedAccounts, hero.Name, wantGoldAfterCubeMake, "authored PvE vertical daemon restart")
+	inventorySnapshot, ok = reloaded.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected authored PvE vertical daemon restart to keep inventory empty, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	pointsSnapshot, ok = reloaded.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected rematerialized HP %d after authored PvE vertical daemon restart, got ok=%v snapshot=%+v", wantPersistedHPAfterCraftedUse, ok, pointsSnapshot)
+	}
+	account, err = reloadedAccounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after daemon restart: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected persisted HP %d after authored PvE vertical daemon restart, got %d", wantPersistedHPAfterCraftedUse, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted inventory/equipment empty after authored PvE vertical daemon restart, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
+	assertPveVerticalQuickslots(t, reloaded, reloadedAccounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+	}, "authored PvE vertical daemon restart")
+	assertPveVerticalQuestState(t, reloaded, wantAfterGuide, "authored PvE vertical daemon restart")
+
+	var restartedMerchantVID, restartedCubeVID uint32
+	var restartedPack2Found bool
+	for _, actor := range reloaded.StaticActors() {
+		switch actor.Name {
+		case "Merchant":
+			restartedMerchantVID = uint32(actor.EntityID)
+		case "CubeMaster":
+			restartedCubeVID = uint32(actor.EntityID)
+		case "QAPveVerticalPack 2":
+			restartedPack2Found = true
+		}
+	}
+	if restartedMerchantVID == 0 || restartedCubeVID == 0 || !restartedPack2Found {
+		t.Fatalf("expected daemon-restarted content snapshot to load Merchant, CubeMaster, and QAPveVerticalPack 2, got %+v", reloaded.StaticActors())
+	}
+	closedCubeRInfoAfterDaemonRestartOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed-cube r_info after authored PvE vertical daemon restart: %v", err)
+	}
+	if len(closedCubeRInfoAfterDaemonRestartOut) != 0 {
+		t.Fatalf("expected authored PvE vertical daemon restart to leave cube closed, got %d r_info frames", len(closedCubeRInfoAfterDaemonRestartOut))
+	}
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	restartedMerchantOut := interactPveVertical(t, flow, restartedMerchantVID, "authored PvE vertical daemon-restart Merchant")
+	if len(restartedMerchantOut) != 1 {
+		t.Fatalf("expected daemon-restarted Merchant to open one shop frame, got %d", len(restartedMerchantOut))
+	}
+	if _, err := shopproto.DecodeServerStart(decodeSingleFrame(t, restartedMerchantOut[0])); err != nil {
+		t.Fatalf("decode daemon-restarted Merchant shop start: %v", err)
+	}
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {

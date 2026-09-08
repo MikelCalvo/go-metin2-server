@@ -130,7 +130,13 @@ asserts `cube m_info 0 1 27002,2/100` with no gold/inventory mutation;
 vertical it reopens CubeMaster after the merchant material buy, completes
 `/cube add 0 0` and `/cube make`, `/close_cube`s, packet-uses the cube-granted
 last stack, then reconnects with empty inventory, rematerialized HP/gold, and
-a still-closed cube (`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`).
+a still-closed cube. The composed authoring proof also rebuilds a fresh
+`gamed` runtime from those same FileStores with a stale ticket: empty
+inventory, post-consume HP/gold, and `met_guide = 1` rematerialize, while
+persisted Merchant / CubeMaster / pack content loads normally and the cube
+remains closed until fresh interaction
+(`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`,
+`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`).
 
 See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`.
@@ -222,9 +228,14 @@ composed PvE vertical gameplay proof now also packet-buys catalog slot
 on a second authored `CubeMaster` window, grants `27001 x1`, `/close_cube`,
 and packet-uses that cube-granted last stack, including its authored self-only
 HP-up-red `SPECIAL_EFFECT` after the consumed-cell `ITEM_DEL`. Reconnect then rematerializes
-empty inventory, the post-consume HP/gold snapshot, and a still-closed cube
+empty inventory, the post-consume HP/gold snapshot, and a still-closed cube.
+A fresh `gamed` runtime against the same FileStores with a stale ticket must
+rebuild that same empty inventory / HP / gold / quest snapshot, load persisted
+Merchant / CubeMaster / pack content, and keep `/cube r_info` silent until a
+new CubeMaster open
 (`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`,
-`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`). The
+`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`,
+`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`). The
 first composed CubeMaster inspect still stays non-mutating `r_info` /
 `m_info` because inventory is empty and gold is too low for materials.
 

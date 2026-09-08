@@ -38,6 +38,11 @@ on the cube-grant path.
    carried `ITEM_SET`), the persisted post-consume HP/gold snapshot, the
    remaining skill quickslot, and `met_guide = 1`. `/cube r_info` stays
    silent until a new CubeMaster open.
+6. A later simulated daemon restart against the same FileStores with a
+   stale ticket must rebuild that same empty inventory / HP / gold / quest
+   snapshot, load persisted Merchant / CubeMaster / pack content, and keep
+   `/cube r_info` silent until a new CubeMaster open
+   (`docs/plans/2026-09-08-pve-vertical-authored-daemon-restart.md`).
 
 ## What this is not yet
 
