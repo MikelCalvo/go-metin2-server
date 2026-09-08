@@ -117,6 +117,56 @@ func TestImportExportDrillSQLiteHermeticPrintedScriptImportsEmptyTipKinds(t *tes
 	assertImportExportDrillStatusArtifacts(t, exportTree, wantMarkers, dsn)
 }
 
+func TestImportExportDrillSQLiteHermeticPrintedScriptRejectsUnlinkedDriverBeforeDSNOrTreeWrites(t *testing.T) {
+	binDir := t.TempDir()
+	_ = mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
+
+	exportTree := filepath.Join(t.TempDir(), "20260908T000000Z-unlinkeddriver")
+	mustMaterializeEmptyImportExportQuarantineTree(t, exportTree)
+
+	var printStdout bytes.Buffer
+	var printStderr bytes.Buffer
+	printCode := Run(
+		[]string{
+			"import-export-drill",
+			"--export-tree", exportTree,
+			"--driver", "go_metin2_unlinked_driver",
+			"--i-confirm-print-sql-import-drill",
+		},
+		nil,
+		&printStdout,
+		&printStderr,
+	)
+	if printCode != exitOK {
+		t.Fatalf("printer must accept opaque unlinked driver, got exit=%d stderr=%q", printCode, printStderr.String())
+	}
+	if printStderr.Len() != 0 {
+		t.Fatalf("expected no printer stderr, got %q", printStderr.String())
+	}
+
+	env := environmentWithout("METIN2_IMPORT_DSN")
+	env = append(env, "PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	stdout, stderr, code := runPrintedShellScriptWithEnv(t, printStdout.String(), env)
+	if code == 0 {
+		t.Fatalf("expected unlinked driver script to fail, got exit=%d stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stderr, "database driver is unavailable") || !strings.Contains(stderr, "go_metin2_unlinked_driver") {
+		t.Fatalf("expected linked-driver preflight failure, got stdout=%q stderr=%q", stdout, stderr)
+	}
+	if strings.Contains(stderr, "METIN2_IMPORT_DSN must be set") {
+		t.Fatalf("expected driver preflight before DSN expansion, got stderr=%q", stderr)
+	}
+	for _, path := range []string{
+		filepath.Join(exportTree, "export-tree-status-before.json"),
+		filepath.Join(exportTree, "export-tree-status-after.json"),
+		filepath.Join(exportTree, "account-character-roster", "import-result.json"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected unlinked driver preflight to leave %s absent, stat err=%v", path, err)
+		}
+	}
+}
+
 func TestImportExportDrillSQLiteHermeticPrintedScriptImportsSeededTipKinds(t *testing.T) {
 	binDir := t.TempDir()
 	migrateBin := mustBuildMetin2MigrateWithSQLiteHarness(t, binDir)
@@ -881,6 +931,17 @@ func mustBuildMetin2MigrateWithSQLiteHarness(t *testing.T, binDir string) string
 		t.Fatalf("expected executable metin2-migrate at %s mode=%v", out, info.Mode())
 	}
 	return out
+}
+
+func environmentWithout(name string) []string {
+	prefix := name + "="
+	var filtered []string
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, prefix) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func runPrintedShellScriptWithEnv(t *testing.T, script string, env []string) (stdout string, stderr string, code int) {

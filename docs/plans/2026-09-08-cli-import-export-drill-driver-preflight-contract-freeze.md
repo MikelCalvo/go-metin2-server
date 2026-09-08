@@ -149,10 +149,18 @@ git diff --check
 
 ## Status
 
-Contract frozen on `lane/persistence`; GREEN is intentionally deferred to the
-next cohesive migration-CLI recovery slice. The existing `drivers` inspector
-and individual `import-export` direct gate remain available for manual
-preflight in the meantime.
+GREEN on `lane/persistence`.
+
+- The generated script runs `metin2-migrate drivers --require-driver "$DRIVER"`
+  with stdout discarded after variable assignment and before DSN expansion.
+- The printer still accepts an opaque driver literal and performs no local
+  linkage check or database operation while rendering.
+- Default, scoped-replace, and two-phase rendering share that placement.
+- Tagged SQLite execution proves a linked `sqlite` driver proceeds through the
+  established recovery path; an unlinked-driver script fails before a missing
+  DSN error or export-tree writes.
+- No production driver, daemon mutation endpoint, new retained driver artifact,
+  or SQL runtime-store claim was introduced.
 
 ## Exit criteria for this freeze
 

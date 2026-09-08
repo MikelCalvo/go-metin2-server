@@ -156,6 +156,50 @@ func TestRunImportExportDrillHonorsCustomDSNEnv(t *testing.T) {
 	}
 }
 
+func TestRunImportExportDrillPrintsLinkedDriverPreflightBeforeDSNExpansion(t *testing.T) {
+	testCases := []struct {
+		name string
+		args []string
+	}{
+		{name: "default"},
+		{name: "scoped-replace", args: []string{"--i-confirm-print-scoped-replace"}},
+		{name: "two-phase-wipe-roster", args: []string{"--i-confirm-print-two-phase-wipe-roster-reimport"}},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			var stderr bytes.Buffer
+			args := []string{
+				"import-export-drill",
+				"--export-tree", "/tmp/metin2-exports/tree",
+				"--driver", "go_metin2_unlinked_driver",
+				"--dsn-env", "LAB_SQL_IMPORT_DSN",
+				"--i-confirm-print-sql-import-drill",
+			}
+			args = append(args, tc.args...)
+			code := Run(args, nil, &stdout, &stderr)
+			if code != exitOK {
+				t.Fatalf("printer must accept an opaque driver literal without checking local linkage, got exit=%d stderr=%q", code, stderr.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("expected no stderr from printer, got %q", stderr.String())
+			}
+
+			body := stdout.String()
+			preflight := `metin2-migrate drivers --require-driver "$DRIVER" > /dev/null`
+			dsnExpansion := `DSN="${LAB_SQL_IMPORT_DSN:?LAB_SQL_IMPORT_DSN must be set to the import target DSN}"`
+			preflightIndex := strings.Index(body, preflight)
+			dsnIndex := strings.Index(body, dsnExpansion)
+			if preflightIndex < 0 {
+				t.Fatalf("expected generated drill to check linked driver before reading DSN; missing %q in:\n%s", preflight, body)
+			}
+			if dsnIndex < 0 || preflightIndex > dsnIndex {
+				t.Fatalf("expected linked-driver preflight before DSN expansion, got preflight=%d dsn=%d:\n%s", preflightIndex, dsnIndex, body)
+			}
+		})
+	}
+}
+
 func TestRunImportExportDrillPrintsOptInScopedReplace(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

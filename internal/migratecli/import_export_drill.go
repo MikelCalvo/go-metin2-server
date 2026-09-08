@@ -160,6 +160,8 @@ func renderImportExportDrillScript(plan importExportDrillPlan) string {
 	fmt.Fprintf(&b, "DRIVER=%s\n", shellSingleQuote(plan.Driver))
 	fmt.Fprintf(&b, "DSN_ENV=%s\n", shellSingleQuote(plan.DSNEnv))
 	b.WriteString("\n")
+	b.WriteString("# Stop before reading the target DSN unless this importing binary links $DRIVER.\n")
+	b.WriteString("metin2-migrate drivers --require-driver \"$DRIVER\" > /dev/null\n")
 	fmt.Fprintf(&b, "DSN=\"${%s:?%s must be set to the import target DSN}\"\n", plan.DSNEnv, plan.DSNEnv)
 	b.WriteString("\n")
 	b.WriteString("echo '== retain export-tree-status before mutation =='\n")
