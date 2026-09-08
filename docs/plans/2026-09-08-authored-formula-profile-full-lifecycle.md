@@ -45,10 +45,13 @@ go test ./internal/minimal -run 'TestGameRuntimeAuthoredFormulaCombatProfileDeat
 
 ## Follow-up options
 
-1. Move fixed EXP/gold/drop descriptor authoring toward explicitly table-driven
-   data only when the table needs a behavior not already covered by the current
-   deterministic expansion seam.
-2. Keep player-stat scaling, random rolls, and broader legacy formulas out of
-   scope until a captured client-visible contract requires them.
+1. Combined last-hit composition of this fixture's profile-default EXP/gold/drop
+   is now owned by
+   `TestGameSessionFlowAuthoredFormulaProfileKillingHitAlsoFloorsOwnerEmitsProfileDefaultRewardsBeforeOwnerFloor`.
+   Keep table-driven loot, random rolls, and pickup mutation out of scope until
+   a later items/content slice needs a behavior not already covered by the
+   current deterministic expansion seam.
+2. Keep player-stat scaling and broader legacy formulas out of scope until a
+   captured client-visible contract requires them.
 3. Continue player-death/restart hardening only where a concrete retaliation
    path crosses the zero-HP floor.

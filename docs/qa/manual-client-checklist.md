@@ -1109,7 +1109,8 @@ Run this when the target build can import `docs/examples/bootstrap-combat-profil
 - [ ] In a separate low-HP run, begin the owner at `4` HP, land that first accepted hit, and confirm the authored immediate `-2` retaliation leaves `2` HP; after the authored two-second reaction delay, confirm the authored delayed `-2` reaches `0` with the ordinary `PLAYER_POINT_CHANGE` -> `DEAD(owner_vid)` -> `TARGET(0, 0)` sequence
 - [ ] Issue `/restart_here`, confirm the stale pre-restart `ATTACK` stays silent, then fresh-select the still-damaged formula mob (`75` percent) and land one new hit; both its immediate and its newly armed two-second delayed retaliation must remain authored `-2` rather than falling back to the built-in `-1`
 - [ ] Continue accepted hits on the owned cadence until death and confirm it takes exactly four formula hits (`20 / 5`) rather than the built-in one-damage practice-mob loop
-- [ ] Confirm the killing hit still uses death + clear before the profile-default reward frames
+- [ ] Confirm the killing hit still uses death + clear before the profile-default reward frames (`EXP 40`, `gold 25`, drop `27001`)
+- [ ] In a separate combined last-hit run, begin the owner at `8` HP, land the same four formula hits, and confirm the killing hit still emits those profile-default reward frames before the authored `-2` owner-floor suffix (`PLAYER_POINT_CHANGE(value=0)` -> `DEAD(owner_vid)` -> `TARGET(0, 0)`); a living watcher should see dummy death/damage-info, exclusive ground-add/ownership, then owner death/damage-info, and later same-target `ATTACK` from the floored owner stays silent
 
 Expected result:
 - the playable QA loop uses authored profile formula damage / max HP, authored acquire/leash radii, authored chase/return/homeward/reaction delays plus `max_step`, and authored `retaliation_point_delta = -2`, not the built-in `practice_mob` one-point / `200`/`400` / `5s`/`1s`/`100` / `-1` defaults
