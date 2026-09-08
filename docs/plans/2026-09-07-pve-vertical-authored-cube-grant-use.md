@@ -34,6 +34,10 @@ on the cube-grant path.
 4. Live and persisted inventory become empty, gold stays at the post-make
    snapshot, and both live and persisted HP apply authored `point_delta = 50`
    onto the pre-use values. Quest flag stays `met_guide = 1`.
+5. A fresh login after that consume rematerializes empty inventory (no
+   carried `ITEM_SET`), the persisted post-consume HP/gold snapshot, the
+   remaining skill quickslot, and `met_guide = 1`. `/cube r_info` stays
+   silent until a new CubeMaster open.
 
 ## What this is not yet
 

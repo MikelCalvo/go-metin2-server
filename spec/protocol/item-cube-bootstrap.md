@@ -126,7 +126,11 @@ Fail-closed (no frames / no mutation):
 
 The same composed PvE CubeMaster window then requests `/cube r_info 0` and
 asserts `cube m_info 0 1 27002,2/100` with no gold/inventory mutation;
-`/cube r_info` after `/close_cube` stays silent.
+`/cube r_info` after `/close_cube` stays silent. Later in the same authored
+vertical it reopens CubeMaster after the merchant material buy, completes
+`/cube add 0 0` and `/cube make`, `/close_cube`s, packet-uses the cube-granted
+last stack, then reconnects with empty inventory, rematerialized HP/gold, and
+a still-closed cube (`docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`).
 
 See `docs/plans/2026-08-25-cube-m-info-material-info-contract-freeze.md` and
 `docs/plans/2026-08-25-cube-m-info-material-info-implementation.md`.
@@ -217,7 +221,8 @@ composed PvE vertical gameplay proof now also packet-buys catalog slot
 `2` after authored sword `SHOP SELL`, then `/cube add 0 0` / `/cube make`
 on a second authored `CubeMaster` window, grants `27001 x1`, `/close_cube`,
 and packet-uses that cube-granted last stack, including its authored self-only
-HP-up-red `SPECIAL_EFFECT` after the consumed-cell `ITEM_DEL`
+HP-up-red `SPECIAL_EFFECT` after the consumed-cell `ITEM_DEL`. Reconnect then rematerializes
+empty inventory, the post-consume HP/gold snapshot, and a still-closed cube
 (`docs/plans/2026-09-07-pve-vertical-authored-cube-add-make.md`,
 `docs/plans/2026-09-07-pve-vertical-authored-cube-grant-use.md`). The
 first composed CubeMaster inspect still stays non-mutating `r_info` /

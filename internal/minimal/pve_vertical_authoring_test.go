@@ -168,6 +168,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	}
 
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)
+	defer func() { closeSessionFlow(t, flow) }()
 
 	mismatchOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
 	if err != nil {
@@ -636,7 +637,6 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 
 	closeSessionFlow(t, flow)
 	flow, _ = enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)
-	defer closeSessionFlow(t, flow)
 
 	currentTime = currentTime.Add(staticActorInteractionCooldown)
 	resumeShopOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: merchantVID})))
@@ -1901,6 +1901,54 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
 	}, "authored cube-granted potion ITEM_USE")
 	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "authored cube-granted potion ITEM_USE")
+
+	closeSessionFlow(t, flow)
+	flow, craftedReconnectEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pve-vertical", 0x60606060)
+	if len(craftedReconnectEnter) < 4 {
+		t.Fatalf("expected cube-grant consume reconnect bootstrap to include self state, got %d frames", len(craftedReconnectEnter))
+	}
+	for _, raw := range craftedReconnectEnter {
+		set, err := itemproto.DecodeSet(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if set.Position.WindowType == itemproto.WindowInventory && set.Position.Cell < itemproto.InventoryMaxCell {
+			t.Fatalf("expected cube-grant consume reconnect bootstrap to omit carried ITEM_SET, got %+v", set)
+		}
+	}
+	closedCubeRInfoAfterReconnectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/cube r_info",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed-cube r_info after cube-grant consume reconnect: %v", err)
+	}
+	if len(closedCubeRInfoAfterReconnectOut) != 0 {
+		t.Fatalf("expected cube-grant consume reconnect to leave cube closed, got %d r_info frames", len(closedCubeRInfoAfterReconnectOut))
+	}
+	assertPveVerticalCurrency(t, runtime, accounts, hero.Name, wantGoldAfterCubeMake, "cube-grant consume reconnect")
+	inventorySnapshot, ok = runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 0 {
+		t.Fatalf("expected cube-grant consume reconnect to keep inventory empty, got ok=%v snapshot=%+v", ok, inventorySnapshot)
+	}
+	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
+	if !ok || pointsSnapshot.Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected rematerialized HP %d after cube-grant consume reconnect, got ok=%v snapshot=%+v", wantPersistedHPAfterCraftedUse, ok, pointsSnapshot)
+	}
+	account, err = accounts.Load("pve-vertical")
+	if err != nil {
+		t.Fatalf("load persisted PvE vertical account after cube-grant consume reconnect: %v", err)
+	}
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != wantPersistedHPAfterCraftedUse {
+		t.Fatalf("expected persisted HP %d after cube-grant consume reconnect, got %d", wantPersistedHPAfterCraftedUse, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+	if len(account.Characters[0].Inventory) != 0 || len(account.Characters[0].Equipment) != 0 {
+		t.Fatalf("expected persisted inventory/equipment empty after cube-grant consume reconnect, got inventory=%+v equipment=%+v", account.Characters[0].Inventory, account.Characters[0].Equipment)
+	}
+	assertPveVerticalQuickslots(t, runtime, accounts, "pve-vertical", hero.Name, []QuickslotSnapshot{
+		{Position: pveVerticalSkillQuickslotPosition, Type: quickslotproto.TypeSkill, Slot: pveVerticalSkillQuickslotIndex},
+	}, "cube-grant consume reconnect")
+	assertPveVerticalQuestState(t, runtime, wantAfterGuide, "cube-grant consume reconnect")
 }
 
 func interactPveVertical(t *testing.T, flow service.SessionFlow, targetVID uint32, context string) [][]byte {
