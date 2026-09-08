@@ -57,6 +57,7 @@ The resolved appearance value is now template-backed when the authored template 
 - otherwise the runtime preserves the older fallback and writes the equipped item instance `vnum` directly into the visible part slot for `body`, `weapon`, `head`, and `hair`
 - `appearance_vnum` affects only visible-character `parts`; the item instance `vnum`, `ITEM_SET.vnum`, equipped item identity, equip guards, and persisted snapshots remain unchanged
 - item-template validation rejects `appearance_vnum` on non-equipment templates, on unprojected equipment slots such as `shield`, or when the value does not fit the current `uint16` visible-parts carrier
+- the checked-in composed PvE authoring/canonical bundles prove the normal path with `Wooden Sword` (`11200`) in `weapon`: its persisted/equipped `ITEM_SET.vnum` remains `11200`, while the projected weapon `parts[1]` is its authored `appearance_vnum = 11201`
 
 ## Packet impact
 

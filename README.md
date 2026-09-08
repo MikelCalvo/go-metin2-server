@@ -126,7 +126,7 @@ Status: `[~]` broad bootstrap coverage with many legacy details pending.
 
 Already present:
 
-- inventory/equipment bootstrap replay and self-only item refreshes,
+- inventory/equipment bootstrap replay and self-only item refreshes; the composed PvE `Wooden Sword` keeps item identity `11200` while template-authored `appearance_vnum = 11201` drives its equipped visible weapon part,
 - item move/swap/split/merge, consumable use with optional template-authored self-only `SPECIAL_EFFECT` (including the checked-in PvE potion output), template-backed equipment point effects (including the composed PvE Wooden Sword equip before ordinary equipped-item sell-back), drag-to-item stack merge, drop/pickup, merchant buy/sell, gold mutation, and quickslot persistence,
 - authored item-template metadata for selected display/guard behavior, including template-backed refine-dialog preview metadata that now stays fail-closed when selected-character restrictions or transfer guards disallow the carried item, template-authored direct item-use rejection feedback that tears down active merchant/exchange presentation shells before the self rejection chat, and projection into the current migration-shaped item-template export, plus content-bundle summary projection of template-authored `use_effect`, `equip_effect`, and refine guard metadata before import. Checked-in PvE/NPC-service example bundles now author `27001.use_effect`, `11200.equip_slot`, and `11200.shop_sell_price = 100` so composed import no longer strips the playable use/equip/sell/warehouse vertical,
 - fail-closed validation for malformed templates, snapshots, quickslots, item windows, duplicate instances, and persistence edge cases,

@@ -1062,8 +1062,8 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("decode authored sword CHARACTER_UPDATE: %v", err)
 	}
-	if appearance.VID != hero.VID || appearance.Parts[0] != hero.MainPart || appearance.Parts[1] != 11200 || appearance.Parts[3] != hero.HairPart {
-		t.Fatalf("unexpected authored sword CHARACTER_UPDATE: %+v want vid=%d parts[0]=%d parts[1]=11200 parts[3]=%d", appearance, hero.VID, hero.MainPart, hero.HairPart)
+	if appearance.VID != hero.VID || appearance.Parts[0] != hero.MainPart || appearance.Parts[1] != 11201 || appearance.Parts[3] != hero.HairPart {
+		t.Fatalf("unexpected authored sword CHARACTER_UPDATE: %+v want vid=%d parts[0]=%d parts[1]=11201 parts[3]=%d", appearance, hero.VID, hero.MainPart, hero.HairPart)
 	}
 	swordQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, equipOut[4]))
 	if err != nil {
@@ -1447,7 +1447,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if err != nil {
 		t.Fatalf("decode authored sword equip CHARACTER_UPDATE: %v", err)
 	}
-	if swordEquipAppearance.VID != hero.VID || swordEquipAppearance.Parts[1] != 11200 {
+	if swordEquipAppearance.VID != hero.VID || swordEquipAppearance.Parts[1] != 11201 {
 		t.Fatalf("unexpected authored sword equip CHARACTER_UPDATE: %+v", swordEquipAppearance)
 	}
 	pointsSnapshot, ok = runtime.PointsSnapshot(hero.Name)
@@ -2072,8 +2072,8 @@ func assertPveVerticalAuthoredUseAndEquipTemplates(t *testing.T, templates []ite
 	}
 	sword, ok := byVnum[11200]
 	wantSwordEffect := &itemcatalog.PointEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 10}
-	if !ok || sword.Name != "Wooden Sword" || sword.Stackable || sword.MaxCount != 1 || sword.ShopSellPrice != 100 || sword.EquipSlot != inventory.EquipmentSlotWeapon.String() || sword.UseEffect != nil || !reflect.DeepEqual(sword.EquipEffect, wantSwordEffect) {
-		t.Fatalf("expected %s 11200 to author weapon equip_slot + equip_effect without use_effect, got %+v", context, sword)
+	if !ok || sword.Name != "Wooden Sword" || sword.Stackable || sword.MaxCount != 1 || sword.ShopSellPrice != 100 || sword.EquipSlot != inventory.EquipmentSlotWeapon.String() || sword.AppearanceVnum != 11201 || sword.UseEffect != nil || !reflect.DeepEqual(sword.EquipEffect, wantSwordEffect) {
+		t.Fatalf("expected %s 11200 to author weapon equip_slot + appearance_vnum + equip_effect without use_effect, got %+v", context, sword)
 	}
 	potion, ok := byVnum[27001]
 	if !ok || potion.Name != "Small Red Potion" || !potion.Stackable || potion.MaxCount != 200 || potion.ShopBuyPrice != 5 || potion.ShopSellPrice != 2 || potion.EquipSlot != "" || potion.UseEffect == nil {

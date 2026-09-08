@@ -159,6 +159,7 @@
       "stackable": false,
       "max_count": 1,
       "shop_sell_price": 100,
+      "appearance_vnum": 11201,
       "equip_slot": "weapon",
       "equip_effect": {
         "point_type": 1,
