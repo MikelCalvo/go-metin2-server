@@ -84,6 +84,14 @@ func TestRunExportQuarantineDrillPrintsLabRetentionCommands(t *testing.T) {
 		`metin2-migrate quarantine-export --kind static-actor-content-state --export "$BASE/static-actor-content-state/export.json"`,
 		`"$OPS/local/ground-items/exports/bootstrap-ground-item-state"`,
 		`metin2-migrate quarantine-export --kind bootstrap-ground-item-state --export "$BASE/bootstrap-ground-item-state/export.json"`,
+		`echo '== retain export-tree-status after quarantine =='`,
+		`metin2-migrate export-tree-status \`,
+		`--export-tree "$BASE"`,
+		`--require-quarantine-complete`,
+		`> "$BASE/export-tree-status.json"`,
+		`metin2-migrate export-tree-status-status \`,
+		`--export-tree-status "$BASE/export-tree-status.json"`,
+		`> "$BASE/export-tree-status-status.json"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in stdout:\n%s", want, body)
@@ -95,22 +103,47 @@ func TestRunExportQuarantineDrillPrintsLabRetentionCommands(t *testing.T) {
 	if strings.Contains(body, "does not execute export/quarantine") && strings.Contains(body, "executes export") {
 		t.Fatalf("printer must remain read-only wording only")
 	}
+	for _, banned := range []string{
+		"export-tree-status-before.json",
+		"export-tree-status-after.json",
+		"--require-two-phase-wipe-artifacts-complete",
+		"--require-import-result-artifacts-complete",
+		"--require-wipe-import-artifacts-complete",
+		"--require-import-result-outcomes-complete",
+		"--require-import-result-all-replaced",
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	} {
+		if strings.Contains(body, banned) {
+			t.Fatalf("export-quarantine-drill must not print %q, got %s", banned, body)
+		}
+	}
+	if strings.Count(body, "--require-quarantine-complete") != 2 {
+		t.Fatalf("expected exactly two --require-quarantine-complete flags, got %d in:\n%s", strings.Count(body, "--require-quarantine-complete"), body)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(body), `> "$BASE/export-tree-status-status.json"`) {
+		t.Fatalf("expected tree-status-status redirect at EOF, got:\n%s", body)
+	}
 
 	idxGamedBuild := strings.Index(body, `curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"`)
 	idxAuthdBuild := strings.Index(body, `curl -sS "$AUTH_OPS/local/build-info" > "$BASE/authd-build-info.json"`)
 	idxRuntime := strings.Index(body, `> "$BASE/runtime-config.json"`)
 	idxCatalog := strings.Index(body, `> "$BASE/migration-catalog.json"`)
+	idxCatalogStatus := strings.Index(body, `> "$BASE/migration-catalog-status.json"`)
 	idxNotes := strings.Index(body, `cat > "$BASE/notes.md" <<'EOF'`)
 	idxRosterExport := strings.Index(body, `"$OPS/local/account-store/exports/account-character-roster"`)
 	idxRosterQuarantine := strings.Index(body, `quarantine-export --kind account-character-roster`)
 	idxSafeboxExport := strings.Index(body, `"$OPS/local/safebox-store/exports/character-safebox-state"`)
 	idxGroundExport := strings.Index(body, `"$OPS/local/ground-items/exports/bootstrap-ground-item-state"`)
-	if idxGamedBuild < 0 || idxAuthdBuild < 0 || idxRuntime < 0 || idxCatalog < 0 || idxNotes < 0 || idxRosterExport < 0 || idxRosterQuarantine < 0 || idxSafeboxExport < 0 || idxGroundExport < 0 {
+	idxGroundQuarantine := strings.Index(body, `quarantine-export --kind bootstrap-ground-item-state`)
+	idxTreeStatus := strings.Index(body, `metin2-migrate export-tree-status \`)
+	idxTreeStatusStatus := strings.Index(body, `metin2-migrate export-tree-status-status \`)
+	if idxGamedBuild < 0 || idxAuthdBuild < 0 || idxRuntime < 0 || idxCatalog < 0 || idxCatalogStatus < 0 || idxNotes < 0 || idxRosterExport < 0 || idxRosterQuarantine < 0 || idxSafeboxExport < 0 || idxGroundExport < 0 || idxGroundQuarantine < 0 || idxTreeStatus < 0 || idxTreeStatusStatus < 0 {
 		t.Fatalf("missing expected ordering markers in stdout:\n%s", body)
 	}
-	if !(idxGamedBuild < idxAuthdBuild && idxAuthdBuild < idxRuntime && idxRuntime < idxCatalog && idxCatalog < idxNotes && idxNotes < idxRosterExport && idxRosterExport < idxRosterQuarantine && idxRosterQuarantine < idxSafeboxExport && idxSafeboxExport < idxGroundExport) {
-		t.Fatalf("expected identity -> runtime/catalog -> notes -> roster export/quarantine -> later kinds ordering, got idxs gamed=%d authd=%d runtime=%d catalog=%d notes=%d rosterExport=%d rosterQ=%d safebox=%d ground=%d\n%s",
-			idxGamedBuild, idxAuthdBuild, idxRuntime, idxCatalog, idxNotes, idxRosterExport, idxRosterQuarantine, idxSafeboxExport, idxGroundExport, body)
+	if !(idxGamedBuild < idxAuthdBuild && idxAuthdBuild < idxRuntime && idxRuntime < idxCatalog && idxCatalog < idxCatalogStatus && idxCatalogStatus < idxNotes && idxNotes < idxRosterExport && idxRosterExport < idxRosterQuarantine && idxRosterQuarantine < idxSafeboxExport && idxSafeboxExport < idxGroundExport && idxGroundExport < idxGroundQuarantine && idxGroundQuarantine < idxTreeStatus && idxTreeStatus < idxTreeStatusStatus) {
+		t.Fatalf("expected identity -> runtime/catalog -> catalog-status -> notes -> roster export/quarantine -> later kinds -> tree-status -> tree-status-status ordering, got idxs gamed=%d authd=%d runtime=%d catalog=%d catalogStatus=%d notes=%d rosterExport=%d rosterQ=%d safebox=%d ground=%d groundQ=%d treeStatus=%d treeStatusStatus=%d\n%s",
+			idxGamedBuild, idxAuthdBuild, idxRuntime, idxCatalog, idxCatalogStatus, idxNotes, idxRosterExport, idxRosterQuarantine, idxSafeboxExport, idxGroundExport, idxGroundQuarantine, idxTreeStatus, idxTreeStatusStatus, body)
 	}
 }
 

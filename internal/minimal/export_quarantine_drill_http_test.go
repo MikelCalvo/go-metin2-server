@@ -166,6 +166,21 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 			t.Fatalf("printed drill script must not embed SQL/DSN markers; found %q in %s", banned, script)
 		}
 	}
+	for _, banned := range []string{
+		"export-tree-status-before.json",
+		"export-tree-status-after.json",
+		"--require-two-phase-wipe-artifacts-complete",
+		"--require-import-result-artifacts-complete",
+		"--require-wipe-import-artifacts-complete",
+		"--require-import-result-outcomes-complete",
+		"--require-import-result-all-replaced",
+		"--require-wipe-import-result-outcomes-complete",
+		"--require-wipe-import-result-all-replaced",
+	} {
+		if strings.Contains(script, banned) {
+			t.Fatalf("printed drill script must not contain %q, got %s", banned, script)
+		}
+	}
 
 	pathEnv := filepath.Dir(migrateBin) + string(os.PathListSeparator) + "/usr/local/bin:/usr/bin:/bin"
 	stdout, stderr, exitCode := runPrintedShellScriptWithEnv(t, script, []string{
@@ -185,6 +200,8 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"migration-catalog.json",
 		"migration-catalog-status.json",
 		"notes.md",
+		"export-tree-status.json",
+		"export-tree-status-status.json",
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
@@ -194,6 +211,7 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"account-character-roster",
 		"character-item-state",
 		"character-point-state",
+		"character-myshop-unit-prices",
 		"auth-login-ticket-handoff",
 		"character-quest-state",
 		"character-safebox-state",
@@ -236,6 +254,8 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	} {
 		assertContainsLooseJSON(t, safeboxQuarantine, want)
 	}
+
+	assertExportTreeStatusQuarantineComplete(t, retentionTree, kinds)
 }
 
 func newDrainedExportQuarantineOpsMux(runtime *gameRuntime) http.Handler {
@@ -308,6 +328,111 @@ func assertCatalogStatusMatchesRetainedCatalog(t *testing.T, tree string) {
 	want := hex.EncodeToString(sum[:])
 	if got.CatalogSHA256 != want {
 		t.Fatalf("catalog-status checksum mismatch: got %s want %s", got.CatalogSHA256, want)
+	}
+}
+
+func assertExportTreeStatusQuarantineComplete(t *testing.T, tree string, kinds []string) {
+	t.Helper()
+	statusPath := filepath.Join(tree, "export-tree-status.json")
+	statusRaw := []byte(mustReadFile(t, statusPath))
+	statusBody := string(statusRaw)
+	for _, banned := range []string{"CREATE TABLE", "DROP TABLE", "INSERT ", "SELECT ", "postgres://", "mysql://", "DSN="} {
+		if strings.Contains(strings.ToUpper(statusBody), strings.ToUpper(banned)) {
+			t.Fatalf("export-tree-status.json must not expose SQL/DSN marker %q, got %s", banned, statusBody)
+		}
+	}
+
+	var treeStatus struct {
+		Format                        string `json:"format"`
+		Present                       bool   `json:"present"`
+		ExportTree                    string `json:"export_tree"`
+		KindCount                     int    `json:"kind_count"`
+		QuarantinePresentCount        int    `json:"quarantine_present_count"`
+		QuarantineComplete            bool   `json:"quarantine_complete"`
+		ImportResultArtifactsComplete bool   `json:"import_result_artifacts_complete"`
+		WipeImportArtifactsComplete   bool   `json:"wipe_import_artifacts_complete"`
+		Kinds                         []struct {
+			Kind       string `json:"kind"`
+			WipeKind   bool   `json:"wipe_kind"`
+			Quarantine struct {
+				Present bool `json:"present"`
+			} `json:"quarantine"`
+			ImportResult struct {
+				Present bool `json:"present"`
+			} `json:"import_result"`
+			WipeQuarantine *struct {
+				Present bool `json:"present"`
+			} `json:"wipe_quarantine"`
+			WipeImportResult *struct {
+				Present bool `json:"present"`
+			} `json:"wipe_import_result"`
+		} `json:"kinds"`
+	}
+	if err := json.Unmarshal(statusRaw, &treeStatus); err != nil {
+		t.Fatalf("decode export-tree-status.json: %v\nbody:\n%s", err, statusBody)
+	}
+	if treeStatus.Format != "go-metin2-export-tree-status-v1" || !treeStatus.Present || treeStatus.ExportTree != tree {
+		t.Fatalf("unexpected export-tree-status envelope: %#v", treeStatus)
+	}
+	if treeStatus.KindCount != len(kinds) || len(treeStatus.Kinds) != len(kinds) || treeStatus.QuarantinePresentCount != len(kinds) || !treeStatus.QuarantineComplete {
+		t.Fatalf("expected quarantine_complete over %d kinds, got %#v", len(kinds), treeStatus)
+	}
+	if treeStatus.ImportResultArtifactsComplete || treeStatus.WipeImportArtifactsComplete {
+		t.Fatalf("export/quarantine tree must not report import/wipe completeness, got %#v", treeStatus)
+	}
+	seen := make(map[string]bool, len(kinds))
+	for _, entry := range treeStatus.Kinds {
+		seen[entry.Kind] = true
+		if !entry.Quarantine.Present {
+			t.Fatalf("expected present quarantine for %s, got %#v", entry.Kind, entry)
+		}
+		if entry.ImportResult.Present {
+			t.Fatalf("expected absent import-result for %s, got %#v", entry.Kind, entry)
+		}
+		if entry.WipeQuarantine != nil && entry.WipeQuarantine.Present {
+			t.Fatalf("expected absent wipe-quarantine for %s, got %#v", entry.Kind, entry)
+		}
+		if entry.WipeImportResult != nil && entry.WipeImportResult.Present {
+			t.Fatalf("expected absent wipe-import-result for %s, got %#v", entry.Kind, entry)
+		}
+	}
+	for _, kind := range kinds {
+		if !seen[kind] {
+			t.Fatalf("export-tree-status missing kind %s, got %#v", kind, treeStatus.Kinds)
+		}
+	}
+	if !seen["character-myshop-unit-prices"] {
+		t.Fatalf("export-tree-status must include character-myshop-unit-prices over the full ten-kind set")
+	}
+
+	companionRaw := []byte(mustReadFile(t, filepath.Join(tree, "export-tree-status-status.json")))
+	companionBody := string(companionRaw)
+	for _, banned := range []string{"CREATE TABLE", "DROP TABLE", "INSERT ", "SELECT ", "postgres://", "mysql://", "DSN="} {
+		if strings.Contains(strings.ToUpper(companionBody), strings.ToUpper(banned)) {
+			t.Fatalf("export-tree-status-status.json must not expose SQL/DSN marker %q, got %s", banned, companionBody)
+		}
+	}
+	var companion struct {
+		Format                 string `json:"format"`
+		Present                bool   `json:"present"`
+		ExportTreeStatusSHA256 string `json:"export_tree_status_sha256"`
+		Status                 *struct {
+			Format             string `json:"format"`
+			Present            bool   `json:"present"`
+			KindCount          int    `json:"kind_count"`
+			QuarantineComplete bool   `json:"quarantine_complete"`
+		} `json:"status"`
+	}
+	if err := json.Unmarshal(companionRaw, &companion); err != nil {
+		t.Fatalf("decode export-tree-status-status.json: %v\nbody:\n%s", err, companionBody)
+	}
+	sum := sha256.Sum256(statusRaw)
+	wantSHA := hex.EncodeToString(sum[:])
+	if companion.Format != "go-metin2-export-tree-status-status-v1" || !companion.Present || companion.Status == nil || companion.ExportTreeStatusSHA256 != wantSHA {
+		t.Fatalf("unexpected export-tree-status-status envelope: %#v wantSHA=%s", companion, wantSHA)
+	}
+	if companion.Status.Format != "go-metin2-export-tree-status-v1" || !companion.Status.Present || !companion.Status.QuarantineComplete || companion.Status.KindCount != len(kinds) {
+		t.Fatalf("unexpected inner export-tree-status snapshot: %#v", companion.Status)
 	}
 }
 

@@ -333,6 +333,16 @@ func renderExportQuarantineDrillScript(plan exportQuarantineDrillPlan) string {
 		fmt.Fprintf(&b, "curl -sS \"$OPS%s\" > \"$BASE/%s/export.json\"\n", kind.ExportPath, kind.Kind)
 		fmt.Fprintf(&b, "metin2-migrate quarantine-export --kind %s --export \"$BASE/%s/export.json\" > \"$BASE/%s/quarantine.json\"\n", kind.Kind, kind.Kind, kind.Kind)
 	}
+	b.WriteString("\n")
+	b.WriteString("echo '== retain export-tree-status after quarantine =='\n")
+	b.WriteString("metin2-migrate export-tree-status \\\n")
+	b.WriteString("  --export-tree \"$BASE\" \\\n")
+	b.WriteString("  --require-quarantine-complete \\\n")
+	b.WriteString("  > \"$BASE/export-tree-status.json\"\n")
+	b.WriteString("metin2-migrate export-tree-status-status \\\n")
+	b.WriteString("  --export-tree-status \"$BASE/export-tree-status.json\" \\\n")
+	b.WriteString("  --require-quarantine-complete \\\n")
+	b.WriteString("  > \"$BASE/export-tree-status-status.json\"\n")
 	return b.String()
 }
 

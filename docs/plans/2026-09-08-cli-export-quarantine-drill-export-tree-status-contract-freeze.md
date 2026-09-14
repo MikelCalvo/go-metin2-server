@@ -250,9 +250,12 @@ git diff --check
 
 ## Status
 
-Frozen on `lane/persistence`. GREEN is follow-on and must not claim
-`$BASE/export-tree-status.json` exists until the printer actually emits
-the redirects.
+GREEN on `lane/persistence`. Printed `export-quarantine-drill` scripts now
+emit gated `$BASE/export-tree-status.json` plus
+`$BASE/export-tree-status-status.json` after the last `quarantine-export`
+line (`--require-quarantine-complete` only). The hermetic drained HTTP
+proof retains both files with `quarantine_complete` true over the full
+ten-kind set.
 
 ## Exit criteria for this freeze
 
