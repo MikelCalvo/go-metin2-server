@@ -8668,6 +8668,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if ownsLiveSharedWorldSession() {
 						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{frame})
 					}
+					pending.Enqueue([][]byte{worldproto.EncodeChangeSpeed(ticketChangeSpeedPacket(selected))})
 					return gameflow.CharacterPositionResult{Accepted: true, Frames: [][]byte{frame}}
 				},
 				HandleInteraction: func(packet interactproto.RequestPacket) gameflow.InteractionResult {
@@ -11084,6 +11085,13 @@ func ticketPlayerPointsPacket(character loginticket.Character) worldproto.Player
 	return worldproto.PlayerPointsPacket{Points: character.Points}
 }
 
+func ticketChangeSpeedPacket(character loginticket.Character) worldproto.ChangeSpeedPacket {
+	return worldproto.ChangeSpeedPacket{
+		VID:         character.VID,
+		MovingSpeed: worldproto.BootstrapCharacterMovingSpeed,
+	}
+}
+
 func ticketCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {
 	return worldproto.CharacterAddPacket{
 		VID:         character.VID,
@@ -11093,7 +11101,7 @@ func ticketCharacterAddPacket(character loginticket.Character) worldproto.Charac
 		Z:           character.Z,
 		Type:        worldproto.CharacterTypePC,
 		RaceNum:     character.RaceNum,
-		MovingSpeed: 150,
+		MovingSpeed: uint8(worldproto.BootstrapCharacterMovingSpeed),
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
@@ -11126,7 +11134,7 @@ func ticketCharacterUpdatePacketWithTemplates(character loginticket.Character, t
 	return worldproto.CharacterUpdatePacket{
 		VID:         character.VID,
 		Parts:       ticketCharacterAppearanceParts(character, templates),
-		MovingSpeed: 150,
+		MovingSpeed: uint8(worldproto.BootstrapCharacterMovingSpeed),
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},

@@ -321,6 +321,17 @@ func TestEncodeChangeSpeedBuildsAServerFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeChangeSpeedBuildsTheBootstrapMovingSpeedFrame(t *testing.T) {
+	want := frame.Encode(HeaderChangeSpeed, []byte{0x04, 0x03, 0x02, 0x01, 0x96, 0x00})
+	got := EncodeChangeSpeed(ChangeSpeedPacket{VID: 0x01020304, MovingSpeed: BootstrapCharacterMovingSpeed})
+	if BootstrapCharacterMovingSpeed != 150 {
+		t.Fatalf("unexpected bootstrap moving speed: got %d want 150", BootstrapCharacterMovingSpeed)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected bootstrap change-speed frame bytes: got %x want %x", got, want)
+	}
+}
+
 func TestDecodeChangeSpeedReturnsExpectedFields(t *testing.T) {
 	packet, err := DecodeChangeSpeed(decodeSingleFrame(t, frame.Encode(HeaderChangeSpeed, []byte{0x04, 0x03, 0x02, 0x01, 0x34, 0x12})))
 	if err != nil {

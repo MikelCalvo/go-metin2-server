@@ -31,6 +31,10 @@ const (
 	HeaderDead                    uint16 = 0x0217
 	HeaderChangeSpeed             uint16 = 0x0218
 
+	// BootstrapCharacterMovingSpeed is the already-owned CHARACTER_ADD /
+	// CHARACTER_UPDATE default reused by the first GC CHANGE_SPEED emit.
+	BootstrapCharacterMovingSpeed uint16 = 150
+
 	CharacterNameFieldSize      = 65
 	BGMNameFieldSize            = 25
 	PrivateCodeFieldSize        = 8
