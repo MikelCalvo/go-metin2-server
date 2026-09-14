@@ -2390,6 +2390,331 @@ func TestLocalItemTemplateStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
 	}
 }
 
+func TestLocalCubeRecipeStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
+	backer := &stubCubeRecipeStoreBacker{summary: map[string]any{"npc_count": 1, "recipe_count": 2, "npc_vnums": []uint32{20022}}}
+	mux := RegisterLocalCubeRecipeStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup", strings.NewReader(`{"dst_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if backer.calls != 1 || backer.dstDir != "/tmp/cube-recipe-backup" {
+		t.Fatalf("expected backup callback once with requested dst dir, calls=%d dst=%q", backer.calls, backer.dstDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"npc_count":1`, `"recipe_count":2`, `"npc_vnums":[20022]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	backer := &stubCubeRecipeStoreBacker{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup", strings.NewReader(`{"dst_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupEndpointRejectsInvalidBody(t *testing.T) {
+	backer := &stubCubeRecipeStoreBacker{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	for _, body := range []string{``, `{"dst_dir":"   "}`, `{"dst_dir":"/tmp/cube-recipe-backup","extra":true}`, `{"dst_dir":"/tmp/cube-recipe-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupEndpointReportsBackupFailure(t *testing.T) {
+	backer := &stubCubeRecipeStoreBacker{err: errStubCubeRecipeStoreInvalid}
+	mux := RegisterLocalCubeRecipeStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup", strings.NewReader(`{"dst_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if backer.calls != 1 {
+		t.Fatalf("expected backup callback to be called once, got %d", backer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupEndpointRejectsWrongMethod(t *testing.T) {
+	backer := &stubCubeRecipeStoreBacker{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupEndpoint(NewPprofMux("gamed"), backer.Backup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/cube-recipe-store/backup", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if backer.calls != 0 {
+		t.Fatalf("expected backup callback not to be called, got %d", backer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupValidateEndpointDryRunsLoopbackRequestedSource(t *testing.T) {
+	validator := &stubCubeRecipeStoreBackupValidator{summary: map[string]any{"npc_count": 1, "recipe_count": 2, "npc_vnums": []uint32{20022}, "crash_temp_count": 1, "crash_temp_files": []string{".cube-recipes-crashed.json"}}}
+	mux := RegisterLocalCubeRecipeStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup/validate", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if validator.calls != 1 || validator.srcDir != "/tmp/cube-recipe-backup" {
+		t.Fatalf("expected validate callback once with requested src dir, calls=%d src=%q", validator.calls, validator.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"npc_count":1`, `"recipe_count":2`, `"npc_vnums":[20022]`, `"crash_temp_count":1`, `"crash_temp_files":[".cube-recipes-crashed.json"]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupValidateEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	validator := &stubCubeRecipeStoreBackupValidator{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup/validate", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupValidateEndpointRejectsInvalidBody(t *testing.T) {
+	validator := &stubCubeRecipeStoreBackupValidator{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	for _, body := range []string{``, `{"src_dir":"   "}`, `{"src_dir":"/tmp/cube-recipe-backup","extra":true}`, `{"src_dir":"/tmp/cube-recipe-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup/validate", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupValidateEndpointReportsValidationFailure(t *testing.T) {
+	validator := &stubCubeRecipeStoreBackupValidator{err: errStubCubeRecipeStoreInvalid}
+	mux := RegisterLocalCubeRecipeStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/backup/validate", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if validator.calls != 1 {
+		t.Fatalf("expected validate callback to be called once, got %d", validator.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreBackupValidateEndpointRejectsWrongMethod(t *testing.T) {
+	validator := &stubCubeRecipeStoreBackupValidator{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreBackupValidateEndpoint(NewPprofMux("gamed"), validator.ValidateBackup)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/cube-recipe-store/backup/validate", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if validator.calls != 0 {
+		t.Fatalf("expected validate callback not to be called, got %d", validator.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointRestoresFromLoopbackRequestedSource(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{summary: map[string]any{"npc_count": 1, "recipe_count": 2, "npc_vnums": []uint32{20022}}}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/restore", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if restorer.calls != 1 || restorer.srcDir != "/tmp/cube-recipe-backup" {
+		t.Fatalf("expected restore callback once with requested src dir, calls=%d src=%q", restorer.calls, restorer.srcDir)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"npc_count":1`, `"recipe_count":2`, `"npc_vnums":[20022]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected response body to contain %s, got %s", want, body)
+		}
+	}
+	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "application/json") {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/restore", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected status %d, got %d", http.StatusForbidden, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointRejectsInvalidBody(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	for _, body := range []string{``, `{"src_dir":"   "}`, `{"src_dir":"/tmp/cube-recipe-backup","extra":true}`, `{"src_dir":"/tmp/cube-recipe-backup"} {}`} {
+		t.Run(body, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/restore", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:12345"
+			rec := httptest.NewRecorder()
+
+			mux.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+			}
+		})
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointRejectsOversizedBody(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+	body := `{"src_dir":"` + strings.Repeat("a", maxLocalAccountStoreMutationBodyBytes+1) + `"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/restore", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status %d, got %d", http.StatusRequestEntityTooLarge, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointReportsRestoreFailure(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{err: errStubCubeRecipeStoreInvalid}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, "/local/cube-recipe-store/restore", strings.NewReader(`{"src_dir":"/tmp/cube-recipe-backup"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected status %d, got %d", http.StatusConflict, rec.Code)
+	}
+	if restorer.calls != 1 {
+		t.Fatalf("expected restore callback to be called once, got %d", restorer.calls)
+	}
+}
+
+func TestLocalCubeRecipeStoreRestoreEndpointRejectsWrongMethod(t *testing.T) {
+	restorer := &stubCubeRecipeStoreRestorer{summary: map[string]any{"npc_count": 1}}
+	mux := RegisterLocalCubeRecipeStoreRestoreEndpoint(NewPprofMux("gamed"), restorer.Restore)
+
+	req := httptest.NewRequest(http.MethodGet, "/local/cube-recipe-store/restore", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected status %d, got %d", http.StatusMethodNotAllowed, rec.Code)
+	}
+	if restorer.calls != 0 {
+		t.Fatalf("expected restore callback not to be called, got %d", restorer.calls)
+	}
+}
+
 func TestLocalQuestStateStoreBackupEndpointBacksUpToLoopbackRequestedDirectory(t *testing.T) {
 	backer := &stubQuestStateStoreBacker{summary: map[string]any{
 		"flag_count": 2,
@@ -3121,6 +3446,47 @@ func (s *stubItemTemplateStoreRestorer) Restore(srcDir string) (any, error) {
 	s.srcDir = srcDir
 	return s.summary, s.err
 }
+
+type stubCubeRecipeStoreBacker struct {
+	summary any
+	err     error
+	calls   int
+	dstDir  string
+}
+
+func (s *stubCubeRecipeStoreBacker) Backup(dstDir string) (any, error) {
+	s.calls++
+	s.dstDir = dstDir
+	return s.summary, s.err
+}
+
+type stubCubeRecipeStoreBackupValidator struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubCubeRecipeStoreBackupValidator) ValidateBackup(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+type stubCubeRecipeStoreRestorer struct {
+	summary any
+	err     error
+	calls   int
+	srcDir  string
+}
+
+func (s *stubCubeRecipeStoreRestorer) Restore(srcDir string) (any, error) {
+	s.calls++
+	s.srcDir = srcDir
+	return s.summary, s.err
+}
+
+var errStubCubeRecipeStoreInvalid = errors.New("cube recipe store invalid")
 
 type stubStaticActorStoreBacker struct {
 	summary any

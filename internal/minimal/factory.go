@@ -163,6 +163,7 @@ var (
 	ErrInteractionDefinitionReferenced      = errors.New("interaction definition referenced by static actor")
 	ErrContentBundleUnavailable             = errors.New("content bundle unavailable")
 	ErrItemTemplateStoreRestoreLiveSessions = errors.New("item template store restore requires no live sessions")
+	ErrCubeRecipeStoreRestoreLiveSessions   = errors.New("cube recipe store restore requires no live sessions")
 	ErrAccountStoreRestoreLiveSessions      = errors.New("account store restore requires no live sessions")
 	ErrLoginTicketStoreRestoreLiveSessions  = errors.New("login ticket store restore requires no live sessions")
 	ErrQuestStateStoreRestoreLiveSessions   = errors.New("quest state store restore requires no live sessions")
@@ -1678,6 +1679,74 @@ func (r *gameRuntime) RestoreItemTemplateStore(srcDir string) (itemcatalog.Snaps
 	}
 	if err := r.loadItemTemplates(); err != nil {
 		return itemcatalog.SnapshotSummary{}, err
+	}
+	return restorer.Validate()
+}
+
+func (r *gameRuntime) ValidateCubeRecipeStore() (cubestore.SnapshotSummary, error) {
+	if r == nil || r.cubeStore == nil {
+		return cubestore.SnapshotSummary{NPCVnums: []uint32{}}, nil
+	}
+	validator, ok := r.cubeStore.(interface {
+		Validate() (cubestore.SnapshotSummary, error)
+	})
+	if !ok {
+		return cubestore.SnapshotSummary{}, fmt.Errorf("cube recipe store validation is not supported")
+	}
+	return validator.Validate()
+}
+
+func (r *gameRuntime) BackupCubeRecipeStore(dstDir string) (cubestore.SnapshotSummary, error) {
+	if r == nil || r.cubeStore == nil {
+		return cubestore.SnapshotSummary{NPCVnums: []uint32{}}, nil
+	}
+	backer, ok := r.cubeStore.(interface {
+		BackupTo(string) error
+		ValidateBackupFrom(string) (cubestore.SnapshotSummary, error)
+	})
+	if !ok {
+		return cubestore.SnapshotSummary{}, fmt.Errorf("cube recipe store backup is not supported")
+	}
+	if err := backer.BackupTo(dstDir); err != nil {
+		return cubestore.SnapshotSummary{}, err
+	}
+	return backer.ValidateBackupFrom(dstDir)
+}
+
+func (r *gameRuntime) ValidateCubeRecipeStoreBackup(srcDir string) (cubestore.SnapshotSummary, error) {
+	if r == nil || r.cubeStore == nil {
+		return cubestore.SnapshotSummary{NPCVnums: []uint32{}}, nil
+	}
+	validator, ok := r.cubeStore.(interface {
+		ValidateBackupFrom(string) (cubestore.SnapshotSummary, error)
+	})
+	if !ok {
+		return cubestore.SnapshotSummary{}, fmt.Errorf("cube recipe store backup validation is not supported")
+	}
+	return validator.ValidateBackupFrom(srcDir)
+}
+
+func (r *gameRuntime) RestoreCubeRecipeStore(srcDir string) (cubestore.SnapshotSummary, error) {
+	if r == nil || r.cubeStore == nil {
+		return cubestore.SnapshotSummary{NPCVnums: []uint32{}}, nil
+	}
+	restorer, ok := r.cubeStore.(interface {
+		RestoreFrom(string) error
+		Validate() (cubestore.SnapshotSummary, error)
+	})
+	if !ok {
+		return cubestore.SnapshotSummary{}, fmt.Errorf("cube recipe store restore is not supported")
+	}
+	r.liveCharacterMu.Lock()
+	defer r.liveCharacterMu.Unlock()
+	if len(r.liveCharactersByName) != 0 {
+		return cubestore.SnapshotSummary{}, ErrCubeRecipeStoreRestoreLiveSessions
+	}
+	if err := restorer.RestoreFrom(srcDir); err != nil {
+		return cubestore.SnapshotSummary{}, err
+	}
+	if err := r.loadCubeRecipes(); err != nil {
+		return cubestore.SnapshotSummary{}, err
 	}
 	return restorer.Validate()
 }

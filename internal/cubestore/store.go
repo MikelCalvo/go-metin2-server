@@ -8,9 +8,18 @@ import (
 )
 
 var (
-	ErrStorePathRequired = errors.New("cube recipe store path is required")
-	ErrSnapshotNotFound  = errors.New("cube recipe snapshot not found")
-	ErrInvalidSnapshot   = errors.New("invalid cube recipe snapshot")
+	ErrStorePathRequired      = errors.New("cube recipe store path is required")
+	ErrSnapshotNotFound       = errors.New("cube recipe snapshot not found")
+	ErrInvalidSnapshot        = errors.New("invalid cube recipe snapshot")
+	ErrBackupDirRequired      = errors.New("cube recipe backup dir is required")
+	ErrBackupDirNotEmpty      = errors.New("cube recipe backup dir is not empty")
+	ErrBackupDirInsideStore   = errors.New("cube recipe backup dir is inside cube recipe store")
+	ErrRestoreSourceRequired  = errors.New("cube recipe restore source dir is required")
+	ErrRestoreSourceNotFound  = errors.New("cube recipe restore source dir not found")
+	ErrRestoreDirNotEmpty     = errors.New("cube recipe restore dir is not empty")
+	ErrRestoreDirInsideSource = errors.New("cube recipe restore dir is inside cube recipe backup source")
+	ErrBackupManifestRequired = errors.New("cube recipe backup manifest is required")
+	ErrInvalidBackupManifest  = errors.New("invalid cube recipe backup manifest")
 )
 
 const (
@@ -23,6 +32,10 @@ const (
 	BootstrapDefaultNPCVnum uint32 = 20022
 	// CubeMaxNum mirrors the external oracle CUBE_MAX_NUM craft-slot bound.
 	CubeMaxNum = 24
+	// BackupManifestFilename is the deterministic restored-backup marker.
+	BackupManifestFilename = "cube-recipe-backup-manifest.json"
+	// BackupManifestFormat identifies a closed cube-recipe FileStore backup.
+	BackupManifestFormat = "go-metin2-cube-recipe-backup-v1"
 )
 
 // Reward is one craftable result row for cube r_list.
@@ -58,6 +71,29 @@ type NPCRecipes struct {
 // Snapshot is the committed cube-recipe FileStore / MemoryStore payload.
 type Snapshot struct {
 	NPCs []NPCRecipes `json:"npcs"`
+}
+
+// SnapshotSummary is the deterministic backup/validate projection.
+type SnapshotSummary struct {
+	NPCCount       int      `json:"npc_count"`
+	RecipeCount    int      `json:"recipe_count"`
+	NPCVnums       []uint32 `json:"npc_vnums"`
+	CrashTempCount int      `json:"crash_temp_count,omitempty"`
+	CrashTempFiles []string `json:"crash_temp_files,omitempty"`
+}
+
+// BackupManifest is the closed cube-recipe backup audit artifact.
+type BackupManifest struct {
+	Format  string               `json:"format"`
+	Summary SnapshotSummary      `json:"summary"`
+	Files   []BackupManifestFile `json:"files"`
+}
+
+// BackupManifestFile records one manifested snapshot payload.
+type BackupManifestFile struct {
+	Filename  string `json:"filename"`
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
 }
 
 // Store is the Load/Save seam used by gamed bootstrap and focused tests.
@@ -257,6 +293,20 @@ func materialCountsCover(boundCounts, needCounts map[uint32]uint32) bool {
 		}
 	}
 	return true
+}
+
+func summarizeSnapshot(snapshot Snapshot) SnapshotSummary {
+	normalized := normalizeSnapshot(snapshot)
+	summary := SnapshotSummary{
+		NPCCount:    len(normalized.NPCs),
+		NPCVnums:    make([]uint32, 0, len(normalized.NPCs)),
+		RecipeCount: 0,
+	}
+	for _, npc := range normalized.NPCs {
+		summary.NPCVnums = append(summary.NPCVnums, npc.NPCVnum)
+		summary.RecipeCount += len(npc.Recipes)
+	}
+	return summary
 }
 
 func NormalizeSnapshot(snapshot Snapshot) Snapshot {

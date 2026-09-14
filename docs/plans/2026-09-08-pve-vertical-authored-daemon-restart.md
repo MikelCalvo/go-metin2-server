@@ -54,8 +54,11 @@ restart.
   the fresh runtime's persisted snapshots.
 - This does not add a content FileStore format or alter the existing bundle
   canonicalization contract.
-- Cube-recipe FileStore backup/restore ops endpoints are still out of scope;
-  this slice only persists authored recipes and rematerializes `/cube r_info`.
+- Cube-recipe FileStore backup/restore loopback helpers now exist on
+  `cubestore.FileStore` (`BackupTo` / `ValidateBackupFrom` / `RestoreFrom`)
+  and `ops.RegisterLocalCubeRecipeStore*` for `/local/cube-recipe-store/*`.
+  `gamed_ops` remains the eight-store persistence mux; drill printing and
+  `/local/persistence` mounting of cube-recipe endpoints stay a later slice.
 
 ## Verification
 
