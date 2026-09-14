@@ -2158,7 +2158,7 @@ func (r *gameRuntime) spawnGroupReturnStepSnapshot(entityID uint64, dueAt time.T
 		return SpawnGroupPendingReturnStepSnapshot{}, false
 	}
 	actor, ok := r.SpawnGroup(entityID)
-	if !ok || actor.SpawnLeash == nil || !actor.SpawnLeash.ReturnRequired {
+	if !ok || actor.Dead || actor.SpawnLeash == nil || !actor.SpawnLeash.ReturnRequired {
 		return SpawnGroupPendingReturnStepSnapshot{}, false
 	}
 	plan, ok := r.sharedWorld.PlanSpawnGroupReturnHomeStep(entityID, r.effectiveSpawnGroupMaxStep(entityID))
@@ -13194,7 +13194,10 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 				return fmt.Errorf("%w: restore proximity-suppress spawn-group state", staticstore.ErrInvalidSnapshot)
 			}
 		}
-		r.syncSpawnGroupReturnStepSchedule(registered)
+		// Re-read after still-dead overlay restore. The register snapshot is still
+		// live, so syncing it would arm return-step for a rematerialized
+		// return_required corpse. Homeward already re-reads by entity.
+		r.syncSpawnGroupReturnStepScheduleForEntity(registered.EntityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(registered.EntityID)
 	}
 	loaded = true
