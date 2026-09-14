@@ -9515,6 +9515,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {
+						maybeEnqueueSittingStandaloneDummyStun(pending, activeCharacterPosition, resolution)
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
@@ -14738,6 +14739,19 @@ func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 
 func staticActorKillingHitDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 	return staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(actor) || staticActorDamageInfoRuntimeEmissionOwned(actor)
+}
+
+func maybeEnqueueSittingStandaloneDummyStun(pending *pendingServerFrames, activeCharacterPosition uint8, resolution staticActorCombatAttackResolution) {
+	if pending == nil || resolution.ClearActiveTarget || resolution.ActiveTargetVID == 0 {
+		return
+	}
+	if activeCharacterPosition != bootstrapCharacterPositionSittingGround {
+		return
+	}
+	if !staticActorDamageInfoRuntimeEmissionOwned(resolution.Actor) {
+		return
+	}
+	pending.Enqueue([][]byte{worldproto.EncodeStun(worldproto.StunPacket{VID: resolution.ActiveTargetVID})})
 }
 
 func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {
