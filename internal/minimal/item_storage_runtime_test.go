@@ -2758,3 +2758,336 @@ func TestGameRuntimeSafeboxCheckoutIntoDisplayedExchangeCellFailsClosedWithoutCl
 	}
 	assertExchangeEndFrame(t, queuedCancel[0], "displayed-exchange locked safebox check-out peer cancel")
 }
+
+func TestGameRuntimeOpenMallEmitsOpenWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallOwner", 0x010309c1, 0x020409c1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1801, Vnum: 27001, Count: 2, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 1, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "open-mall-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707079c1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-mall owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected open-mall runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c1)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected /open_mall to emit one MALL_OPEN frame, got %d", len(out))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode /open_mall MALL_OPEN: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected /open_mall MALL_OPEN: %+v", open)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected /open_mall to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-mall owner")
+}
+
+func TestGameRuntimeOpenMallRematerializesInRangeMallSetRows(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallSeed", 0x010309c2, 0x020409c2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5151
+	owner.Inventory = []inventory.ItemInstance{{ID: 1802, Vnum: 27001, Count: 3, Slot: 5}}
+	login := "open-mall-seed"
+	issuePeerTicket(t, ticketStore, login, 0x707079c2, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-mall rematerialize owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-mall rematerialize runtime error: %v", err)
+	}
+	zeroSockets := inventory.SocketValues{}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1901, Vnum: 27001, Count: 2, Slot: 0},
+		2: {ID: 1902, Vnum: 27001, Count: 1, Slot: 2, Sockets: &zeroSockets},
+		7: {ID: 1903, Vnum: 27001, Count: 4, Slot: 7},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c2)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall rematerialize error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected /open_mall to emit MALL_OPEN plus two in-range MALL_SET frames, got %d", len(out))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode rematerialize MALL_OPEN: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected rematerialize MALL_OPEN: %+v", open)
+	}
+	first, err := itemproto.DecodeMallSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode first rematerialize MALL_SET: %v", err)
+	}
+	if first.Position != (itemproto.Position{WindowType: itemproto.WindowMall, Cell: 0}) || first.Vnum != 27001 || first.Count != 2 {
+		t.Fatalf("unexpected first rematerialize MALL_SET: %+v", first)
+	}
+	second, err := itemproto.DecodeMallSet(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode second rematerialize MALL_SET: %v", err)
+	}
+	if second.Position != (itemproto.Position{WindowType: itemproto.WindowMall, Cell: 2}) || second.Vnum != 27001 || second.Count != 1 {
+		t.Fatalf("unexpected second rematerialize MALL_SET: %+v", second)
+	}
+	if second.Sockets != [itemproto.ItemSocketCount]int32{} {
+		t.Fatalf("expected rematerialize MALL_SET to keep explicit-zero sockets, got %+v", second.Sockets)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected rematerialize /open_mall to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-mall rematerialize owner")
+}
+
+func TestGameRuntimeOpenMallOutOfRangeFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallOOR", 0x010309c3, 0x020409c3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1803, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-mall-oor"
+	issuePeerTicket(t, ticketStore, login, 0x707079c3, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed out-of-range open-mall owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected out-of-range open-mall runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c3)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall 4",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected out-of-range /open_mall error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected out-of-range /open_mall to emit no frames (no MALL_OPEN and no ordinary chat fallthrough), got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected out-of-range /open_mall to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "out-of-range open-mall owner")
+
+	validOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected in-range /open_mall after out-of-range reject error: %v", err)
+	}
+	if len(validOut) != 1 {
+		t.Fatalf("expected in-range /open_mall after out-of-range reject to emit one MALL_OPEN frame, got %d", len(validOut))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, validOut[0]))
+	if err != nil {
+		t.Fatalf("decode in-range /open_mall after out-of-range reject: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected in-range /open_mall size after out-of-range reject: %+v", open)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "in-range open-mall after out-of-range reject")
+}
+
+func TestGameRuntimeOpenMallRejectsActiveCubeWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallCubeBusy", 0x010309c4, 0x020409c4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1804, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-mall-cube-busy"
+	issuePeerTicket(t, ticketStore, login, 0x707079c4, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed cube-busy open-mall owner account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected cube-busy open-mall runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c4)
+	defer closeSessionFlow(t, flow)
+
+	openCubeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_cube",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_cube before mall open: %v", err)
+	}
+	if len(openCubeOut) != 1 {
+		t.Fatalf("expected /open_cube before mall open to emit one command chat frame, got %d", len(openCubeOut))
+	}
+	assertCubeCommandChatFrame(t, openCubeOut[0], "cube open 20022", "cube before mall open")
+
+	busyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected cube-busy /open_mall error: %v", err)
+	}
+	if len(busyOut) != 1 {
+		t.Fatalf("expected cube-busy /open_mall to emit one info-chat frame, got %d", len(busyOut))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, busyOut[0]))
+	if err != nil {
+		t.Fatalf("decode cube-busy /open_mall info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected cube-busy /open_mall chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected cube-busy /open_mall to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-busy open-mall owner")
+}
+
+func TestGameRuntimeMallCheckoutStaysFailClosedWhileMallOpen(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallCheckout", 0x010309c5, 0x020409c5, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1805, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-mall-checkout"
+	issuePeerTicket(t, ticketStore, login, 0x707079c5, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-mall checkout owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-mall checkout runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1904, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c5)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_mall before mall checkout: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{
+		MallSlot: 0,
+		Position: itemproto.InventoryPosition(9),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected mall checkout while mall open error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected mall checkout while mall open to stay fail-closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected mall checkout while mall open to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "mall checkout while mall open")
+}
+
+func TestGameRuntimeCloseMallClearsOpenPresentationWithoutFrames(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("CloseMallOwner", 0x010309c6, 0x020409c6, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1806, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "close-mall-owner"
+	issuePeerTicket(t, ticketStore, login, 0x707079c6, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed close-mall owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected close-mall runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		1: {ID: 1905, Vnum: 27001, Count: 3, Slot: 1},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c6)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall 2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before close error: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_mall before close to emit MALL_OPEN plus one MALL_SET, got %d", len(openOut))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, openOut[0]))
+	if err != nil {
+		t.Fatalf("decode /open_mall before close: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 2}) {
+		t.Fatalf("unexpected /open_mall size before close: %+v", open)
+	}
+
+	closeOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/close_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /close_mall error: %v", err)
+	}
+	if len(closeOut) != 0 {
+		t.Fatalf("expected /close_mall to emit no frames, got %d", len(closeOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "close-mall owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall 2",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall after close error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_mall after close to rematerialize MALL_OPEN plus MALL_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeMallSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode rematerialize MALL_SET after close: %v", err)
+	}
+	if reopenSet.Position != (itemproto.Position{WindowType: itemproto.WindowMall, Cell: 1}) || reopenSet.Vnum != 27001 || reopenSet.Count != 3 {
+		t.Fatalf("unexpected rematerialize MALL_SET after close: %+v", reopenSet)
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-mall after close")
+}

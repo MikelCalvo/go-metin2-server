@@ -145,6 +145,9 @@ const bootstrapCubeOpenDefaultNPCVnum uint32 = cubestore.BootstrapDefaultNPCVnum
 const bootstrapSafeboxOpenMinSize uint8 = 1
 const bootstrapSafeboxOpenMaxSize uint8 = 3
 const bootstrapSafeboxCellsPerPage uint8 = 5
+const bootstrapMallOpenMinSize uint8 = 1
+const bootstrapMallOpenMaxSize uint8 = 3
+const bootstrapMallCellsPerPage uint8 = 5
 const bootstrapMapIndex uint32 = 1
 const bootstrapShinsooYonganStartX int32 = 469300
 const bootstrapShinsooYonganStartY int32 = 964200
@@ -585,6 +588,8 @@ type gameRuntime struct {
 	groundItemPersistMu     sync.Mutex
 	safeboxStore            safeboxstore.Store
 	safeboxPersistMu        sync.Mutex
+	mallSeedMu              sync.Mutex
+	mallSeedCells           map[string]map[uint8]inventory.ItemInstance
 	cubeStore               cubestore.Store
 	cubeRecipes             cubestore.Snapshot
 	cubeRecipesAuthored     bool
@@ -653,6 +658,57 @@ func (r *gameRuntime) SessionFactory() service.SessionFactory {
 		return nil
 	}
 	return r.sessionFactory
+}
+
+func mallCharacterKey(login string, characterID uint32) string {
+	return fmt.Sprintf("%s:%d", strings.TrimSpace(login), characterID)
+}
+
+func cloneMallItem(item inventory.ItemInstance) inventory.ItemInstance {
+	cloned := item
+	cloned.Sockets = item.CloneSockets()
+	cloned.Attributes = item.CloneAttributes()
+	return cloned
+}
+
+func cloneMallCells(cells map[uint8]inventory.ItemInstance) map[uint8]inventory.ItemInstance {
+	if len(cells) == 0 {
+		return make(map[uint8]inventory.ItemInstance)
+	}
+	cloned := make(map[uint8]inventory.ItemInstance, len(cells))
+	for slot, item := range cells {
+		cloned[slot] = cloneMallItem(item)
+	}
+	return cloned
+}
+
+// SeedMallCellsForTest installs same-account mall cells for lab /open_mall
+// rematerialize. This bootstrap slice does not invent cash-shop purchase,
+// durable mall FileStore, or mall money.
+func (r *gameRuntime) SeedMallCellsForTest(login string, characterID uint32, cells map[uint8]inventory.ItemInstance) {
+	if r == nil {
+		return
+	}
+	r.mallSeedMu.Lock()
+	defer r.mallSeedMu.Unlock()
+	if r.mallSeedCells == nil {
+		r.mallSeedCells = make(map[string]map[uint8]inventory.ItemInstance)
+	}
+	key := mallCharacterKey(login, characterID)
+	if len(cells) == 0 {
+		delete(r.mallSeedCells, key)
+		return
+	}
+	r.mallSeedCells[key] = cloneMallCells(cells)
+}
+
+func (r *gameRuntime) mallCellsForCharacter(login string, characterID uint32) map[uint8]inventory.ItemInstance {
+	if r == nil {
+		return make(map[uint8]inventory.ItemInstance)
+	}
+	r.mallSeedMu.Lock()
+	defer r.mallSeedMu.Unlock()
+	return cloneMallCells(r.mallSeedCells[mallCharacterKey(login, characterID)])
 }
 
 func (r *gameRuntime) BroadcastNotice(message string) int {
@@ -4279,6 +4335,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		questStateStore:        questState,
 		groundItemStore:        groundItems,
 		safeboxStore:           safeboxItems,
+		mallSeedCells:          make(map[string]map[uint8]inventory.ItemInstance),
 		cubeStore:              cubeRecipes,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
@@ -4337,6 +4394,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveSafeboxOpen bool
 		var activeSafeboxSize uint8
 		activeSafeboxItems := make(map[uint8]inventory.ItemInstance)
+		var hasActiveMallOpen bool
+		var activeMallSize uint8
+		activeMallItems := make(map[uint8]inventory.ItemInstance)
 		var pendingSafeboxPasswordChallenge bool
 		var pendingSafeboxPasswordSize uint8
 		var hasSafeboxOpenAnchor bool
@@ -4360,6 +4420,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return 0
 			}
 			return size * bootstrapSafeboxCellsPerPage
+		}
+		bootstrapMallCapacity := func(size uint8) uint8 {
+			if size < bootstrapMallOpenMinSize || size > bootstrapMallOpenMaxSize {
+				return 0
+			}
+			return size * bootstrapMallCellsPerPage
 		}
 		rememberSafeboxOpenAnchor := func(selected *player.Runtime) {
 			if selected == nil {
@@ -4566,6 +4632,53 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			frames := [][]byte{itemproto.EncodeSafeboxSize(itemproto.SafeboxSizePacket{Size: size})}
 			frames = append(frames, encodeActiveSafeboxSetFrames()...)
 			frames = append(frames, itemproto.EncodeSafeboxMoneyChange(itemproto.SafeboxMoneyChangePacket{Money: int32(money)}))
+			return frames
+		}
+		hydrateActiveMallFromSeed := func() {
+			if !hasTicket || selectedPlayer == nil {
+				activeMallItems = make(map[uint8]inventory.ItemInstance)
+				return
+			}
+			activeMallItems = runtime.mallCellsForCharacter(sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
+		}
+		encodeActiveMallSetFrames := func() [][]byte {
+			if len(activeMallItems) == 0 {
+				return nil
+			}
+			capacity := bootstrapMallCapacity(activeMallSize)
+			slots := make([]uint8, 0, len(activeMallItems))
+			for slot := range activeMallItems {
+				if capacity > 0 && slot >= capacity {
+					continue
+				}
+				slots = append(slots, slot)
+			}
+			sort.Slice(slots, func(i, j int) bool { return slots[i] < slots[j] })
+			frames := make([][]byte, 0, len(slots))
+			for _, slot := range slots {
+				item := activeMallItems[slot]
+				frame, err := encodeBootstrapMallSetFrame(itemproto.Position{WindowType: itemproto.WindowMall, Cell: uint16(slot)}, item, runtime.itemTemplates)
+				if err != nil {
+					continue
+				}
+				frames = append(frames, frame)
+			}
+			return frames
+		}
+		setActiveMallOpen := func(size uint8, open bool) {
+			if !open {
+				hasActiveMallOpen = false
+				activeMallSize = 0
+				return
+			}
+			hasActiveMallOpen = true
+			activeMallSize = size
+		}
+		openMallPresentation := func(size uint8) [][]byte {
+			setActiveMallOpen(size, true)
+			hydrateActiveMallFromSeed()
+			frames := [][]byte{itemproto.EncodeMallOpen(itemproto.MallOpenPacket{Size: size})}
+			frames = append(frames, encodeActiveMallSetFrames()...)
 			return frames
 		}
 		setActiveRefineDialog := func(dialog refineDialogPresentation, open bool) {
@@ -6873,6 +6986,38 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								Frames:   frames,
 							}
 						}
+						if size, sizeExplicit, ok := slashOpenMallCommand(packet.Message); ok {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if size < bootstrapMallOpenMinSize || size > bootstrapMallOpenMaxSize {
+								// Recognized /open_mall with an out-of-range or otherwise invalid
+								// size must stay fail-closed: consume the slash so it does not fall
+								// through as ordinary talking chat, emit no MALL_OPEN, and leave
+								// the same-socket open presentation flag untouched.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							if hasActiveCubeOpen {
+								delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, Message: exchangeRequesterMerchantBusyInfoMessage}
+								return gameflow.ChatResult{Accepted: true, Delivery: &delivery}
+							}
+							if hasActiveMallOpen && !sizeExplicit {
+								size = activeMallSize
+							}
+							frames := openMallPresentation(size)
+							return gameflow.ChatResult{
+								Accepted: true,
+								Frames:   frames,
+							}
+						}
+						if slashCloseMallCommand(packet.Message) {
+							if !hasActiveMallOpen {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							setActiveMallOpen(0, false)
+							return gameflow.ChatResult{Accepted: true}
+						}
 						if password, ok := slashSafeboxPasswordCommand(packet.Message); ok {
 							selectedPlayer, selectedOK := currentSelectedPlayer()
 							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
@@ -7371,6 +7516,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								setActiveSafeboxOpen(0, false)
 							}
 							clearActiveSafeboxItems()
+							setActiveMallOpen(0, false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
 						}
@@ -8182,6 +8328,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
+				},
+				HandleMallCheckout: func(_ itemproto.ClientMallCheckoutPacket) gameflow.MallCheckoutResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+					// Accepted mall checkout stays deferred: even an open lab mall
+					// presentation must keep CG::MALL_CHECKOUT fail-closed with no
+					// frames and no mall/inventory mutation.
+					return gameflow.MallCheckoutResult{Accepted: false}
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()
@@ -9761,6 +9915,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				setActiveSafeboxOpen(0, false)
 			}
 			clearActiveSafeboxItems()
+			setActiveMallOpen(0, false)
 			setActiveRefineDialog(refineDialogPresentation{}, false)
 			setActiveCubeOpen(false, 0)
 			clearActiveMyShopOpen()
@@ -10762,6 +10917,48 @@ func slashOpenSafeboxCommand(message string) (uint8, bool, bool) {
 		// Extra args are still a recognized /open_safebox attempt; fail closed in
 		// the handler rather than falling through as ordinary talking chat.
 		return 0, false, true
+	}
+}
+
+func slashOpenMallCommand(message string) (uint8, bool, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false, false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) == 0 || fields[0] != "open_mall" {
+		return 0, false, false
+	}
+	switch len(fields) {
+	case 1:
+		return bootstrapMallOpenMinSize, false, true
+	case 2:
+		parsed, err := strconv.ParseUint(fields[1], 10, 8)
+		if err != nil {
+			// Recognized command with a non-uint8 size token: keep ok=true so the
+			// chat handler can fail closed instead of broadcasting ordinary talk.
+			return 0, true, true
+		}
+		return uint8(parsed), true, true
+	default:
+		// Extra args are still a recognized /open_mall attempt; fail closed in
+		// the handler rather than falling through as ordinary talking chat.
+		return 0, false, true
+	}
+}
+
+func slashCloseMallCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 1 {
+		return false
+	}
+	switch fields[0] {
+	case "close_mall", "mall_close":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -12437,6 +12634,14 @@ func encodeBootstrapSafeboxSetFrame(position itemproto.Position, instance invent
 		return nil, err
 	}
 	return itemproto.EncodeSafeboxSet(packet), nil
+}
+
+func encodeBootstrapMallSetFrame(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) ([]byte, error) {
+	packet, err := bootstrapItemSetPacket(position, instance, templates)
+	if err != nil {
+		return nil, err
+	}
+	return itemproto.EncodeMallSet(packet), nil
 }
 
 func bootstrapItemSetPacket(position itemproto.Position, instance inventory.ItemInstance, templates map[uint32]itemcatalog.Template) (itemproto.SetPacket, error) {
