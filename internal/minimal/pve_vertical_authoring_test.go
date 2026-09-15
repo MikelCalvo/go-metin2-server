@@ -31,6 +31,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
 func loadBootstrapPveVerticalAuthoringBundle(t *testing.T) contentbundle.Bundle {
@@ -2561,5 +2562,153 @@ func TestPveVerticalTemplateBackedUseAndEquipFailClosedWithoutAuthoredMetadata(t
 	}
 	if len(account.Characters[0].Equipment) != 0 {
 		t.Fatalf("expected persisted equipment empty after fail-closed weapon equip, got %+v", account.Characters[0].Equipment)
+	}
+}
+
+func loadBootstrapDropTableAuthoringBundle(t *testing.T) contentbundle.Bundle {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve minimal test path")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	raw, err := os.ReadFile(filepath.Join(root, "docs", "examples", "bootstrap-drop-table-authoring-bundle.json"))
+	if err != nil {
+		t.Fatalf("read drop-table authoring example bundle: %v", err)
+	}
+	var bundle contentbundle.Bundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatalf("decode drop-table authoring example bundle: %v", err)
+	}
+	return bundle
+}
+
+func TestDropTableAuthoringBundlePicksOneWeightedKillDrop(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	const mobX int32 = 469850
+	const mobY int32 = 964200
+	hero := peerVisibilityCharacter("WeightedLootHero", 0x01030171, 0x02040171, mobX, mobY, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "weighted-loot", 0x71717171, hero)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "weighted-loot", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
+		t.Fatalf("seed weighted loot account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
+		queststate.NewMemoryStore(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new weighted loot runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_003_000, 0)
+	runtime.now = func() time.Time { return currentTime }
+
+	authored := loadBootstrapDropTableAuthoringBundle(t)
+	imported, err := runtime.ImportContentBundle(authored)
+	if err != nil {
+		t.Fatalf("import drop-table authoring example bundle: %v", err)
+	}
+	if len(imported.DropTables) != 0 {
+		t.Fatalf("expected import to strip authoring-only drop_tables, got %+v", imported.DropTables)
+	}
+	if len(imported.SpawnGroups) != 1 || !reflect.DeepEqual(imported.SpawnGroups[0].RewardDropVnums, []uint32{27001, 27002}) {
+		t.Fatalf("expected canonical drop-all reward_drop_vnums after import, got %+v", imported.SpawnGroups)
+	}
+	overlay := runtime.weightedDropEntriesSnapshot()
+	wantEntries := []contentbundle.DropTableEntry{{ItemVnum: 27001, Weight: 1}, {ItemVnum: 27002, Weight: 3}}
+	if !reflect.DeepEqual(overlay["practice.qa_reward_table_mob"], wantEntries) {
+		t.Fatalf("expected process-local weighted overlay after import, got %#v", overlay)
+	}
+
+	var actor StaticActorSnapshot
+	found := false
+	for _, candidate := range runtime.StaticActors() {
+		if candidate.SpawnGroupRef == "practice.qa_reward_table_mob" {
+			actor = candidate
+			found = true
+			break
+		}
+	}
+	if !found || actor.EntityID == 0 {
+		t.Fatalf("expected imported QATableRewardMob actor, got %+v", runtime.StaticActors())
+	}
+	mobVID := uint32(actor.EntityID)
+	wantVnum, ok := contentbundle.PickWeightedDropVnum(wantEntries, weightedKillDropSeed(actor))
+	if !ok || (wantVnum != 27001 && wantVnum != 27002) {
+		t.Fatalf("expected deterministic weighted pick from overlay, got vnum=%d ok=%v", wantVnum, ok)
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "weighted-loot", 0x71717171)
+	defer closeSessionFlow(t, flow)
+
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected weighted-loot target selection to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+	const practiceMobHitsToKill = int(worldruntime.PracticeMobBootstrapMaxHP / worldruntime.PracticeMobBootstrapDamagePerNormalAttack)
+	var killOut [][]byte
+	for hit := 1; hit <= practiceMobHitsToKill; hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: mobVID})))
+		if err != nil {
+			t.Fatalf("unexpected weighted-loot kill attack error on hit %d: %v", hit, err)
+		}
+	}
+	if len(killOut) == 0 {
+		t.Fatalf("expected killing hit frames after weighted-loot attacks")
+	}
+
+	groundAdds := 0
+	var ground itemproto.GroundAddPacket
+	for i := 0; i+1 < len(killOut); i++ {
+		decoded, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, killOut[i]))
+		if err != nil {
+			continue
+		}
+		ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, killOut[i+1]))
+		if err != nil {
+			t.Fatalf("expected GROUND_ADD to be followed by OWNERSHIP: %+v err=%v", decoded, err)
+		}
+		groundAdds++
+		ground = decoded
+		if decoded.VID == 0 || decoded.Vnum != wantVnum || decoded.X != hero.X || decoded.Y != hero.Y {
+			t.Fatalf("unexpected weighted kill ground add: %+v want vnum=%d", decoded, wantVnum)
+		}
+		if ownership != (itemproto.OwnershipPacket{VID: decoded.VID, OwnerName: hero.Name}) {
+			t.Fatalf("unexpected weighted kill ownership: %+v", ownership)
+		}
+	}
+	if groundAdds != 1 {
+		t.Fatalf("expected exactly one weighted GROUND_ADD + OWNERSHIP pair, got %d from %d frames", groundAdds, len(killOut))
+	}
+
+	pickupOut := pickupGroundItem(t, flow, ground.VID)
+	if len(pickupOut) != 3 {
+		t.Fatalf("expected weighted drop pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d", len(pickupOut))
+	}
+	if del, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || del.VID != ground.VID {
+		t.Fatalf("unexpected weighted pickup ground delete: del=%+v err=%v", del, err)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, pickupOut[1]))
+	if err != nil || set.Position != itemproto.InventoryPosition(0) || set.Vnum != wantVnum || set.Count != 1 {
+		t.Fatalf("unexpected weighted pickup item set: %+v err=%v want vnum=%d", set, err, wantVnum)
+	}
+	get, err := itemproto.DecodeGet(decodeSingleFrame(t, pickupOut[2]))
+	if err != nil || get.Vnum != wantVnum || get.Count != 1 {
+		t.Fatalf("unexpected weighted pickup item get: %+v err=%v want vnum=%d", get, err, wantVnum)
+	}
+	if runtime.sharedWorld.GroundItemExists(ground.VID) {
+		t.Fatalf("expected weighted kill-drop pickup to clear ground handle %d", ground.VID)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(hero.Name)
+	if !ok || len(inventorySnapshot.Inventory) != 1 || inventorySnapshot.Inventory[0].Vnum != wantVnum || inventorySnapshot.Inventory[0].Count != 1 {
+		t.Fatalf("expected live inventory to hold the weighted kill drop, got ok=%v snapshot=%+v", ok, inventorySnapshot)
 	}
 }

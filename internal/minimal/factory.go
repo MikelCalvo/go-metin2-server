@@ -601,6 +601,8 @@ type gameRuntime struct {
 	interactionDefinitionMu sync.RWMutex
 	interactionDefinitions  map[string]interactionstore.Definition
 	questFlagGraphs         []contentbundle.QuestFlagGraph
+	weightedDropMu          sync.RWMutex
+	weightedDropEntries     map[string][]contentbundle.DropTableEntry
 	questStateMu            sync.Mutex
 	staticActorMu           sync.Mutex
 	spawnReturnMu           sync.Mutex
@@ -13912,12 +13914,14 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
+		r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 		r.pruneSpawnGroupReturnStepSchedules()
 		r.pruneSpawnGroupChaseStepSchedules()
 		r.pruneSpawnGroupHomewardStepSchedules()
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
+	previousWeightedDropEntries := r.weightedDropEntriesSnapshot()
 	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
 	previousSpawnChaseStepDueAt := r.spawnGroupChaseStepDueAtSnapshot()
 	previousSpawnHomewardStepDueAt := r.spawnGroupHomewardStepDueAtSnapshot()
@@ -13962,6 +13966,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr = errors.Join(rollbackErr, r.replaceCubeRecipes(cubestore.Snapshot{NPCs: previousBundle.CubeRecipes}))
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		r.replaceQuestFlagGraphs(previousBundle.QuestFlagGraphs)
+		r.replaceWeightedDropEntries(previousWeightedDropEntries)
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
@@ -13999,6 +14004,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
 	}
+	r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 	if !r.persistStaticActorSnapshot(r.StaticActors()) {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
@@ -14626,6 +14632,58 @@ func (r *gameRuntime) replaceQuestFlagGraphs(graphs []contentbundle.QuestFlagGra
 	r.interactionDefinitionMu.Unlock()
 }
 
+func (r *gameRuntime) weightedDropEntriesSnapshot() map[string][]contentbundle.DropTableEntry {
+	if r == nil {
+		return nil
+	}
+	r.weightedDropMu.RLock()
+	defer r.weightedDropMu.RUnlock()
+	return cloneWeightedDropEntries(r.weightedDropEntries)
+}
+
+func (r *gameRuntime) replaceWeightedDropEntries(entries map[string][]contentbundle.DropTableEntry) {
+	if r == nil {
+		return
+	}
+	r.weightedDropMu.Lock()
+	r.weightedDropEntries = cloneWeightedDropEntries(entries)
+	r.weightedDropMu.Unlock()
+}
+
+func cloneWeightedDropEntries(entries map[string][]contentbundle.DropTableEntry) map[string][]contentbundle.DropTableEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make(map[string][]contentbundle.DropTableEntry, len(entries))
+	for ref, tableEntries := range entries {
+		cloned[ref] = append([]contentbundle.DropTableEntry(nil), tableEntries...)
+	}
+	return cloned
+}
+
+func (r *gameRuntime) applyWeightedKillDrop(actor StaticActorSnapshot, reward worldruntime.StaticActorDeathReward) worldruntime.StaticActorDeathReward {
+	if r == nil || actor.SpawnGroupRef == "" {
+		return reward
+	}
+	r.weightedDropMu.RLock()
+	entries, ok := r.weightedDropEntries[actor.SpawnGroupRef]
+	cloned := append([]contentbundle.DropTableEntry(nil), entries...)
+	r.weightedDropMu.RUnlock()
+	if !ok || len(cloned) == 0 {
+		return reward
+	}
+	picked, ok := contentbundle.PickWeightedDropVnum(cloned, weightedKillDropSeed(actor))
+	if !ok {
+		return reward
+	}
+	reward.DropVnums = []uint32{picked}
+	return reward
+}
+
+func weightedKillDropSeed(actor StaticActorSnapshot) string {
+	return fmt.Sprintf("%s:%d:%d:%d:%d", actor.SpawnGroupRef, actor.MapIndex, actor.X, actor.Y, actor.EntityID)
+}
+
 func (r *gameRuntime) killQuestRequireGateSatisfied(characterName string, credit staticActorKillQuestCredit) (bool, error) {
 	if !credit.HasRequireGate() {
 		return true, nil
@@ -14680,7 +14738,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	resolution.Damage = attempt.Damage
 	if attempt.Died {
 		resolution.ClearActiveTarget = true
-		resolution.DeathReward = attempt.DeathReward
+		resolution.DeathReward = r.applyWeightedKillDrop(attempt.Actor, attempt.DeathReward)
 		resolution.Frames = [][]byte{
 			worldproto.EncodeDead(worldproto.DeadPacket{VID: activeTargetVID}),
 			combatproto.EncodeServerClearTarget(),

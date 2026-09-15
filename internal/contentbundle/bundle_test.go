@@ -4630,6 +4630,21 @@ func TestCanonicalizeRejectsMalformedDropTableDefinitions(t *testing.T) {
 		{name: "gold overflow", dropTable: DropTable{Ref: "loot.qa_reward", RewardGold: uint64(^uint32(0)>>1) + 1}},
 		{name: "malformed ref", dropTable: DropTable{Ref: "loot/qa_reward", DropVnums: []uint32{27001}}},
 		{name: "padded ref", dropTable: DropTable{Ref: " loot.qa_reward ", DropVnums: []uint32{27001}}},
+		{name: "single weighted entry", dropTable: DropTable{Ref: "loot.qa_reward", Entries: []DropTableEntry{{ItemVnum: 27001, Weight: 1}}}},
+		{name: "zero weighted entry weight", dropTable: DropTable{Ref: "loot.qa_reward", Entries: []DropTableEntry{{ItemVnum: 27001, Weight: 1}, {ItemVnum: 27002, Weight: 0}}}},
+		{name: "zero weighted entry vnum", dropTable: DropTable{Ref: "loot.qa_reward", Entries: []DropTableEntry{{ItemVnum: 0, Weight: 1}, {ItemVnum: 27002, Weight: 1}}}},
+		{name: "duplicate weighted entry vnum", dropTable: DropTable{Ref: "loot.qa_reward", Entries: []DropTableEntry{{ItemVnum: 27001, Weight: 1}, {ItemVnum: 27001, Weight: 2}}}},
+		{name: "too many weighted entries", dropTable: DropTable{Ref: "loot.qa_reward", Entries: []DropTableEntry{
+			{ItemVnum: 27001, Weight: 1},
+			{ItemVnum: 27002, Weight: 1},
+			{ItemVnum: 27003, Weight: 1},
+			{ItemVnum: 27004, Weight: 1},
+			{ItemVnum: 27005, Weight: 1},
+			{ItemVnum: 27006, Weight: 1},
+			{ItemVnum: 27007, Weight: 1},
+			{ItemVnum: 27008, Weight: 1},
+			{ItemVnum: 27009, Weight: 1},
+		}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -4691,6 +4706,19 @@ func TestCanonicalizeDropTableAuthoringExampleExpandsToCanonicalRewardDescriptor
 	}}
 	if !reflect.DeepEqual(canonical.SpawnGroups, want) {
 		t.Fatalf("unexpected canonical drop-table authoring spawn groups:\n got: %#v\nwant: %#v", canonical.SpawnGroups, want)
+	}
+	overlay := WeightedDropEntriesBySpawnGroupRef(bundle)
+	wantEntries := []DropTableEntry{{ItemVnum: 27001, Weight: 1}, {ItemVnum: 27002, Weight: 3}}
+	if !reflect.DeepEqual(overlay["practice.qa_reward_table_mob"], wantEntries) {
+		t.Fatalf("expected authored weighted overlay for practice.qa_reward_table_mob, got %#v", overlay)
+	}
+	first, ok := PickWeightedDropVnum(wantEntries, "practice.qa_reward_table_mob:1:469850:964200:7")
+	if !ok || (first != 27001 && first != 27002) {
+		t.Fatalf("expected deterministic weighted pick from authored entries, got vnum=%d ok=%v", first, ok)
+	}
+	second, ok := PickWeightedDropVnum(wantEntries, "practice.qa_reward_table_mob:1:469850:964200:7")
+	if !ok || second != first {
+		t.Fatalf("expected the same kill seed to repeat the same weighted pick, got first=%d second=%d ok=%v", first, second, ok)
 	}
 }
 

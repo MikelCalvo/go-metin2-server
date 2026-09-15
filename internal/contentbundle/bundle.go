@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"reflect"
 	"sort"
@@ -20,6 +21,7 @@ import (
 )
 
 const maxRegenSpawnCount = 8
+const maxWeightedDropTableEntries = 8
 
 var ErrInvalidBundle = errors.New("invalid content bundle")
 
@@ -80,19 +82,25 @@ type RegenSpawn struct {
 	RequireQuestFrom   uint32   `json:"require_quest_from,omitempty"`
 }
 
+type DropTableEntry struct {
+	ItemVnum uint32 `json:"item_vnum"`
+	Weight   uint32 `json:"weight"`
+}
+
 type DropTable struct {
-	Ref              string   `json:"ref"`
-	RewardExperience uint64   `json:"reward_experience,omitempty"`
-	RewardGold       uint64   `json:"reward_gold,omitempty"`
-	DropVnums        []uint32 `json:"drop_vnums,omitempty"`
-	RewardQuestRef   string   `json:"reward_quest_ref,omitempty"`
-	RewardQuestFlag  string   `json:"reward_quest_flag,omitempty"`
-	RewardQuestFrom  uint32   `json:"reward_quest_from,omitempty"`
-	RewardQuestTo    uint32   `json:"reward_quest_to,omitempty"`
-	RewardQuestText  string   `json:"reward_quest_text,omitempty"`
-	RequireQuestRef  string   `json:"require_quest_ref,omitempty"`
-	RequireQuestFlag string   `json:"require_quest_flag,omitempty"`
-	RequireQuestFrom uint32   `json:"require_quest_from,omitempty"`
+	Ref              string           `json:"ref"`
+	RewardExperience uint64           `json:"reward_experience,omitempty"`
+	RewardGold       uint64           `json:"reward_gold,omitempty"`
+	DropVnums        []uint32         `json:"drop_vnums,omitempty"`
+	Entries          []DropTableEntry `json:"entries,omitempty"`
+	RewardQuestRef   string           `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag  string           `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom  uint32           `json:"reward_quest_from,omitempty"`
+	RewardQuestTo    uint32           `json:"reward_quest_to,omitempty"`
+	RewardQuestText  string           `json:"reward_quest_text,omitempty"`
+	RequireQuestRef  string           `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag string           `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom uint32           `json:"require_quest_from,omitempty"`
 }
 
 type QuestFlagGraphStep struct {
@@ -1100,6 +1108,54 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		return Bundle{}, err
 	}
 	return normalized, nil
+}
+
+func WeightedDropEntriesBySpawnGroupRef(bundle Bundle) map[string][]DropTableEntry {
+	regenSpawnGroups, ok := spawnGroupsFromRegenSpawns(bundle.RegenSpawns)
+	if !ok {
+		return nil
+	}
+	authoredSpawnGroups := append(cloneSpawnGroups(bundle.SpawnGroups), regenSpawnGroups...)
+	tablesByRef := dropTableMapByRef(normalizeDropTables(bundle.DropTables))
+	if len(tablesByRef) == 0 {
+		return nil
+	}
+	overlay := make(map[string][]DropTableEntry)
+	for _, spawnGroup := range authoredSpawnGroups {
+		table, ok := tablesByRef[strings.TrimSpace(spawnGroup.RewardDropTableRef)]
+		if !ok || !dropTableHasWeightedEntries(table) {
+			continue
+		}
+		overlay[spawnGroup.Ref] = cloneDropTableEntries(table.Entries)
+	}
+	if len(overlay) == 0 {
+		return nil
+	}
+	return overlay
+}
+
+func PickWeightedDropVnum(entries []DropTableEntry, seed string) (uint32, bool) {
+	if !validDropTableEntries(entries, nil) {
+		return 0, false
+	}
+	var total uint64
+	for _, entry := range entries {
+		total += uint64(entry.Weight)
+	}
+	if total == 0 {
+		return 0, false
+	}
+	digest := fnv.New64a()
+	_, _ = digest.Write([]byte(strings.TrimSpace(seed)))
+	slot := digest.Sum64() % total
+	var cumulative uint64
+	for _, entry := range entries {
+		cumulative += uint64(entry.Weight)
+		if slot < cumulative {
+			return entry.ItemVnum, true
+		}
+	}
+	return entries[len(entries)-1].ItemVnum, true
 }
 
 func BuildImportPreview(current Bundle, candidate Bundle) (ImportPreview, error) {
@@ -4997,11 +5053,17 @@ func normalizeDropTables(dropTables []DropTable) []DropTable {
 	}
 	normalized := make([]DropTable, len(dropTables))
 	for i, table := range dropTables {
+		entries := cloneDropTableEntries(table.Entries)
+		dropVnums := cloneUint32s(table.DropVnums)
+		if len(entries) > 0 {
+			dropVnums = unionDropVnums(table.DropVnums, entries)
+		}
 		normalized[i] = DropTable{
 			Ref:              table.Ref,
 			RewardExperience: table.RewardExperience,
 			RewardGold:       table.RewardGold,
-			DropVnums:        cloneUint32s(table.DropVnums),
+			DropVnums:        dropVnums,
+			Entries:          entries,
 			RewardQuestRef:   strings.TrimSpace(table.RewardQuestRef),
 			RewardQuestFlag:  strings.TrimSpace(table.RewardQuestFlag),
 			RewardQuestFrom:  table.RewardQuestFrom,
@@ -5024,6 +5086,9 @@ func validDropTables(dropTables []DropTable) bool {
 		if !worldruntime.ValidStaticActorSpawnGroupRef(table.Ref) || strings.TrimSpace(table.Ref) == "" {
 			return false
 		}
+		if !validDropTableEntries(table.Entries, nil) {
+			return false
+		}
 		reward := worldruntime.StaticActorDeathReward{Experience: table.RewardExperience, Gold: table.RewardGold, DropVnums: table.DropVnums}
 		if !worldruntime.ValidStaticActorDeathReward(reward) {
 			return false
@@ -5033,8 +5098,9 @@ func validDropTables(dropTables []DropTable) bool {
 		}
 		// Match spawn-group kill-quest ownership: empty combat rewards are allowed
 		// when the table carries a complete kill-quest credit descriptor. Completely
-		// empty tables (no combat channels and no kill-quest credit) stay rejected.
-		if reward.Empty() && !hasDropTableKillQuestCredit(table) {
+		// empty tables (no combat channels, no weighted entries, and no kill-quest
+		// credit) stay rejected.
+		if reward.Empty() && !hasDropTableKillQuestCredit(table) && !dropTableHasWeightedEntries(table) {
 			return false
 		}
 		if _, ok := seen[table.Ref]; ok {
@@ -5043,6 +5109,74 @@ func validDropTables(dropTables []DropTable) bool {
 		seen[table.Ref] = struct{}{}
 	}
 	return true
+}
+
+func dropTableHasWeightedEntries(table DropTable) bool {
+	return len(table.Entries) > 0
+}
+
+func validDropTableEntries(entries []DropTableEntry, itemTemplatesByVnum map[uint32]itemcatalog.Template) bool {
+	if len(entries) == 0 {
+		return true
+	}
+	if len(entries) < 2 || len(entries) > maxWeightedDropTableEntries {
+		return false
+	}
+	seen := make(map[uint32]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.ItemVnum == 0 || entry.Weight == 0 {
+			return false
+		}
+		if _, ok := seen[entry.ItemVnum]; ok {
+			return false
+		}
+		seen[entry.ItemVnum] = struct{}{}
+		if itemTemplatesByVnum != nil {
+			if _, ok := itemTemplatesByVnum[entry.ItemVnum]; !ok {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func cloneDropTableEntries(entries []DropTableEntry) []DropTableEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	cloned := make([]DropTableEntry, len(entries))
+	copy(cloned, entries)
+	return cloned
+}
+
+func unionDropVnums(dropVnums []uint32, entries []DropTableEntry) []uint32 {
+	combined := cloneUint32s(dropVnums)
+	seen := make(map[uint32]struct{}, len(combined)+len(entries))
+	for _, vnum := range combined {
+		seen[vnum] = struct{}{}
+	}
+	extra := make([]uint32, 0, len(entries))
+	for _, entry := range entries {
+		if entry.ItemVnum == 0 {
+			continue
+		}
+		if _, ok := seen[entry.ItemVnum]; ok {
+			continue
+		}
+		seen[entry.ItemVnum] = struct{}{}
+		extra = append(extra, entry.ItemVnum)
+	}
+	if len(extra) == 0 {
+		if len(combined) == 0 {
+			return nil
+		}
+		return combined
+	}
+	combined = append(combined, extra...)
+	sort.Slice(combined, func(i int, j int) bool {
+		return combined[i] < combined[j]
+	})
+	return combined
 }
 
 func hasDropTableKillQuestCredit(table DropTable) bool {
