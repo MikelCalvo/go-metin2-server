@@ -11155,6 +11155,14 @@ func TestNewGameSessionFactoryProjectsPeerEquipmentAppearanceDuringBootstrap(t *
 	if peerUpdate.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
 		t.Fatalf("unexpected projected peer update parts: %+v", peerUpdate.Parts)
 	}
+
+	addBuilder := ticketCharacterAddPacketWithTemplates(peerOne, nil)
+	if addBuilder.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001} {
+		t.Fatalf("unexpected projected CHARACTER_ADD builder parts: %+v", addBuilder.Parts)
+	}
+	if got, want := len(worldproto.EncodeCharacterAdd(addBuilder)), 38; got != want {
+		t.Fatalf("expected frozen CHARACTER_ADD frame length %d, got %d", want, got)
+	}
 }
 
 func TestGameRuntimeEquipProjectsTemplateAppearanceVnumWithoutMutatingItemIdentity(t *testing.T) {
@@ -11420,6 +11428,145 @@ func TestGameRuntimeEquipQueuesPeerAppearanceUpdateForVisibleWatcher(t *testing.
 	}
 	if update.VID != owner.VID || update.Parts != [worldproto.CharacterEquipmentPartCount]uint16{11500, 0, 0, 201} {
 		t.Fatalf("unexpected queued peer equip update: %+v", update)
+	}
+
+	closeSessionFlow(t, flowWatcher)
+	closeSessionFlow(t, flowOwner)
+}
+
+func TestTicketCharacterAddPacketProjectsEquippedBodyWeaponHeadHair(t *testing.T) {
+	character := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	character.Equipment = []inventory.ItemInstance{
+		{ID: 81, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		{ID: 82, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 83, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+		{ID: 84, Vnum: 45001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHair},
+	}
+	templates := map[uint32]itemcatalog.Template{
+		11200: {Vnum: 11200, Name: "Visible Practice Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String(), AppearanceVnum: 321},
+	}
+
+	packet := ticketCharacterAddPacketWithTemplates(character, templates)
+	wantParts := [worldproto.CharacterEquipmentPartCount]uint16{11500, 321, 50053, 45001}
+	if packet.Parts != wantParts {
+		t.Fatalf("unexpected CHARACTER_ADD builder parts: %+v want %+v", packet.Parts, wantParts)
+	}
+	decoded, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, worldproto.EncodeCharacterAdd(packet)))
+	if err != nil {
+		t.Fatalf("decode projected CHARACTER_ADD: %v", err)
+	}
+	if decoded.VID != character.VID || decoded.X != character.X || decoded.Y != character.Y {
+		t.Fatalf("unexpected decoded CHARACTER_ADD identity: %+v", decoded)
+	}
+	if decoded.Parts != [worldproto.CharacterEquipmentPartCount]uint16{} {
+		t.Fatalf("expected frozen CHARACTER_ADD wire to omit parts, got %+v", decoded.Parts)
+	}
+}
+
+func TestSharedWorldRegistryVisibilityTransitionInsertsProjectedCharacterAdd(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	watcherPending := newPendingServerFrames()
+	ownerPending := newPendingServerFrames()
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.MapIndex = 42
+	if watcherID, _ := registry.Join(watcher, watcherPending, nil); watcherID == 0 {
+		t.Fatal("expected watcher join to return a live shared-world entity ID")
+	}
+	ownerID, _ := registry.Join(owner, ownerPending, nil)
+	if ownerID == 0 {
+		t.Fatal("expected owner join to return a live shared-world entity ID")
+	}
+	_ = watcherPending.flush()
+	_ = ownerPending.flush()
+
+	current := owner
+	current.MapIndex = bootstrapMapIndex
+	current.Equipment = []inventory.ItemInstance{
+		{ID: 81, Vnum: 11500, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotBody},
+		{ID: 82, Vnum: 11200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 83, Vnum: 50053, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+		{ID: 84, Vnum: 45001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotHair},
+	}
+	stablePeerFrames := projectedAppearanceStablePeerFrames(current, inventory.EquipmentSlotBody, nil)
+	registry.UpdateCharacterWithVisibilityTransition(ownerID, owner, current, stablePeerFrames)
+
+	peerFrames := watcherPending.flush()
+	if len(peerFrames) != 3 {
+		t.Fatalf("expected 3 membership-change insert frames, got %d", len(peerFrames))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, peerFrames[0]))
+	if err != nil {
+		t.Fatalf("decode membership-change CHARACTER_ADD: %v", err)
+	}
+	if peerAdd.VID != owner.VID || peerAdd.X != current.X || peerAdd.Y != current.Y {
+		t.Fatalf("unexpected membership-change CHARACTER_ADD: %+v", peerAdd)
+	}
+	wantParts := [worldproto.CharacterEquipmentPartCount]uint16{11500, 11200, 50053, 45001}
+	if ticketCharacterAddPacketWithTemplates(current, nil).Parts != wantParts {
+		t.Fatalf("expected membership-change CHARACTER_ADD builder parts %+v, got %+v", wantParts, ticketCharacterAddPacketWithTemplates(current, nil).Parts)
+	}
+	peerInfo, err := worldproto.DecodeCharacterAdditionalInfo(decodeSingleFrame(t, peerFrames[1]))
+	if err != nil {
+		t.Fatalf("decode membership-change CHAR_ADDITIONAL_INFO: %v", err)
+	}
+	if peerInfo.VID != owner.VID || peerInfo.Parts != wantParts {
+		t.Fatalf("unexpected membership-change CHAR_ADDITIONAL_INFO: %+v", peerInfo)
+	}
+	peerUpdate, err := worldproto.DecodeCharacterUpdate(decodeSingleFrame(t, peerFrames[2]))
+	if err != nil {
+		t.Fatalf("decode membership-change CHARACTER_UPDATE: %v", err)
+	}
+	if peerUpdate.VID != owner.VID || peerUpdate.Parts != wantParts {
+		t.Fatalf("unexpected membership-change CHARACTER_UPDATE: %+v", peerUpdate)
+	}
+}
+
+func TestGameRuntimeEquipDoesNotInsertCharacterAddForOutOfScopePeer(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	watcher := peerVisibilityCharacter("Watcher", 0x01030100, 0x02040100, 1000, 2000, 0, 100, 200)
+	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Inventory = []inventory.ItemInstance{{ID: 1001, Vnum: 11500, Count: 1, Slot: 8}}
+	issuePeerTicket(t, store, "watcher", 0x10101010, watcher)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, owner)
+	for _, account := range []accountstore.Account{
+		{Login: "watcher", Empire: watcher.Empire, Characters: []loginticket.Character{watcher}},
+		{Login: "peer-one", Empire: owner.Empire, Characters: []loginticket.Character{owner}},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("save preloaded account %q: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	factory := runtime.SessionFactory()
+
+	flowWatcher, watcherEnter := enterGameWithLoginTicket(t, factory, "watcher", 0x10101010)
+	if len(watcherEnter) != 5 {
+		t.Fatalf("expected 5 bootstrap frames for out-of-scope watcher, got %d", len(watcherEnter))
+	}
+	flowOwner, ownerEnter := enterGameWithLoginTicket(t, factory, "peer-one", 0x11111111)
+	if len(ownerEnter) != 6 {
+		t.Fatalf("expected 6 bootstrap frames for owner on a separate map with one carried item, got %d", len(ownerEnter))
+	}
+	if queued := flushServerFrames(t, flowWatcher); len(queued) != 0 {
+		t.Fatalf("expected no queued peer-entry frames across maps, got %d", len(queued))
+	}
+
+	equipOut, err := flowOwner.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/equip_item 8 body"})))
+	if err != nil {
+		t.Fatalf("unexpected out-of-scope equip error: %v", err)
+	}
+	if len(equipOut) != 3 {
+		t.Fatalf("expected 3 self equip frames on a separate map, got %d", len(equipOut))
+	}
+	if peerFrames := flushServerFrames(t, flowWatcher); len(peerFrames) != 0 {
+		t.Fatalf("expected no CHARACTER_ADD insert for an out-of-scope peer during equip, got %d", len(peerFrames))
 	}
 
 	closeSessionFlow(t, flowWatcher)

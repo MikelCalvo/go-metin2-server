@@ -5439,14 +5439,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return nil, false
 			}
 			stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
-			frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+			frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 			if !ok {
 				return nil, false
 			}
 			frames = prependExchangeCloseFrame(frames)
-			if ownsLiveSharedWorldSession() {
-				sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
-			}
 			return frames, true
 		}
 		commitSelectedRuntimeOnlyMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
@@ -6685,14 +6682,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						frames = prependExchangeCloseFrame(frames)
-						if ownsLiveSharedWorldSession() {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
-						}
 						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
 
@@ -6746,14 +6740,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ChatResult{Accepted: true, Frames: frames}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ChatResult{Accepted: false}
 						}
 						frames = prependExchangeCloseFrame(frames)
-						if ownsLiveSharedWorldSession() {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
-						}
 						return gameflow.ChatResult{Accepted: true, Frames: frames}
 					}
 
@@ -8200,14 +8191,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						frames = prependExchangeCloseFrame(frames)
-						if ownsLiveSharedWorldSession() {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
-						}
 						return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 					}
 					if inventory.SlotIndex(packet.Source.Cell) >= inventory.CarriedInventorySlotCount {
@@ -8276,14 +8264,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							frames = append(frames, quickslotFrames...)
 						}
 						stablePeerFrames := projectedAppearanceStablePeerFrames(selectedPlayer.LiveCharacter(), equippedItem.EquipSlot, runtime.itemTemplates)
-						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+						frames, ok = commitSelectedPointBearingItemMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
 						if !ok {
 							return gameflow.ItemMoveResult{Accepted: false}
 						}
 						frames = prependExchangeCloseFrame(frames)
-						if ownsLiveSharedWorldSession() {
-							sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selectedPlayer.LiveCharacter(), stablePeerFrames)
-						}
 						return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 					}
 					if packet.Destination.WindowType != itemproto.WindowInventory || inventory.SlotIndex(packet.Destination.Cell) >= inventory.CarriedInventorySlotCount {
@@ -11084,6 +11069,10 @@ func ticketPlayerPointsPacket(character loginticket.Character) worldproto.Player
 }
 
 func ticketCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {
+	return ticketCharacterAddPacketWithTemplates(character, nil)
+}
+
+func ticketCharacterAddPacketWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterAddPacket {
 	return worldproto.CharacterAddPacket{
 		VID:         character.VID,
 		Angle:       90.5,
@@ -11096,6 +11085,7 @@ func ticketCharacterAddPacket(character loginticket.Character) worldproto.Charac
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+		Parts:       ticketCharacterAppearanceParts(character, templates),
 	}
 }
 

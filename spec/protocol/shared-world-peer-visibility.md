@@ -7,6 +7,7 @@ The goal of this slice is narrow:
 - let already-connected peers receive the newcomer as a queued server-initiated burst
 - let already-connected peers receive `CHARACTER_DEL` when that peer disconnects
 - let already-visible stable peers later receive the first queued `CHARACTER_UPDATE` appearance refresh when a visible player equips or unequips a supported item
+- let one live visibility-membership change during those same `/equip_item` / `/unequip_item` mutations insert the peer with the ordinary `CHARACTER_ADD` burst whose builder carries the same projected `body` / `weapon` / `head` / `hair` parts
 - let the first radius-AOI move-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
 - let the first transfer-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
 - let the first reconnect-driven peer-entry burst also reuse that latest projected appearance when visibility is rebuilt after the mutation already happened
@@ -38,11 +39,12 @@ The current bootstrap runtime behavior is:
 5. if player A and player B share the same bootstrap `MapIndex`, player A receives the same three peer-visibility frames for player B via the queued server-frame runtime hook
 6. when player B disconnects, player A receives `CHARACTER_DEL` carrying player B's `vid` only if they shared the same bootstrap `MapIndex`
 7. if player A and player B remain mutually visible on the same bootstrap visibility scope and player B successfully equips or unequips a supported `body`, `weapon`, or `head` item, player A receives one queued `CHARACTER_UPDATE` carrying player B's refreshed projected parts
-8. if player C later enters that same bootstrap visibility scope after player B already performed that supported equip/unequip mutation, player C receives the normal peer-visibility burst for player B with the same refreshed projected parts in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
-9. if the runtime is configured with radius AOI and player C later crosses into player B's visible range through the owned move-driven visibility rebuild after that supported equip/unequip mutation, player C receives the same normal peer-entry burst for player B with those refreshed projected parts
-10. if player B later becomes newly visible to player C through the owned transfer-driven visibility rebuild after that supported equip/unequip mutation, player C receives that same normal peer-entry burst for player B with those refreshed projected parts
-11. if player B later disconnects and reconnects after that supported equip/unequip mutation while player A remains online and mutually visible, player A receives the normal reconnect peer-entry burst for player B with those same refreshed projected parts
-12. if player B already has a duplicate-live retry session waiting in `LOADING`, later mutates supported equipment on the live owner, then closes that live owner and retries `ENTERGAME` on the waiting session, player A receives the normal retry peer-entry burst for player B with those same refreshed projected parts
+8. if that same supported equip/unequip mutation also changes visibility membership, each newly visible peer receives the ordinary insert burst (`CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, `CHARACTER_UPDATE`) whose `CHARACTER_ADD` builder carries those same refreshed projected parts, while already-visible stable peers still receive only the queued `CHARACTER_UPDATE`
+9. if player C later enters that same bootstrap visibility scope after player B already performed that supported equip/unequip mutation, player C receives the normal peer-visibility burst for player B with the same refreshed projected parts in `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+10. if the runtime is configured with radius AOI and player C later crosses into player B's visible range through the owned move-driven visibility rebuild after that supported equip/unequip mutation, player C receives the same normal peer-entry burst for player B with those refreshed projected parts
+11. if player B later becomes newly visible to player C through the owned transfer-driven visibility rebuild after that supported equip/unequip mutation, player C receives that same normal peer-entry burst for player B with those refreshed projected parts
+12. if player B later disconnects and reconnects after that supported equip/unequip mutation while player A remains online and mutually visible, player A receives the normal reconnect peer-entry burst for player B with those same refreshed projected parts
+13. if player B already has a duplicate-live retry session waiting in `LOADING`, later mutates supported equipment on the live owner, then closes that live owner and retries `ENTERGAME` on the waiting session, player A receives the normal retry peer-entry burst for player B with those same refreshed projected parts
 
 ## `CHARACTER_DEL`
 
@@ -69,8 +71,9 @@ This slice freezes:
 - queued peer enter notifications for already-connected sessions on the same bootstrap `MapIndex`
 - queued peer remove notifications on disconnect within the same bootstrap `MapIndex`
 - reuse of the existing `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` payloads for visible peers
-- reuse of the same bootstrap equipment-appearance projection for peer `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` parts
+- reuse of the same bootstrap equipment-appearance projection for peer `CHARACTER_ADD` builders, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE` parts
 - the first queued peer-visible `CHARACTER_UPDATE` refresh after a successful supported equip/unequip mutation while visibility remains stable
+- one live visibility-membership change during those same mutations, which inserts the peer with the ordinary `CHARACTER_ADD` burst whose builder carries the same projected parts
 - late-join peer-visibility bursts that reuse the same refreshed projected appearance after that supported mutation already happened
 - radius-AOI move-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
 - transfer-driven peer-entry bursts that reuse that same refreshed projected appearance after the supported mutation already happened
