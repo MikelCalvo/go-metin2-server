@@ -36,7 +36,7 @@ This contract currently applies only to:
 - one immediate attack-intent request against that already selected target
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
 - one decode-and-fail-closed skill-intent guard so client `USE_SKILL` traffic cannot fall through as an unknown combat header
-- one decode-and-fail-closed projectile targeting guard so client `FLY_TARGETING` / `ADD_FLY_TARGETING` traffic cannot fall through as unknown combat headers
+- one projectile-targeting ingress so client `FLY_TARGETING` can emit the first self-only `CREATE_FLY` companion against the currently selected visible combat target while `ADD_FLY_TARGETING` and unsupported `FLY_TARGETING` still fail closed instead of falling through as unknown combat headers
 - one decode-owned `ON_CLICK` ingress that fail-closes unsupported click targets while also owning guest private-shop browse open against an already-open peer MYSHOP
 - one narrow character-position ingress seam so client `CHARACTER_POSITION(position=0|3|4)` traffic can drive the first self/peer stance presentation while unsupported/battle-position bytes still fail closed instead of falling through as unknown target/UI headers
 - one read-only runtime snapshot of the session's current selected combat target for local/debug surfaces
@@ -128,8 +128,17 @@ and:
 - payload length: `12`
 - payload: `uint32 target_vid` + `int32 x` + `int32 y` (little-endian)
 
-The current bootstrap runtime owns these packets only as safe ingress guards, not as accepted projectile or skill gameplay.
-The `GAME` dispatcher decodes both fixed-width packets and can route them through narrow handler seams, but the shipped minimal runtime leaves them unsupported and fail-closed:
+The current bootstrap runtime owns `ADD_FLY_TARGETING` only as a safe ingress guard. The `GAME` dispatcher also routes `FLY_TARGETING` through a narrow handler seam that now owns one presentation-only success path: when the request `target_vid` matches the session's currently selected visible combat target, the owner socket receives one self-only `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`. That companion:
+
+- does not mutate selected-target HP
+- does not rewrite the selected target
+- does not change normal-attack cadence
+- does not create or reset immediate or delayed retaliation
+- does not queue peer frames
+- does not mutate points, inventory, or account persistence
+
+Unsupported `FLY_TARGETING` without that selected-target policy, plus every `ADD_FLY_TARGETING` request, still fail closed:
+
 - no target HP mutation
 - no selected-target rewrite
 - no normal-attack cadence change
@@ -138,7 +147,7 @@ The `GAME` dispatcher decodes both fixed-width packets and can route them throug
 - no queued peer frame
 - no point, inventory, or account-persistence side effect
 
-This preserves the known wire layout for skill/bow target-position traffic without pretending that server-created fly effects, projectile hit resolution, multi-target skills, or ranged combat are already owned.
+This preserves the known wire layout for skill/bow target-position traffic without pretending that projectile hit resolution, multi-target skills, ranged `SHOOT` combat, or skill resource/cooldown formulas are already owned. The first `CREATE_FLY` companion is documented in `combat-fly-effect-bootstrap.md`.
 
 ## First owned on-click ingress
 
@@ -464,7 +473,7 @@ This slice does **not** yet freeze:
 - broader player-death / respawn semantics or broader non-combat gameplay gating for zero-HP owners after that floor is reached beyond the self-only `GC DEAD(owner_vid)` signal frozen in `player-death-bootstrap.md`
 - player-vs-player attack semantics
 - skills, buffs, debuffs, or status effects beyond the first self-only sitting standalone dummy-hit `STUN` presentation frozen in `player-stun-bootstrap.md`
-- projectile targeting or server fly-effect gameplay beyond the current decode-and-fail-closed client `FLY_TARGETING` / `ADD_FLY_TARGETING` guards and the codec-only server `FLY_TARGETING` / `ADD_FLY_TARGETING` / `CREATE_FLY` packet shapes frozen in `combat-fly-effect-bootstrap.md`
+- projectile targeting or server fly-effect gameplay beyond the first self-only selected-target `FLY_TARGETING` → `CREATE_FLY(type=0)` presentation and the still fail-closed `ADD_FLY_TARGETING` / `SHOOT` guards frozen in `combat-fly-effect-bootstrap.md`
 - broader reward systems beyond the narrow non-player death descriptor seam
 - corpse gameplay, aggro movement, or independent mob AI
 
@@ -502,7 +511,7 @@ After this document lands, the repository should be able to say:
 - same-target normal `ATTACK` attempts denied inside that `250ms` cadence window stay fully silent: they do not refresh target HP, do not append immediate retaliation, and do not create or reset delayed retaliation work
 - client `USE_SKILL(0x0402)` is now codec- and dispatch-owned as an unsupported skill-combat guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
 - client `SHOOT(0x0403)` is now codec- and dispatch-owned as an unsupported ranged-shot guard; the minimal runtime decodes it in `GAME` but returns no frames and leaves selected-target HP/cadence/peer queues unchanged
-- client `FLY_TARGETING(0x0404)` and `ADD_FLY_TARGETING(0x0405)` are now codec- and dispatch-owned as unsupported projectile-targeting guards; the minimal runtime decodes them in `GAME` but returns no frames and leaves selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence unchanged
+- client `FLY_TARGETING(0x0404)` is now codec- and dispatch-owned as a narrow selected-target projectile presentation: when the request `target_vid` matches the currently selected visible combat target, the owner receives one self-only `GC CREATE_FLY(type=0, start_vid=owner_vid, end_vid=target_vid)` while selected-target HP, normal-attack cadence, retaliation timers, peer queues, points, inventory, and account persistence stay unchanged; unsupported `FLY_TARGETING` without that policy and every `ADD_FLY_TARGETING(0x0405)` still decode and fail closed with no frames
 - client `ON_CLICK(0x0A02)` is now codec- and dispatch-owned as guest private-shop browse open against an already-open peer MYSHOP (one guest-only `GC::SHOP START`, busy-shell rejects reuse exchange merchant/safebox/refine busy info-chat strings, guest own open MYSHOP / unknown targets stay silent no-frame) while leaving selected-target HP, normal-attack cadence, peer queues, points, inventory, and account persistence unchanged; NPC/quest click gameplay beyond that browse seam stays unsupported
 - client `CHARACTER_POSITION(0x0A60)` is now codec- and dispatch-owned as a narrow stance-presentation ingress: while the selected owner is live and above the bootstrap zero-HP floor, `position=0` and `position=4` return `GC CHARACTER_POSITION(selected_vid, position)` to the selected socket and currently visible live peers while leaving selected-target HP, normal-attack cadence, retaliation timers, points, inventory, and account persistence unchanged; after retaliation has driven that owner to the current zero-HP floor, later stance requests fail closed before self/peer position presentation, and unsupported bytes, including the current battle-position byte, still fail closed with no frames or side effects
 - an accepted non-lethal standalone dummy hit while that owner already holds the owned ground-sit presentation now also queues one self-only `GC STUN(target_vid)` after the ordinary `TARGET` + `DAMAGE_INFO` burst; standing hits, spawn-backed hits, killing hits, cadence-denied repeats, sit/stand itself, death, respawn, restart, skill, and PvP still do not emit `STUN`

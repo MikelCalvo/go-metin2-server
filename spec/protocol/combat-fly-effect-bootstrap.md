@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` without yet adding runtime projectile or skill gameplay.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING` against the currently selected visible combat target.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -9,7 +9,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns only three fixed server-to-client packet codecs and the current non-emission rule.
+This slice owns three fixed server-to-client packet codecs plus the first `FLY_TARGETING` emission rule.
 
 The packets are:
 
@@ -27,6 +27,8 @@ Payload layout:
 3. `int32 x` (little-endian)
 4. `int32 y` (little-endian)
 
+The shipped runtime still does not emit this server packet. Accepted client `FLY_TARGETING` uses `CREATE_FLY` as the first projectile presentation, not a server `FLY_TARGETING` echo.
+
 ### `ADD_FLY_TARGETING`
 
 - direction: server -> client
@@ -41,6 +43,8 @@ Payload layout matches `FLY_TARGETING`:
 3. `int32 x` (little-endian)
 4. `int32 y` (little-endian)
 
+Client `ADD_FLY_TARGETING` and this server packet stay decode-and-fail-closed / codec-only. Multi-target and chained projectile presentation remain later policy.
+
 ### `CREATE_FLY`
 
 - direction: server -> client
@@ -54,39 +58,71 @@ Payload layout:
 2. `uint32 start_vid` (little-endian)
 3. `uint32 end_vid` (little-endian)
 
+This first GREEN always uses `type = 0` as the bootstrap projectile presentation. Richer visual type meanings stay deferred. `start_vid` is the selected owner's visible VID; `end_vid` is the currently selected combat target VID.
+
 ## Clean-room evidence summary
 
 Client-source inspection of the TMP4-compatible client shows separate game-phase receive handlers for server-originated fly effects:
 - `FLY_TARGETING` and `ADD_FLY_TARGETING` both identify a shooter, an optional target, and fallback world coordinates.
 - `CREATE_FLY` identifies a fly/effect type plus start and end actor VIDs.
 
-The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as safe ingress guards in the current bootstrap runtime. This note freezes the matching server presentation packet shapes only; it does not make the runtime emit them.
+The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as `GAME` ingress. This note keeps `ADD_FLY_TARGETING` and `SHOOT` fail-closed and reuses the already-owned `CREATE_FLY` codec on one existing seam: an accepted client `FLY_TARGETING` whose `target_vid` matches the session's currently selected visible combat target.
+
+It does not invent skill resource or cooldown tables, projectile travel duration, hit-timing formulas, a type catalog beyond bootstrap `type = 0`, or a second damage path.
+
+## Current runtime rule
+
+The shipped runtime now emits `CREATE_FLY` only on this accepted `FLY_TARGETING` seam:
+
+- the session is already in `GAME` with a live selected character above the bootstrap `0`-HP floor
+- that character currently holds a selected combat target accepted through the existing `TARGET` path
+- the request is client `FLY_TARGETING(0x0404)` whose `target_vid` matches that selected target exactly and is still a currently visible in-range combat target
+- the request coordinates are ignored in this first GREEN; `CREATE_FLY` names actor VIDs only
+
+On that accepted request the owner socket receives exactly one self-only:
+
+1. `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`
+
+Visible peers receive no fly-effect fanout in this first GREEN. The companion is presentation only, not a second combat simulation:
+
+- it does not mutate selected-target HP
+- it does not rewrite the selected target
+- it does not change normal-attack cadence, retaliation, death, respawn, restart, inventory, points, or persistence
+- it does not emit server `FLY_TARGETING`, `ADD_FLY_TARGETING`, `SHOOT` gameplay, skill, knockdown, or PvP/duel packets
+
+Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. Client `ADD_FLY_TARGETING`, `SHOOT`, `USE_SKILL`, and ordinary `ATTACK` still do not emit `CREATE_FLY`.
 
 ## Relationship to current combat slices
 
 Current accepted normal attacks still use the already-owned combat presentation surfaces:
 - non-lethal hits use `TARGET(target_vid, hp_percent)` plus `DAMAGE_INFO` according to `combat-damage-info-bootstrap.md`,
 - killing hits use `DEAD(vid)` plus `TARGET(0, 0)` before any owned reward feedback,
-- content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence.
+- content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
+- sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-The Go runtime does not currently emit `FLY_TARGETING`, `ADD_FLY_TARGETING`, or `CREATE_FLY` from `ATTACK`, `SHOOT`, `USE_SKILL`, or any mob-retaliation path. Any later accepted projectile, bow, or skill slice must add its own transcript-level tests before these codecs become runtime-visible behavior.
+This first GREEN only adds the selected-target `FLY_TARGETING` → self-only `CREATE_FLY` presentation companion. Later ranged `SHOOT`, skill, hit-timing, or peer-fanout slices must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
 This slice does not freeze:
 - accepted ranged `SHOOT` gameplay,
-- accepted skill combat,
+- accepted skill combat, resource costs, or cooldowns,
 - projectile hit timing or travel duration,
-- visual effect type meanings,
-- multi-target or chained projectile behavior,
-- peer fanout policy for projectile effects,
+- visual effect type meanings beyond bootstrap `CREATE_FLY` `type = 0`,
+- multi-target or chained projectile behavior, including client/server `ADD_FLY_TARGETING`,
+- peer fanout of fly effects,
 - killing-hit fly effects,
+- server `FLY_TARGETING` / `ADD_FLY_TARGETING` runtime emission,
 - any replacement for `DAMAGE_INFO`, `TARGET`, or `DEAD` as the current combat result surfaces.
 
 ## Success definition
 
 After this slice:
-- `FLY_TARGETING`, `ADD_FLY_TARGETING`, and `CREATE_FLY` are listed in the packet matrix as documented server combat/fly-effect packet shapes,
+- `FLY_TARGETING`, `ADD_FLY_TARGETING`, and `CREATE_FLY` remain listed in the packet matrix as documented server combat/fly-effect packet shapes,
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- later ranged/projectile/skill slices can start from tested packet shapes instead of re-discovering them while preserving the current no-runtime-emission rule.
+- an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one self-only `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`,
+- that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence,
+- visible peers receive no fly-effect frame,
+- unsupported `FLY_TARGETING` without the new policy, `ADD_FLY_TARGETING`, `SHOOT`, `USE_SKILL`, and ordinary `ATTACK` stay fail-closed for fly emission,
+- later ranged/projectile/skill slices can start from this tested packet shape and this first `FLY_TARGETING` emission rule instead of re-discovering them.

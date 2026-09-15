@@ -93,6 +93,7 @@ func (r *gameRuntime) effectiveSpawnGroupMaxStep(entityID uint64) int32 {
 const bootstrapCharacterPositionGeneral uint8 = 0
 const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
+const bootstrapCreateFlyType uint8 = 0
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
@@ -9319,6 +9320,40 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						activeGuestMyShopHostVID = packet.VID
 					}
 					return gameflow.OnClickResult{Accepted: true, Frames: frames}
+				},
+				HandleFlyTargeting: func(packet combatproto.ClientFlyTargetingPacket) gameflow.FlyTargetingResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					selected := selectedPlayer.LiveCharacter()
+					if selected.ID == 0 || selected.VID == 0 {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					if packet.TargetVID == 0 || packet.TargetVID != activeCombatTargetVID {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
+					if !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID != packet.TargetVID {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					if resolution.SnapshotVersion != activeCombatTargetSnapshotVersion {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					return gameflow.FlyTargetingResult{
+						Accepted: true,
+						Frames: [][]byte{combatproto.EncodeServerCreateFly(combatproto.ServerCreateFlyPacket{
+							Type:     bootstrapCreateFlyType,
+							StartVID: selected.VID,
+							EndVID:   packet.TargetVID,
+						})},
+					}
 				},
 				HandleTarget: func(packet combatproto.ClientTargetPacket) gameflow.TargetResult {
 					stateMu.Lock()
