@@ -8,13 +8,17 @@ import (
 	"runtime"
 	"sort"
 	"testing"
+	"time"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
@@ -311,5 +315,176 @@ func TestGameRuntimeImportsNpcServiceExample(t *testing.T) {
 	flag, ok, err := runtime.QuestStateFlag("QuestHero", "quest:first_steps", "step")
 	if err != nil || !ok || flag.Value != 1 {
 		t.Fatalf("expected seeded QuestHero quest:first_steps.step=1 after NPC service import, got ok=%v flag=%+v err=%v", ok, flag, err)
+	}
+}
+
+func authoredTwoStepQuestFlagGraphBundle() contentbundle.Bundle {
+	return contentbundle.Bundle{
+		StaticActors: []contentbundle.StaticActor{
+			{Name: "QuestGuide", MapIndex: bootstrapMapIndex, X: 1200, Y: 2200, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps"},
+			{Name: "QuestBranch", MapIndex: bootstrapMapIndex, X: 1250, Y: 2200, RaceNum: 20302, InteractionKind: interactionstore.KindQuestFlag, InteractionRef: "quest:first_steps_branch"},
+		},
+		InteractionDefinitions: []interactionstore.Definition{
+			{
+				Kind:      interactionstore.KindQuestFlag,
+				Ref:       "quest:first_steps",
+				Text:      "Quest updated: first_steps.met_guide = 1.",
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "met_guide",
+				QuestTo:   1,
+			},
+			{
+				Kind:      interactionstore.KindQuestFlag,
+				Ref:       "quest:first_steps_branch",
+				Text:      "Quest updated: first_steps.accepted_path = 1.",
+				QuestRef:  "quest:first_steps",
+				QuestFlag: "accepted_path",
+				QuestTo:   1,
+			},
+		},
+		QuestFlagGraphs: []contentbundle.QuestFlagGraph{{
+			Ref: "quest:first_steps_graph",
+			Steps: []contentbundle.QuestFlagGraphStep{
+				{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps"},
+				{Kind: interactionstore.KindQuestFlag, Ref: "quest:first_steps_branch"},
+			},
+		}},
+	}
+}
+
+func TestGameRuntimeImportsTwoStepQuestFlagGraphAndExtraGatesLaterWriter(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	hero := peerVisibilityCharacter("QuestHero", 0x01030170, 0x02040170, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "quest-graph", 0x70707070, hero)
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "quest-graph", Empire: hero.Empire, Characters: []loginticket.Character{hero}}); err != nil {
+		t.Fatalf("seed two-step quest-flag graph account: %v", err)
+	}
+
+	sameFlagGraph := authoredTwoStepQuestFlagGraphBundle()
+	sameFlagGraph.InteractionDefinitions[1].QuestFlag = "met_guide"
+	if _, err := contentbundle.Canonicalize(sameFlagGraph); err != contentbundle.ErrInvalidBundle {
+		t.Fatalf("expected same-flag quest_flag_graphs overlay to fail closed, got %v", err)
+	}
+	oneStepGraph := authoredTwoStepQuestFlagGraphBundle()
+	oneStepGraph.QuestFlagGraphs[0].Steps = oneStepGraph.QuestFlagGraphs[0].Steps[:1]
+	if _, err := contentbundle.Canonicalize(oneStepGraph); err != contentbundle.ErrInvalidBundle {
+		t.Fatalf("expected one-step quest_flag_graphs overlay to fail closed, got %v", err)
+	}
+
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
+		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
+		ticketStore,
+		accounts,
+		staticstore.NewMemoryStore(),
+		interactionstore.NewMemoryStore(),
+		itemcatalog.NewMemoryStore(),
+		queststate.NewMemoryStore(),
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("new two-step quest-flag graph runtime: %v", err)
+	}
+	currentTime := time.Unix(1_700_002_000, 0)
+	runtime.now = func() time.Time { return currentTime }
+
+	imported, err := runtime.ImportContentBundle(authoredTwoStepQuestFlagGraphBundle())
+	if err != nil {
+		t.Fatalf("import two-step quest-flag graph bundle: %v", err)
+	}
+	if len(imported.QuestFlagGraphs) != 1 || imported.QuestFlagGraphs[0].Ref != "quest:first_steps_graph" || len(imported.QuestFlagGraphs[0].Steps) != 2 {
+		t.Fatalf("expected imported two-step quest_flag_graphs overlay, got %#v", imported.QuestFlagGraphs)
+	}
+	exported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export two-step quest-flag graph bundle: %v", err)
+	}
+	if !reflect.DeepEqual(exported.QuestFlagGraphs, imported.QuestFlagGraphs) {
+		t.Fatalf("expected export to keep the authored quest_flag_graphs overlay:\\n got: %#v\\nwant: %#v", exported.QuestFlagGraphs, imported.QuestFlagGraphs)
+	}
+
+	var guideVID, branchVID uint32
+	for _, actor := range runtime.StaticActors() {
+		switch actor.Name {
+		case "QuestGuide":
+			guideVID = uint32(actor.EntityID)
+		case "QuestBranch":
+			branchVID = uint32(actor.EntityID)
+		}
+	}
+	if guideVID == 0 || branchVID == 0 {
+		t.Fatalf("expected guide and branch quest_flag actors after graph import, got %+v", runtime.StaticActors())
+	}
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "quest-graph", 0x70707070)
+	defer closeSessionFlow(t, flow)
+
+	mismatchOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: branchVID})))
+	if err != nil {
+		t.Fatalf("unexpected extra-gated branch interaction error: %v", err)
+	}
+	if len(mismatchOut) != 1 {
+		t.Fatalf("expected 1 self-only extra-gated branch mismatch frame, got %d", len(mismatchOut))
+	}
+	mismatchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, mismatchOut[0]))
+	if err != nil || mismatchChat.Message != "Quest requirements are not met." {
+		t.Fatalf("unexpected extra-gated branch mismatch chat: %+v err=%v", mismatchChat, err)
+	}
+	loaded, err := runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after extra-gated branch mismatch: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, queststate.Snapshot{Flags: []queststate.Flag{}}) {
+		t.Fatalf("expected no quest-state mutation before the first graph writer, got %#v", loaded)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	guideOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: guideVID})))
+	if err != nil {
+		t.Fatalf("unexpected QuestGuide graph writer error: %v", err)
+	}
+	if len(guideOut) != 1 {
+		t.Fatalf("expected 1 self-only QuestGuide graph writer frame, got %d", len(guideOut))
+	}
+	guideChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, guideOut[0]))
+	if err != nil || guideChat.Message != "Quest updated: first_steps.met_guide = 1." {
+		t.Fatalf("unexpected QuestGuide graph writer chat: %+v err=%v", guideChat, err)
+	}
+	loaded, err = runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after QuestGuide graph writer: %v", err)
+	}
+	wantAfterGuide := queststate.Snapshot{Flags: []queststate.Flag{{
+		Character: hero.Name,
+		QuestRef:  "quest:first_steps",
+		Name:      "met_guide",
+		Value:     1,
+	}}}
+	if !reflect.DeepEqual(loaded, wantAfterGuide) {
+		t.Fatalf("unexpected quest-state after QuestGuide graph writer:\\n got: %#v\\nwant: %#v", loaded, wantAfterGuide)
+	}
+
+	currentTime = currentTime.Add(staticActorInteractionCooldown)
+	branchOut, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: branchVID})))
+	if err != nil {
+		t.Fatalf("unexpected unlocked branch graph writer error: %v", err)
+	}
+	if len(branchOut) != 1 {
+		t.Fatalf("expected 1 self-only unlocked branch graph writer frame, got %d", len(branchOut))
+	}
+	branchChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, branchOut[0]))
+	if err != nil || branchChat.Message != "Quest updated: first_steps.accepted_path = 1." {
+		t.Fatalf("unexpected unlocked branch graph writer chat: %+v err=%v", branchChat, err)
+	}
+	loaded, err = runtime.questStateStore.Load()
+	if err != nil {
+		t.Fatalf("load quest-state after unlocked branch graph writer: %v", err)
+	}
+	wantAfterBranch := queststate.Snapshot{Flags: []queststate.Flag{
+		{Character: hero.Name, QuestRef: "quest:first_steps", Name: "accepted_path", Value: 1},
+		{Character: hero.Name, QuestRef: "quest:first_steps", Name: "met_guide", Value: 1},
+	}}
+	if !reflect.DeepEqual(loaded, wantAfterBranch) {
+		t.Fatalf("unexpected quest-state after unlocked branch graph writer:\\n got: %#v\\nwant: %#v", loaded, wantAfterBranch)
 	}
 }

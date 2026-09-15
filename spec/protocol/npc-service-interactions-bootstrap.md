@@ -44,12 +44,12 @@ The current repository already owns enough runtime to support a narrow but real 
 
 At the same time, several larger systems are still intentionally missing:
 - richer merchant-window acknowledgement choreography
-- branching quest scripts, rewards, and client quest UI
+- branching quest scripts, rewards, and client quest UI beyond the owned `quest_flag` CAS and two-step `quest_flag_graphs` extra-gate overlay documented in `quest-state-bootstrap.md`
 - broader client-owned dialog-window or option-selection contracts beyond the current merchant window family
 
-The first standalone quest-state primitive, loopback transition harness, and a narrow static-actor `quest_flag` trigger are now documented in `quest-state-bootstrap.md`. They are deliberately separate from this service-style NPC execution path: `warp`, `shop_preview`, `open_safebox`, and `open_cube` continue to focus on one-request service outcomes rather than branching quest/dialog state.
+The first standalone quest-state primitive, loopback transition harness, and a narrow static-actor `quest_flag` trigger are now documented in `quest-state-bootstrap.md`, including the owned two-step `quest_flag_graphs` extra-gate overlay. They are deliberately separate from this service-style NPC execution path: `warp`, `shop_preview`, `open_safebox`, and `open_cube` continue to focus on one-request service outcomes rather than branching quest/dialog state.
 
-Because of those constraints, the next honest NPC gameplay vertical here remains **service-style interaction**, not branching dialogs, quest trees, or broader merchant/dialog semantics first.
+Because of those constraints, the next honest NPC gameplay vertical here remains **service-style interaction**, not branching dialogs, quest-script trees, or broader merchant/dialog semantics first.
 
 ## First owned service-style families
 
@@ -249,7 +249,7 @@ That order kept the first real NPC gameplay payoff small and honest before merch
 This stage still does **not** freeze:
 - client dialog-window packets outside the currently owned merchant window family
 - branching NPC dialogs or option trees
-- quest acceptance, progression, rewards, or script execution
+- quest acceptance, progression, rewards, or script execution beyond the owned `quest_flag` CAS and two-step `quest_flag_graphs` extra-gate overlay
 - sell-back or richer merchant stock/update semantics
 - combat, buffs, healing, aggro, or AI behavior
 - persistent NPC conversation state

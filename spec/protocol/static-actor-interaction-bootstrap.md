@@ -95,7 +95,7 @@ The currently implemented bootstrap interaction families remain conservative:
 - the actor must not be in the runtime-owned dead interval; dead interactable actors remain visible/introspectable but resolve `INTERACT` as the fail-closed `target_dead` path until respawn
 - the runtime resolves `interaction_kind` + `interaction_ref`
 - `info` and `talk` remain self-facing chat-backed responses
-- `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags, including authored clear transitions with `quest_to = 0`, returns one self-facing info-chat acknowledgement when the transition applies, and now returns a deterministic self-facing requirement-mismatch info chat when the persisted current value does not match the authored `quest_from` value
+- `quest_flag` runs one compare-and-set transition against the selected character's persisted quest-state flags, including authored clear transitions with `quest_to = 0`, returns one self-facing info-chat acknowledgement when the transition applies, and now returns a deterministic self-facing requirement-mismatch info chat when the persisted current value does not match the authored `quest_from` value. An authored content-bundle `quest_flag_graphs` overlay may extra-gate a later `quest_flag` writer on the previous writer's `quest_to` and reuse that same mismatch chat without a second CAS primitive or client quest UI
 - `warp` reuses the existing self-session transfer / rebootstrap path instead of inventing a separate dialog or warp packet family
 - `shop_preview` reuses the structured merchant catalog plus the current bootstrap merchant window open / buy / close contract instead of inventing a second merchant-definition seam
 - `open_safebox` reuses the current bootstrap safebox password-challenge / open presentation contract instead of inventing a second warehouse packet family
@@ -126,7 +126,7 @@ This slice does not yet freeze:
 - click packet handling
 - NPC dialog trees
 - sell-back, stock depletion, or richer merchant-window choreography beyond the current bootstrap open / buy / close seam
-- quest mission UI, branching quest scripts, rewards, or multi-step dialog runtime
+- quest mission UI, branching quest scripts, rewards, or multi-step dialog runtime beyond the owned `quest_flag` CAS and two-step `quest_flag_graphs` extra-gate overlay
 - actor targeting/combat semantics
 - animation/emote/state-machine behavior
 - persistent merchant stock state

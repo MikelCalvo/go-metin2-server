@@ -595,6 +595,7 @@ type gameRuntime struct {
 	liveCharactersByName    map[string]liveCharacterRegistration
 	interactionDefinitionMu sync.RWMutex
 	interactionDefinitions  map[string]interactionstore.Definition
+	questFlagGraphs         []contentbundle.QuestFlagGraph
 	questStateMu            sync.Mutex
 	staticActorMu           sync.Mutex
 	spawnReturnMu           sync.Mutex
@@ -13640,6 +13641,7 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 		return contentbundle.Bundle{}, err
 	}
 	bundle.QuestState = questState.Flags
+	bundle.QuestFlagGraphs = r.questFlagGraphsSnapshot()
 	return contentbundle.Canonicalize(bundle)
 }
 
@@ -13734,6 +13736,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackProfiles()
 		return contentbundle.Bundle{}, err
 	}
+	r.replaceQuestFlagGraphs(normalized.QuestFlagGraphs)
 	if r.sharedWorld != nil {
 		r.sharedWorld.suppressStaticActorFanout = true
 	}
@@ -13752,6 +13755,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr := r.replaceItemTemplates(itemcatalog.Snapshot{Templates: previousBundle.ItemTemplates})
 		rollbackErr = errors.Join(rollbackErr, r.replaceCubeRecipes(cubestore.Snapshot{NPCs: previousBundle.CubeRecipes}))
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
+		r.replaceQuestFlagGraphs(previousBundle.QuestFlagGraphs)
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
@@ -14229,6 +14233,15 @@ func (r *gameRuntime) resolveStaticActorInteraction(subjectID uint64, targetVID 
 			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
 			return resolution
 		}
+		if ok, err := r.questFlagGraphRequireGateSatisfied(characterName, definition); err != nil {
+			resolution.Failure = staticActorInteractionFailureUnsupportedKind
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		} else if !ok {
+			resolution.Failure = staticActorInteractionFailureQuestCurrentValueMismatch
+			resolution.Delivery = staticActorInteractionFailureDelivery(resolution.Failure)
+			return resolution
+		}
 		resolution.Accepted = true
 		delivery := chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: definition.Text}
 		resolution.Delivery = &delivery
@@ -14341,6 +14354,70 @@ func (r *gameRuntime) serviceQuestGateSatisfied(characterName string, definition
 		current = flag.Value
 	}
 	return current == definition.QuestFrom, nil
+}
+
+func (r *gameRuntime) questFlagGraphRequireGateSatisfied(characterName string, definition InteractionDefinition) (bool, error) {
+	questRef, questFlag, questFrom, gated := r.questFlagGraphRequireGate(definition.Kind, definition.Ref)
+	if !gated {
+		return true, nil
+	}
+	characterName = strings.TrimSpace(characterName)
+	if characterName == "" || questRef == "" || questFlag == "" {
+		return false, nil
+	}
+	flag, ok, err := r.QuestStateFlag(characterName, questRef, questFlag)
+	if err != nil {
+		return false, err
+	}
+	current := uint32(0)
+	if ok {
+		current = flag.Value
+	}
+	return current == questFrom, nil
+}
+
+func (r *gameRuntime) questFlagGraphRequireGate(kind string, ref string) (string, string, uint32, bool) {
+	if r == nil {
+		return "", "", 0, false
+	}
+	r.interactionDefinitionMu.RLock()
+	defer r.interactionDefinitionMu.RUnlock()
+	return contentbundle.QuestFlagGraphRequireGate(r.questFlagGraphs, sortedInteractionDefinitions(r.interactionDefinitions), kind, ref)
+}
+
+func (r *gameRuntime) questFlagGraphsSnapshot() []contentbundle.QuestFlagGraph {
+	if r == nil {
+		return nil
+	}
+	r.interactionDefinitionMu.RLock()
+	defer r.interactionDefinitionMu.RUnlock()
+	if len(r.questFlagGraphs) == 0 {
+		return nil
+	}
+	cloned := make([]contentbundle.QuestFlagGraph, len(r.questFlagGraphs))
+	copy(cloned, r.questFlagGraphs)
+	for i := range cloned {
+		cloned[i].Steps = append([]contentbundle.QuestFlagGraphStep(nil), r.questFlagGraphs[i].Steps...)
+	}
+	return cloned
+}
+
+func (r *gameRuntime) replaceQuestFlagGraphs(graphs []contentbundle.QuestFlagGraph) {
+	if r == nil {
+		return
+	}
+	cloned := make([]contentbundle.QuestFlagGraph, len(graphs))
+	copy(cloned, graphs)
+	for i := range cloned {
+		cloned[i].Steps = append([]contentbundle.QuestFlagGraphStep(nil), graphs[i].Steps...)
+	}
+	r.interactionDefinitionMu.Lock()
+	if len(cloned) == 0 {
+		r.questFlagGraphs = nil
+	} else {
+		r.questFlagGraphs = cloned
+	}
+	r.interactionDefinitionMu.Unlock()
 }
 
 func (r *gameRuntime) killQuestRequireGateSatisfied(characterName string, credit staticActorKillQuestCredit) (bool, error) {
@@ -14645,6 +14722,15 @@ func (r *gameRuntime) interactionDefinitionVisibilityPreview(characterName strin
 func (r *gameRuntime) previewQuestFlagInteraction(characterName string, definition InteractionDefinition) (string, error) {
 	if !interactionstore.ValidDefinition(definition) {
 		return "", fmt.Errorf("invalid quest flag interaction definition")
+	}
+	if ok, err := r.questFlagGraphRequireGateSatisfied(characterName, definition); err != nil {
+		return "", err
+	} else if !ok {
+		message, ok := staticActorInteractionFailureMessage(staticActorInteractionFailureQuestCurrentValueMismatch)
+		if !ok {
+			return "", fmt.Errorf("quest flag mismatch preview is unsupported")
+		}
+		return message, nil
 	}
 	result, err := r.PreviewQuestStateTransition(queststate.Transition{Character: characterName, QuestRef: definition.QuestRef, Flag: definition.QuestFlag, From: definition.QuestFrom, To: definition.QuestTo})
 	if err != nil {

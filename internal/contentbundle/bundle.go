@@ -95,6 +95,16 @@ type DropTable struct {
 	RequireQuestFrom uint32   `json:"require_quest_from,omitempty"`
 }
 
+type QuestFlagGraphStep struct {
+	Kind string `json:"kind"`
+	Ref  string `json:"ref"`
+}
+
+type QuestFlagGraph struct {
+	Ref   string               `json:"ref"`
+	Steps []QuestFlagGraphStep `json:"steps"`
+}
+
 type Bundle struct {
 	StaticActors           []StaticActor                                   `json:"static_actors"`
 	SpawnGroups            []SpawnGroup                                    `json:"spawn_groups,omitempty"`
@@ -104,6 +114,7 @@ type Bundle struct {
 	ItemTemplates          []itemcatalog.Template                          `json:"item_templates,omitempty"`
 	CubeRecipes            []cubestore.NPCRecipes                          `json:"cube_recipes,omitempty"`
 	QuestState             []queststate.Flag                               `json:"quest_state,omitempty"`
+	QuestFlagGraphs        []QuestFlagGraph                                `json:"quest_flag_graphs,omitempty"`
 	InteractionDefinitions []interactionstore.Definition                   `json:"interaction_definitions"`
 }
 
@@ -126,6 +137,7 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		ItemTemplates          json.RawMessage `json:"item_templates"`
 		CubeRecipes            json.RawMessage `json:"cube_recipes"`
 		QuestState             json.RawMessage `json:"quest_state"`
+		QuestFlagGraphs        json.RawMessage `json:"quest_flag_graphs"`
 		InteractionDefinitions json.RawMessage `json:"interaction_definitions"`
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -169,6 +181,9 @@ func (bundle *Bundle) UnmarshalJSON(raw []byte) error {
 		decoded.QuestState = queststate.NormalizeSnapshot(queststate.Snapshot{Flags: decoded.QuestState}).Flags
 	}
 	if err := decodeBundleCollection(jsonBundle.InteractionDefinitions, &decoded.InteractionDefinitions); err != nil {
+		return err
+	}
+	if err := decodeBundleCollection(jsonBundle.QuestFlagGraphs, &decoded.QuestFlagGraphs); err != nil {
 		return err
 	}
 	*bundle = decoded
@@ -215,6 +230,8 @@ type Summary struct {
 	QuestFlagTriggers                      []QuestFlagTriggerSummary                       `json:"quest_flag_triggers,omitempty"`
 	QuestFlagRouteCount                    int                                             `json:"quest_flag_route_count,omitempty"`
 	QuestFlagRoutes                        []QuestFlagRouteSummary                         `json:"quest_flag_routes,omitempty"`
+	QuestFlagGraphCount                    int                                             `json:"quest_flag_graph_count,omitempty"`
+	QuestFlagGraphs                        []QuestFlagGraph                                `json:"quest_flag_graphs,omitempty"`
 	ShopCatalogEntryCount                  int                                             `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogSummary                            `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         int                                             `json:"shop_route_count"`
@@ -300,6 +317,8 @@ type SummaryDeltas struct {
 	QuestFlagTriggers                      []QuestFlagTriggerDelta        `json:"quest_flag_triggers,omitempty"`
 	QuestFlagRouteCount                    SummaryCountDelta              `json:"quest_flag_route_count,omitempty"`
 	QuestFlagRoutes                        []QuestFlagRouteDelta          `json:"quest_flag_routes,omitempty"`
+	QuestFlagGraphCount                    SummaryCountDelta              `json:"quest_flag_graph_count,omitempty"`
+	QuestFlagGraphs                        []QuestFlagGraphDelta          `json:"quest_flag_graphs,omitempty"`
 	ShopCatalogEntryCount                  SummaryCountDelta              `json:"shop_catalog_entry_count"`
 	ShopCatalogs                           []ShopCatalogDelta             `json:"shop_catalogs,omitempty"`
 	ShopRouteCount                         SummaryCountDelta              `json:"shop_route_count"`
@@ -780,6 +799,13 @@ type ShopCatalogEntrySummary struct {
 	PickupRange          uint16                   `json:"pickup_range,omitempty"`
 }
 
+type QuestFlagGraphDelta struct {
+	Ref       string          `json:"ref"`
+	Change    string          `json:"change"`
+	Current   *QuestFlagGraph `json:"current,omitempty"`
+	Candidate *QuestFlagGraph `json:"candidate,omitempty"`
+}
+
 type QuestFlagRouteSummary struct {
 	ActorName         string                             `json:"actor_name"`
 	SourceMapIndex    uint32                             `json:"source_map_index"`
@@ -998,6 +1024,7 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		ItemTemplates:          normalizeItemTemplates(bundle.ItemTemplates),
 		CubeRecipes:            normalizeCubeRecipes(bundle.CubeRecipes),
 		QuestState:             normalizeQuestStateFlags(bundle.QuestState),
+		QuestFlagGraphs:        cloneQuestFlagGraphs(bundle.QuestFlagGraphs),
 		InteractionDefinitions: cloneDefinitions(bundle.InteractionDefinitions),
 	}
 	sort.Slice(normalized.StaticActors, func(i int, j int) bool {
@@ -1060,6 +1087,9 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		}
 		return normalized.InteractionDefinitions[i].Kind < normalized.InteractionDefinitions[j].Kind
 	})
+	sort.Slice(normalized.QuestFlagGraphs, func(i int, j int) bool {
+		return normalized.QuestFlagGraphs[i].Ref < normalized.QuestFlagGraphs[j].Ref
+	})
 	sort.Slice(normalized.ItemTemplates, func(i int, j int) bool {
 		return normalized.ItemTemplates[i].Vnum < normalized.ItemTemplates[j].Vnum
 	})
@@ -1112,6 +1142,8 @@ func buildSummaryDeltas(current Summary, candidate Summary, currentBundle Bundle
 		QuestFlagTriggers:                      buildQuestFlagTriggerDeltas(current.QuestFlagTriggers, candidate.QuestFlagTriggers),
 		QuestFlagRouteCount:                    summaryCountDelta(current.QuestFlagRouteCount, candidate.QuestFlagRouteCount),
 		QuestFlagRoutes:                        buildQuestFlagRouteDeltas(current.QuestFlagRoutes, candidate.QuestFlagRoutes),
+		QuestFlagGraphCount:                    summaryCountDelta(current.QuestFlagGraphCount, candidate.QuestFlagGraphCount),
+		QuestFlagGraphs:                        buildQuestFlagGraphDeltas(current.QuestFlagGraphs, candidate.QuestFlagGraphs),
 		ShopCatalogEntryCount:                  summaryCountDelta(current.ShopCatalogEntryCount, candidate.ShopCatalogEntryCount),
 		ShopCatalogs:                           buildShopCatalogDeltas(current.ShopCatalogs, candidate.ShopCatalogs),
 		ShopRouteCount:                         summaryCountDelta(current.ShopRouteCount, candidate.ShopRouteCount),
@@ -3117,6 +3149,8 @@ func Summarize(bundle Bundle) (Summary, error) {
 	}
 	summary.QuestFlagTriggerCount = len(summary.QuestFlagTriggers)
 	summary.QuestFlagRouteCount = len(summary.QuestFlagRoutes)
+	summary.QuestFlagGraphs = cloneQuestFlagGraphs(normalized.QuestFlagGraphs)
+	summary.QuestFlagGraphCount = len(summary.QuestFlagGraphs)
 	summary.ShopRouteCount = len(summary.ShopRoutes)
 	summary.WarpRouteCount = len(summary.WarpRoutes)
 	summary.OpenSafeboxRouteCount = len(summary.OpenSafeboxRoutes)
@@ -4271,6 +4305,9 @@ func validateBundle(bundle Bundle) error {
 	if !questGateWritersCoverRequiredGates(bundle) {
 		return ErrInvalidBundle
 	}
+	if !validQuestFlagGraphs(bundle) {
+		return ErrInvalidBundle
+	}
 	return nil
 }
 
@@ -4330,6 +4367,163 @@ func authoredQuestFlagWriters(bundle Bundle) map[string]bool {
 
 func questFlagWriterKey(questRef string, questFlag string) string {
 	return strings.TrimSpace(questRef) + "\x00" + strings.TrimSpace(questFlag)
+}
+
+func cloneQuestFlagGraphs(graphs []QuestFlagGraph) []QuestFlagGraph {
+	if len(graphs) == 0 {
+		return nil
+	}
+	cloned := make([]QuestFlagGraph, len(graphs))
+	for i, graph := range graphs {
+		cloned[i] = normalizeQuestFlagGraph(graph)
+	}
+	return cloned
+}
+
+func normalizeQuestFlagGraph(graph QuestFlagGraph) QuestFlagGraph {
+	graph.Ref = strings.TrimSpace(graph.Ref)
+	if len(graph.Steps) == 0 {
+		graph.Steps = nil
+		return graph
+	}
+	steps := make([]QuestFlagGraphStep, len(graph.Steps))
+	for i, step := range graph.Steps {
+		steps[i] = QuestFlagGraphStep{
+			Kind: strings.TrimSpace(step.Kind),
+			Ref:  strings.TrimSpace(step.Ref),
+		}
+	}
+	graph.Steps = steps
+	return graph
+}
+
+func validQuestFlagGraphs(bundle Bundle) bool {
+	if len(bundle.QuestFlagGraphs) == 0 {
+		return true
+	}
+	definitionsByKey := interactionDefinitionMapByKey(bundle.InteractionDefinitions)
+	seenRefs := make(map[string]struct{}, len(bundle.QuestFlagGraphs))
+	for _, graph := range bundle.QuestFlagGraphs {
+		graph = normalizeQuestFlagGraph(graph)
+		if !interactionstore.ValidRef(graph.Ref) {
+			return false
+		}
+		if _, ok := seenRefs[graph.Ref]; ok {
+			return false
+		}
+		seenRefs[graph.Ref] = struct{}{}
+		if len(graph.Steps) != 2 {
+			return false
+		}
+		seenSteps := make(map[string]struct{}, len(graph.Steps))
+		var writers []interactionstore.Definition
+		for _, step := range graph.Steps {
+			if step.Kind != interactionstore.KindQuestFlag || !interactionstore.ValidRef(step.Ref) {
+				return false
+			}
+			key := interactionDefinitionKey(step.Kind, step.Ref)
+			if _, ok := seenSteps[key]; ok {
+				return false
+			}
+			seenSteps[key] = struct{}{}
+			definition, ok := definitionsByKey[key]
+			if !ok || definition.Kind != interactionstore.KindQuestFlag {
+				return false
+			}
+			writers = append(writers, definition)
+		}
+		first := writers[0]
+		second := writers[1]
+		if first.QuestRef == "" || first.QuestFlag == "" || second.QuestRef == "" || second.QuestFlag == "" {
+			return false
+		}
+		if first.QuestRef == second.QuestRef && first.QuestFlag == second.QuestFlag {
+			return false
+		}
+	}
+	return true
+}
+
+func QuestFlagGraphRequireGate(graphs []QuestFlagGraph, definitions []interactionstore.Definition, kind string, ref string) (questRef string, questFlag string, questFrom uint32, ok bool) {
+	kind = strings.TrimSpace(kind)
+	ref = strings.TrimSpace(ref)
+	if kind != interactionstore.KindQuestFlag || !interactionstore.ValidRef(ref) {
+		return "", "", 0, false
+	}
+	definitionsByKey := interactionDefinitionMapByKey(definitions)
+	targetKey := interactionDefinitionKey(kind, ref)
+	for _, graph := range graphs {
+		graph = normalizeQuestFlagGraph(graph)
+		if len(graph.Steps) < 2 {
+			continue
+		}
+		for i := 1; i < len(graph.Steps); i++ {
+			step := graph.Steps[i]
+			if interactionDefinitionKey(step.Kind, step.Ref) != targetKey {
+				continue
+			}
+			previous := graph.Steps[i-1]
+			previousDefinition, found := definitionsByKey[interactionDefinitionKey(previous.Kind, previous.Ref)]
+			if !found || previousDefinition.Kind != interactionstore.KindQuestFlag {
+				return "", "", 0, false
+			}
+			return previousDefinition.QuestRef, previousDefinition.QuestFlag, previousDefinition.QuestTo, true
+		}
+	}
+	return "", "", 0, false
+}
+
+func buildQuestFlagGraphDeltas(currentGraphs []QuestFlagGraph, candidateGraphs []QuestFlagGraph) []QuestFlagGraphDelta {
+	if len(currentGraphs) == 0 && len(candidateGraphs) == 0 {
+		return nil
+	}
+	currentByRef := make(map[string]QuestFlagGraph, len(currentGraphs))
+	candidateByRef := make(map[string]QuestFlagGraph, len(candidateGraphs))
+	refsSeen := make(map[string]struct{}, len(currentGraphs)+len(candidateGraphs))
+	for _, graph := range currentGraphs {
+		graph = normalizeQuestFlagGraph(graph)
+		currentByRef[graph.Ref] = graph
+		refsSeen[graph.Ref] = struct{}{}
+	}
+	for _, graph := range candidateGraphs {
+		graph = normalizeQuestFlagGraph(graph)
+		candidateByRef[graph.Ref] = graph
+		refsSeen[graph.Ref] = struct{}{}
+	}
+	refs := make([]string, 0, len(refsSeen))
+	for ref := range refsSeen {
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	deltas := make([]QuestFlagGraphDelta, 0, len(refs))
+	for _, ref := range refs {
+		current, currentOK := currentByRef[ref]
+		candidate, candidateOK := candidateByRef[ref]
+		delta := QuestFlagGraphDelta{Ref: ref}
+		switch {
+		case !currentOK:
+			candidateCopy := candidate
+			delta.Change = "added"
+			delta.Candidate = &candidateCopy
+		case !candidateOK:
+			currentCopy := current
+			delta.Change = "removed"
+			delta.Current = &currentCopy
+		case !reflect.DeepEqual(current, candidate):
+			currentCopy := current
+			candidateCopy := candidate
+			delta.Change = "changed"
+			delta.Current = &currentCopy
+			delta.Candidate = &candidateCopy
+		default:
+			continue
+		}
+		deltas = append(deltas, delta)
+	}
+	if len(deltas) == 0 {
+		return nil
+	}
+	return deltas
 }
 
 func validInteractionDefinitionStrings(definition interactionstore.Definition) bool {

@@ -16,9 +16,10 @@ The current owned surface is limited to `internal/queststate`:
 - one read-only exact-character quest-state snapshot for local operator QA,
 - content-bundle import/export/summary inclusion for the same standalone quest-state snapshot,
 - the first static-actor `quest_flag` interaction kind that applies one authored compare-and-set transition for the selected character,
-- the first spawn-group kill-quest credit descriptor that applies one authored compare-and-set transition for the selected killer after an accepted non-player death edge, optionally gated by a selected-character quest-flag prerequisite.
+- the first spawn-group kill-quest credit descriptor that applies one authored compare-and-set transition for the selected killer after an accepted non-player death edge, optionally gated by a selected-character quest-flag prerequisite,
+- the first content-bundle `quest_flag_graphs` overlay that extra-gates a later `quest_flag` writer on the previous writer's authored `quest_to` without a second compare-and-set primitive, new opcode, Lua, GM hook, or persistence store.
 
-This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”, plus the first combat-adjacent content path of “kill an authored spawn-backed combatant and advance one selected-killer quest flag”. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, and an authored spawn group may also call the same primitive after the accepted killing hit when it carries kill-quest credit fields (including an optional require gate that keeps unmet prerequisites silent). No client quest packet, reward UI, branching dialog runtime, or quest script exists yet.
+This seam supports the first content/NPC path of “interact with an actor once and advance or clear a flag”, plus the first combat-adjacent content path of “kill an authored spawn-backed combatant and advance one selected-killer quest flag”, plus the first authored two-step `quest_flag` graph overlay that keeps a later writer illegal until the earlier writer has applied. The current local operator endpoints can validate, dry-run or mutate through one compare-and-set transition, read back one character's quest flags, and inspect/import/export quest-state rows through authored content bundles. A visible static actor can now call the same primitive through `INTERACT` when its authored definition uses `interaction_kind = "quest_flag"`, and an authored spawn group may also call the same primitive after the accepted killing hit when it carries kill-quest credit fields (including an optional require gate that keeps unmet prerequisites silent). An authored `quest_flag_graphs` row may extra-gate a later `quest_flag` INTERACT on that same mismatch chat without inventing a second CAS API. No client quest packet, reward UI, branching dialog runtime, or quest script exists yet.
 
 ## Snapshot shape
 
@@ -322,7 +323,39 @@ The overview reader is a no-argument focused projection for local QA when the fu
 
 The focused import-preview readers are no-mutation projections over the existing `POST /local/content-bundle/import-preview` result. They use the same candidate-bundle decoding, canonicalization, validation, and live-export comparison as the broad preview endpoint, but return either a compact quest-state preview object, a character-scoped list of `QuestStateDelta` rows, a quest-scoped list of `QuestStateDelta` rows, or one exact `QuestStateDelta` row instead of the full preview. The compact quest-state preview intentionally omits static actors, shops, rewards, items, and interaction-definition deltas, but keeps both current and candidate quest-state overviews so operators can audit the authored flag-state change without manual JSON filtering. These endpoints return `404` when the candidate import has no quest-state added/removed/changed flag deltas, or when the requested character, quest, or flag has no matching added/removed/changed delta; `400` for malformed path identities or candidate bundles; `403` for non-loopback callers; and `405` for wrong methods. This lets local QA inspect authored quest-state changes at the right granularity without manually filtering a full import-preview response.
 
-The content-bundle boundary is still authored-content plumbing only: it does not define quest objectives, transition triggers, NPC dialogs, rewards, or client quest packets.
+The content-bundle boundary is still authored-content plumbing: it does not define client quest objectives, NPC dialogs, rewards, or client quest packets. It does now own one optional `quest_flag_graphs` overlay that sequences already-authored `quest_flag` writers.
+
+## Authored two-step quest_flag graphs
+
+Content bundles may optionally carry `quest_flag_graphs` as a process-local overlay on already-owned `quest_flag` writers. This is not a second compare-and-set primitive, not a new GC/CG opcode, not Lua/GM, and not a new file-backed store. Two independent `quest_flag` CAS writers already exist; the graph is the extra sequence/require overlay that makes a later writer illegal until the earlier writer has applied.
+
+```json
+"quest_flag_graphs": [
+  {
+    "ref": "quest:first_steps_graph",
+    "steps": [
+      {"kind": "quest_flag", "ref": "quest:first_steps"},
+      {"kind": "quest_flag", "ref": "quest:first_steps_kill_turnin"}
+    ]
+  }
+]
+```
+
+Owned rules:
+
+- omitting `quest_flag_graphs` remains valid and leaves every `quest_flag` writer independent
+- each graph `ref` uses the same `<namespace>:<name>` identity rule as interaction refs
+- duplicate graph refs fail closed
+- this freeze owns exactly two steps; one-step, empty, or longer graphs fail closed
+- both steps must be distinct in-bundle `quest_flag` interaction identities (`kind` + `ref`); dangling or non-`quest_flag` steps fail closed
+- the two steps must write different `(quest_ref, quest_flag)` pairs; repeating the same flag is not a graph
+- the first step remains an ordinary `quest_flag` CAS
+- the second step keeps its own authored CAS, and the graph extra-gates INTERACT plus loopback interaction-visibility on the first step's authored `(quest_ref, quest_flag, quest_to)`
+- when that extra-gate mismatches, the client receives the already-owned self-only `Quest requirements are not met.` info chat, and the second writer's CAS / rewards / consumes do not apply
+- when the extra-gate matches, the second writer continues through the ordinary `quest_flag` CAS path
+- two graphs that share the same first writer and extra-gate different second writers are the owned branching form of this overlay; they still reuse one CAS primitive per writer
+- graphs travel with content-bundle import/export/summary (`quest_flag_graph_count`, `quest_flag_graphs`, plus import-preview `deltas.quest_flag_graph_count` / `deltas.quest_flag_graphs`) and are restored by bundle import, not by a new persistence file
+- no client quest UI packet, dialog window, or option tree is named by this freeze
 
 ## Spawn-group kill-quest credit
 
@@ -398,8 +431,8 @@ This seam does **not** yet freeze:
 - party/guild/account-wide quest state,
 - timers or daily reset policy,
 - script VM compatibility,
-- content-bundle quest definitions beyond portable flag rows,
-- static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically beyond the owned `quest_flag` interaction kind and spawn-group kill-quest credit seam.
+- content-bundle quest definitions beyond portable flag rows and the owned two-step `quest_flag_graphs` extra-gate overlay,
+- static-actor/NPC interaction hooks that call `/local/quest-state/transition` or the store transition primitive automatically beyond the owned `quest_flag` interaction kind, spawn-group kill-quest credit seam, and `quest_flag_graphs` extra-gate.
 
 ## Success definition
 
@@ -415,4 +448,5 @@ The current repository can now say:
 - bad identities, duplicate rows, malformed JSON, symlinked committed snapshots, symlinked crash-temp candidates, and mismatched current values fail closed,
 - the first owned combat-adjacent content trigger can apply that same primitive for the selected killer after an accepted spawn-backed death edge when the spawn group authors kill-quest credit fields,
 - the combined QA fixture can close that kill credit through an authored `quest_flag` turn-in NPC without inventing a second quest runtime,
+- an authored two-step `quest_flag_graphs` overlay can extra-gate a later `quest_flag` writer until the earlier writer has applied, without a second CAS primitive or client quest UI,
 - broader client-visible quest runtime remains future work.

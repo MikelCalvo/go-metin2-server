@@ -18,7 +18,7 @@ It does **not** yet claim:
 - public/admin-authenticated remote authoring
 - merge semantics across environments
 - partial import semantics
-- branching quest scripts, quest UI packets, or scripted mission graphs beyond the owned `quest_flag` compare-and-set turn-in payload
+- branching quest scripts, quest UI packets, or scripted mission graphs beyond the owned `quest_flag` compare-and-set turn-in payload and the owned two-step `quest_flag_graphs` extra-gate overlay
 - real merchant transactions beyond the currently owned bootstrap shop path, branching dialogs, or richer authored UI state
 
 ## Interaction-definition authoring
@@ -102,6 +102,7 @@ Current rules:
   - `cube_recipes` when the runtime has an authored cube-recipe snapshot whose `npc_vnum` matches an exported `open_cube` actor `race_num`
   - `interaction_definitions`
   - `quest_state` when portable server-side quest-state seed rows are present
+  - `quest_flag_graphs` when an authored two-step `quest_flag` extra-gate overlay is present
 - exported interaction definitions preserve the current per-kind payload fields, including the structured `shop_preview` `title + catalog[]` merchant contract frozen in `npc-shop-catalog-bootstrap.md` and the `quest_flag` transition fields frozen in `quest-state-bootstrap.md`
 - exported item templates preserve the owned item-template fields needed by merchant previews/buys, item bootstrap behavior, authored spawn rewards, and bundled combat-profile reward defaults, including `buy_reject_message`, `sell_reject_message`, and `pickup_range` when authored, sorted deterministically by `vnum`
 - when a bundle includes `item_templates`, every `shop_preview` catalog entry must reference one of those bundled templates; this keeps portable merchant bundles self-contained instead of relying on an implicit default item catalog
@@ -151,6 +152,7 @@ Current rules:
 After this slice, the repository should be able to say:
 - minimal `info`, `talk`, and `warp` definitions plus the structured `shop_preview` merchant catalog, warehouse `open_safebox`, and craftsman `open_cube` are authorable and exactly readable through loopback HTTP today
 - `quest_flag` definitions are also authorable through the same loopback HTTP surface, including the owned optional turn-in reward/consume payload, so operators are not forced through content-bundle import just to seed a kill -> pickup -> turn-in NPC
+- a two-step `quest_flag_graphs` overlay is authorable through content-bundle import so a later `quest_flag` writer can stay extra-gated on the earlier writer's `quest_to` without a second CAS primitive, client quest UI, or dialog window
 - visible interactables can still be inspected live with compact resolved previews for the currently previewable kinds and fail-closed markers otherwise
 - bootstrap static actors, item templates, and their interaction definitions can be exported/imported as one deterministic authored-content bundle, with the structured merchant export/import shape already wired through that bundle surface
 - local operators can inspect a compact deterministic content-bundle summary, including interaction-definition previews, exact warp destinations, exact shop/warp service routes, spawn-group identities, and item-template identities, for either the live exported bundle or a candidate bundle before deciding whether to fetch or import the full bundle payload
