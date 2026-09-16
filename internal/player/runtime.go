@@ -1284,7 +1284,18 @@ func (r *Runtime) EquipmentEligibilitySubject() equipment.Subject {
 	return equipment.Subject{Job: r.persisted.Job, RaceNum: r.persisted.RaceNum, Empire: r.persisted.Empire, Level: r.persisted.Level}
 }
 
+// Unique1ItemUseWearIndex is the first owned worn-cell ITEM_USE wear index
+// (`unique1`) in the legacy combined inventory/equipment namespace.
+const Unique1ItemUseWearIndex uint16 = 7
+
+// Unique1ItemUseWireCell is the first owned worn-cell ITEM_USE address:
+// window INVENTORY, cell = 90 + Unique1ItemUseWearIndex.
+const Unique1ItemUseWireCell inventory.SlotIndex = inventory.CarriedInventorySlotCount + inventory.SlotIndex(Unique1ItemUseWearIndex)
+
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
+	if slot == Unique1ItemUseWireCell {
+		return r.useUnique1Item(template)
+	}
 	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.QuestUse || template.QuestUseMultiple || template.Applicable || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return ItemUseResult{}, false
 	}
@@ -1348,7 +1359,75 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	return result, true
 }
 
+func (r *Runtime) useUnique1Item(template itemcatalog.Template) (ItemUseResult, bool) {
+	if r == nil || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.QuestUse || template.QuestUseMultiple || template.Applicable || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
+		return ItemUseResult{}, false
+	}
+	equipSlot := inventory.EquipmentSlotUnique1
+	if countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
+		return ItemUseResult{}, false
+	}
+	index := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if index < 0 {
+		return ItemUseResult{}, false
+	}
+	effect := *template.UseEffect
+	consumeCount := effect.ConsumeCount
+	if consumeCount == 0 {
+		consumeCount = 1
+	}
+	item := r.liveEquipment[index]
+	if !item.Equipped || item.EquipSlot != equipSlot || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount || consumeCount == 0 || consumeCount > item.Count {
+		return ItemUseResult{}, false
+	}
+	if err := item.Validate(); err != nil {
+		return ItemUseResult{}, false
+	}
+	currentPointValue := r.livePoints[effect.PointIndex]
+	nextPointValue := int64(currentPointValue) + int64(effect.PointDelta)
+	if nextPointValue < -1<<31 || nextPointValue > 1<<31-1 {
+		return ItemUseResult{}, false
+	}
+	updatedPointValue := int32(nextPointValue)
+	result := ItemUseResult{
+		Slot:              Unique1ItemUseWireCell,
+		Vnum:              item.Vnum,
+		PointType:         effect.PointType,
+		PointAmount:       effect.PointDelta,
+		PointValue:        updatedPointValue,
+		EffectMessage:     useEffectInfoMessage(&effect),
+		SpecialEffectType: effect.SpecialEffectType,
+	}
+	r.livePoints[effect.PointIndex] = updatedPointValue
+	if item.Count == consumeCount {
+		updatedEquipment := cloneItemInstances(r.liveEquipment)
+		updatedEquipment = removeInventoryIndex(updatedEquipment, index)
+		sortEquipmentItems(updatedEquipment)
+		r.liveEquipment = updatedEquipment
+		result.ItemRemoved = true
+		return result, true
+	}
+	// Remainder must keep an independent presence clone: updatedEquipment already
+	// cloned sockets/attributes, so mutate that cell rather than rewriting it
+	// with the pre-use live equipment pointer.
+	updatedEquipment := cloneItemInstances(r.liveEquipment)
+	item = updatedEquipment[index]
+	item.Count -= consumeCount
+	if err := item.Validate(); err != nil {
+		r.livePoints[effect.PointIndex] = currentPointValue
+		return ItemUseResult{}, false
+	}
+	updatedEquipment[index] = item
+	sortEquipmentItems(updatedEquipment)
+	r.liveEquipment = updatedEquipment
+	result.Item = item
+	return result, true
+}
+
 func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
+	if slot == Unique1ItemUseWireCell {
+		return r.unique1UseItemRejectText(template)
+	}
 	if r == nil || template.UseRejectText == "" || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil {
 		return "", false
 	}
@@ -1361,6 +1440,39 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 	}
 	item := r.liveInventory[index]
 	if item.Equipped || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
+		return "", false
+	}
+	if err := item.Validate(); err != nil {
+		return "", false
+	}
+	effect := *template.UseEffect
+	consumeCount := effect.ConsumeCount
+	if consumeCount == 0 {
+		consumeCount = 1
+	}
+	if consumeCount == 0 || consumeCount > item.Count {
+		return "", false
+	}
+	if r.CanUseTemplate(template) && !template.QuestUse && !template.QuestUseMultiple && !template.Applicable && !template.AntiStack && !template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell {
+		return "", false
+	}
+	return template.UseRejectText, true
+}
+
+func (r *Runtime) unique1UseItemRejectText(template itemcatalog.Template) (string, bool) {
+	if r == nil || template.UseRejectText == "" || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil {
+		return "", false
+	}
+	equipSlot := inventory.EquipmentSlotUnique1
+	if countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
+		return "", false
+	}
+	index := findEquipmentSlot(r.liveEquipment, equipSlot)
+	if index < 0 {
+		return "", false
+	}
+	item := r.liveEquipment[index]
+	if !item.Equipped || item.EquipSlot != equipSlot || item.Locked || item.Vnum != template.Vnum || item.Count == 0 || item.Count > template.MaxCount {
 		return "", false
 	}
 	if err := item.Validate(); err != nil {
