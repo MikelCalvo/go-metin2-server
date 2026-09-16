@@ -316,7 +316,7 @@ This remains the owned codec seam for private-shop open requests:
 
 - accepted host-only open presentation now lives beside this codec (see Owned accepted private-shop open presentation seam)
 - guest browse open/leave/buy are owned separately below; empty-sign close companion is owned separately below
-- partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
+- partner-side open player-shop exchange `START` / `ACCEPT` busy rejects are now owned beside merchant/safebox/refine (see Owned partner-side open player-shop exchange busy-window reject seam); keep partner-side open cube busy-window rejection text deferred until that presentation seam is quoted
 - template-authored `anti_myshop` now also fail-closes host-only open stock validation, in addition to projecting into `ITEM_SET.anti_flags`
 
 ### Owned `CG::MYSHOP` deny-no-response GAME dispatch seam
@@ -346,9 +346,20 @@ The codec is now also used by the first host-only accepted open presentation:
 
 - successful host-only open emits one live `GC::SHOP_SIGN` with host VID + non-empty sign
 - empty-sign clear/close companion emission is owned separately below; guest browse open/leave/buy are owned separately
-- partner-side open player-shop exchange busy rejects remain deferred until a later presentation seam
+- partner-side open player-shop exchange `START` / `ACCEPT` busy rejects are now owned beside merchant/safebox/refine (see Owned partner-side open player-shop exchange busy-window reject seam); keep partner-side open cube busy-window rejection text deferred until that presentation seam is quoted
 
 See `docs/plans/2026-08-23-shop-sign-codec-contract-freeze.md`.
+
+### Owned partner-side open player-shop exchange busy-window reject seam
+
+Open private shop now participates in the exchange busy-window gate with the same self-only info-chat already owned by merchant / safebox / refine (`docs/plans/2026-08-24-exchange-myshop-busy-window-reject-chat.md`):
+
+- requester-side open private shop (`hasActiveMyShopOpen`) rejects `EXCHANGE START` with one self-only `CHAT_TYPE_INFO` `You cannot trade while another trade window is open.`, creates no pairing, and leaves the shop open
+- partner-side open private shop rejects `EXCHANGE START` with one self-only `CHAT_TYPE_INFO` `That player cannot trade right now.`, queues no peer frames, creates no pairing, and leaves the partner shop open
+- `EXCHANGE ACCEPT` (first or second) and commit-time busy drift reuse those same requester/partner strings, then self/peer `GC::EXCHANGE END` (shell cleared), with no inventory/gold mutation; the private shop stays open
+- when both sides are busy, requester busy text wins (local-first), matching merchant/safebox/refine ordering
+- shared-world publishes a peer-visible open-private-shop busy bit so partner START/ACCEPT/commit can observe it
+- keep partner-side open cube busy-window rejection text deferred until that presentation seam is quoted
 
 ### Owned accepted private-shop open presentation seam
 
