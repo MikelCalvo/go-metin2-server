@@ -61,7 +61,7 @@ ownership notices deferred.
      keep/downgrade) — source cell is removed
    - `keep_on_fail` — source cell is unchanged in place (already preserves by
      non-mutation of the source item)
-   - scroll / hyuniron / musin / black-dragon catalyst consumption
+   - scroll / hyuniron / musin / black-dragon catalyst consumption beyond the first owned `type = 1` scroll consume (`vnum = 39001`) on the already-owned confirm seam
    - inventing socket/attribute gameplay formulas or clearing presence on
      success because the result template authors different display metadata
 
@@ -76,7 +76,9 @@ ownership notices deferred.
    persisted inventory carry preserved instance sockets/attributes; omitted
    regression keeps omit→result-template encode fallback.
 3. Negatives: destroy / keep-on-fail / busy / insufficient gold-materials stay
-   as already owned; catalysts remain deferred.
+   as already owned; hyuniron / musin / black-dragon catalysts remain deferred.
+   The first owned `type = 1` scroll-catalyst consume (`vnum = 39001`) is a
+   separate confirm extra and must not clear preserved instance presence.
 
 ## Likely files to change (later GREEN, not this freeze)
 
@@ -105,5 +107,7 @@ result `ITEM_SET` and the account snapshot
 `TestRuntimeApplyRefineDowngradeFailurePreservesInstanceSocketsAndAttributes`,
 `TestGameRuntimeItemRefineConfirmAfterPreviewProbability100PreservesInstanceSocketsAndAttributes`,
 `TestGameRuntimeItemRefineConfirmAfterPreviewFailResultVnumPreservesInstanceSocketsAndAttributes`).
-Destroy / keep-on-fail / catalysts / mall / party ownership notices remain
-deferred.
+Destroy / keep-on-fail / hyuniron / musin / black-dragon catalysts / mall /
+party ownership notices remain deferred. Matching confirm with `type = 1`
+consumes one authored scroll catalyst (`vnum = 39001`) without rewriting
+preserved instance sockets/attributes.
