@@ -23548,7 +23548,7 @@ func TestGameRuntimeDropTableRewardDescriptorKillingHitEmitsAllRewards(t *testin
 	}
 }
 
-func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotWithoutPersistingRetaliationHP(t *testing.T) {
+func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotAndPersistsRetaliationHP(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	actor := worldruntime.StaticEntity{
 		Entity:        worldruntime.Entity{ID: 0x0105021A, Kind: worldruntime.EntityKindStaticActor, VID: 0x0105021A, Name: "RetaliatedRewardMob"},
@@ -23646,8 +23646,8 @@ func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotWithoutPersistingRetal
 	if len(account.Characters) != 1 {
 		t.Fatalf("expected one persisted retaliated reward character, got %+v", account.Characters)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != killer.Points[bootstrapPlayerPointValueIndex] || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
-		t.Fatalf("expected persisted scalar reward to keep pre-retaliation HP=%d while saving exp/gold=100, got hp=%d exp=%d gold=%d", killer.Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapExperiencePointType], account.Characters[0].Gold)
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 11 || account.Characters[0].Points[bootstrapExperiencePointType] != 100 || account.Characters[0].Gold != 100 {
+		t.Fatalf("expected persisted scalar reward to keep reduced retaliation HP=11 while saving exp/gold=100, got hp=%d exp=%d gold=%d", account.Characters[0].Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapExperiencePointType], account.Characters[0].Gold)
 	}
 }
 
@@ -44532,7 +44532,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationStopsAtOwnerHPFloor(t *test
 	}
 }
 
-func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly(t *testing.T) {
+func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossPersistsDeathFloor(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -44756,7 +44756,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 	}
 }
 
-func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossStaysRuntimeOnlyAcrossReconnect(t *testing.T) {
+func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossPersistsAcrossReconnect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -44842,8 +44842,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossStaysRuntim
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after delayed retaliation partial loss: %v", err)
 	}
-	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap to rebuild persisted points[%d] value %d after partial delayed retaliation, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap to rebuild persisted points[%d] value 1 after partial delayed retaliation, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 
 	persisted, err := accounts.Load("peer-one")
@@ -44853,8 +44853,8 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossStaysRuntim
 	if len(persisted.Characters) != 1 {
 		t.Fatalf("expected exactly 1 persisted owner after delayed retaliation reconnect test, got %+v", persisted)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected partial delayed retaliation point-loss to stay runtime-only with persisted points[%d] still %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected partial delayed retaliation point-loss to persist points[%d]=1 so reconnect rebuilds the reduced HP, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 }
 
@@ -44974,7 +44974,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPersistsZeroHPFloorAcrossRe
 	}
 }
 
-func TestGameSessionFlowPracticeMobRetaliationPointLossStaysRuntimeOnlyAcrossPersistedMove(t *testing.T) {
+func TestGameSessionFlowPracticeMobRetaliationPointLossPersistsAcrossPersistedMove(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -45073,8 +45073,8 @@ func TestGameSessionFlowPracticeMobRetaliationPointLossStaysRuntimeOnlyAcrossPer
 	if persisted.Characters[0].X != 1110 || persisted.Characters[0].Y != 2110 {
 		t.Fatalf("expected persisted move to save updated coordinates (1110,2110), got %+v", persisted.Characters[0])
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected persisted move to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected persisted move to keep reduced retaliation points[%d] value 1, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	closeSessionFlow(t, flow)
@@ -45088,12 +45088,12 @@ func TestGameSessionFlowPracticeMobRetaliationPointLossStaysRuntimeOnlyAcrossPer
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after persisted move: %v", err)
 	}
-	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap after persisted move to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after persisted move to rebuild reduced retaliation points[%d] value 1, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
-func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnlyAcrossTransferRebootstrap(t *testing.T) {
+func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossPersistsAcrossTransferRebootstrap(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -45209,8 +45209,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	if persisted.Characters[0].MapIndex != 42 || persisted.Characters[0].X != 1700 || persisted.Characters[0].Y != 2800 {
 		t.Fatalf("expected transfer rebootstrap to persist destination coordinates, got %+v", persisted.Characters[0])
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected transfer rebootstrap to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected transfer rebootstrap to keep reduced retaliation points[%d] value 1, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	closeSessionFlow(t, flow)
@@ -45224,8 +45224,8 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossStaysRuntimeOnly
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after transfer rebootstrap: %v", err)
 	}
-	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap after transfer rebootstrap to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after transfer rebootstrap to rebuild reduced retaliation points[%d] value 1, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
@@ -46997,7 +46997,7 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	}
 }
 
-func TestGameSessionFlowPracticeMobPacketShopSell2KeepsRetaliationPointLossRuntimeOnlyWhilePersistingSell(t *testing.T) {
+func TestGameSessionFlowPracticeMobPacketShopSell2PersistsRetaliationPointLossWithSell(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	seller := merchantBuyerCharacter("MerchantSellerRuntimeOnly", 0x0103011C, 0x0204011C, 125, []inventory.ItemInstance{{ID: 77, Vnum: 27001, Count: 3, Slot: 5}})
@@ -47147,8 +47147,8 @@ func TestGameSessionFlowPracticeMobPacketShopSell2KeepsRetaliationPointLossRunti
 	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].ID != 77 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 5 {
 		t.Fatalf("unexpected persisted merchant seller inventory after runtime-only merchant sell2 persistence: %#v", account.Characters[0].Inventory)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != seller.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected merchant sell2 persistence to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, seller.Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected merchant sell2 persistence to keep reduced retaliation points[%d] value 1, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	closeSessionFlow(t, flow)
@@ -47162,12 +47162,12 @@ func TestGameSessionFlowPracticeMobPacketShopSell2KeepsRetaliationPointLossRunti
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only merchant sell2 persistence: %v", err)
 	}
-	if reconnectPointChange.Value != seller.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap after merchant sell2 to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, seller.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after merchant sell2 to rebuild reduced retaliation points[%d] value 1, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
-func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOnlyWhilePersistingPurchase(t *testing.T) {
+func TestGameSessionFlowPracticeMobMerchantBuyPersistsRetaliationPointLossWithPurchase(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	buyer := merchantBuyerCharacter("MerchantOwnerRuntimeOnly", 0x01030119, 0x02040119, 125, nil)
@@ -47303,8 +47303,8 @@ func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOn
 	if len(account.Characters[0].Inventory) != 1 || account.Characters[0].Inventory[0].Vnum != 27001 || account.Characters[0].Inventory[0].Count != 1 || account.Characters[0].Inventory[0].Slot != 0 {
 		t.Fatalf("unexpected persisted merchant buyer inventory after runtime-only merchant buy persistence: %#v", account.Characters[0].Inventory)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != buyer.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected merchant buy persistence to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, buyer.Points[bootstrapPlayerPointValueIndex], account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected merchant buy persistence to keep reduced retaliation points[%d] value 1, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	closeSessionFlow(t, flow)
@@ -47318,8 +47318,8 @@ func TestGameSessionFlowPracticeMobMerchantBuyKeepsRetaliationPointLossRuntimeOn
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only merchant buy persistence: %v", err)
 	}
-	if reconnectPointChange.Value != buyer.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap after merchant buy to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, buyer.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after merchant buy to rebuild reduced retaliation points[%d] value 1, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
@@ -48626,7 +48626,7 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterDelayedRetaliati
 	}
 }
 
-func TestGameSessionFlowPracticeMobInventoryMoveKeepsRetaliationPointLossRuntimeOnlyWhilePersistingInventory(t *testing.T) {
+func TestGameSessionFlowPracticeMobInventoryMovePersistsRetaliationPointLossWithInventory(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("InventoryMoveRuntimeOnly", 0x01030118, 0x02040118, 1100, 2100, 0, 101, 201)
@@ -48731,8 +48731,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveKeepsRetaliationPointLossRuntime
 	if len(persisted.Characters[0].Inventory) != 2 || persisted.Characters[0].Inventory[0].Slot != 6 || persisted.Characters[0].Inventory[1].Slot != 9 {
 		t.Fatalf("expected persisted inventory move to save occupied slots at 6 and 9, got %+v", persisted.Characters[0].Inventory)
 	}
-	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected inventory move persistence to keep pre-retaliation points[%d] value %d, got %d", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected inventory move persistence to keep reduced retaliation points[%d] value 1, got %d", bootstrapPlayerPointValueIndex, persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 
 	closeSessionFlow(t, flow)
@@ -48746,8 +48746,8 @@ func TestGameSessionFlowPracticeMobInventoryMoveKeepsRetaliationPointLossRuntime
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only inventory move persistence: %v", err)
 	}
-	if reconnectPointChange.Value != owner.Points[bootstrapPlayerPointValueIndex] {
-		t.Fatalf("expected reconnect bootstrap after inventory move to rebuild pre-retaliation points[%d] value %d, got %+v", bootstrapPlayerPointValueIndex, owner.Points[bootstrapPlayerPointValueIndex], reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after inventory move to rebuild reduced retaliation points[%d] value 1, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
@@ -56055,7 +56055,7 @@ func TestQueuedSessionFlowCloseReturnsTheSameInnerErrorOnRepeatedCalls(t *testin
 	}
 }
 
-func TestGameSessionFlowPracticeMobEquipKeepsRetaliationPointLossRuntimeOnlyWhilePersistingEquipEffect(t *testing.T) {
+func TestGameSessionFlowPracticeMobEquipPersistsRetaliationPointLossWithEquipEffect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("EquipOwnerRuntimeOnly", 0x01030189, 0x02040189, 1100, 2100, 0, 101, 201)
@@ -56162,8 +56162,8 @@ func TestGameSessionFlowPracticeMobEquipKeepsRetaliationPointLossRuntimeOnlyWhil
 	if err != nil {
 		t.Fatalf("load persisted runtime-only equip owner account: %v", err)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 13 {
-		t.Fatalf("expected persisted equip owner points[%d] to keep pre-retaliation value plus equip delta 13, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 11 {
+		t.Fatalf("expected persisted equip owner points[%d] to keep reduced retaliation value plus equip delta 11, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if len(account.Characters[0].Inventory) != 0 {
 		t.Fatalf("expected persisted inventory to be empty after runtime-only equip persistence, got %#v", account.Characters[0].Inventory)
@@ -56183,12 +56183,12 @@ func TestGameSessionFlowPracticeMobEquipKeepsRetaliationPointLossRuntimeOnlyWhil
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only equip persistence: %v", err)
 	}
-	if reconnectPointChange.Value != 13 {
-		t.Fatalf("expected reconnect bootstrap after equip to rebuild persisted points[%d] value 13 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	if reconnectPointChange.Value != 11 {
+		t.Fatalf("expected reconnect bootstrap after equip to rebuild persisted points[%d] value 11 with retaliation loss plus equip delta, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
-func TestGameSessionFlowPracticeMobUnequipKeepsRetaliationPointLossRuntimeOnlyWhilePersistingEquipRemoval(t *testing.T) {
+func TestGameSessionFlowPracticeMobUnequipPersistsRetaliationPointLossWithEquipRemoval(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("UnequipOwnerRuntimeOnly", 0x0103018a, 0x0204018a, 1100, 2100, 0, 101, 201)
@@ -56295,8 +56295,8 @@ func TestGameSessionFlowPracticeMobUnequipKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("load persisted runtime-only unequip owner account: %v", err)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 3 {
-		t.Fatalf("expected persisted unequip owner points[%d] to keep pre-retaliation value after equip removal, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 1 {
+		t.Fatalf("expected persisted unequip owner points[%d] to keep reduced retaliation value after equip removal, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if len(account.Characters[0].Equipment) != 0 {
 		t.Fatalf("expected persisted equipment to be empty after runtime-only unequip persistence, got %#v", account.Characters[0].Equipment)
@@ -56316,12 +56316,12 @@ func TestGameSessionFlowPracticeMobUnequipKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only unequip persistence: %v", err)
 	}
-	if reconnectPointChange.Value != 3 {
-		t.Fatalf("expected reconnect bootstrap after unequip to rebuild persisted points[%d] value 3 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	if reconnectPointChange.Value != 1 {
+		t.Fatalf("expected reconnect bootstrap after unequip to rebuild persisted points[%d] value 1 with retaliation loss after equip removal, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 
-func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWhilePersistingUseEffect(t *testing.T) {
+func TestGameSessionFlowPracticeMobUseItemPersistsRetaliationPointLossWithUseEffect(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("UseOwnerRuntimeOnly", 0x01030188, 0x02040188, 1100, 2100, 0, 101, 201)
@@ -56427,8 +56427,8 @@ func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("load persisted runtime-only item-use owner account: %v", err)
 	}
-	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 53 {
-		t.Fatalf("expected persisted item-use owner points[%d] to keep pre-retaliation value plus use-effect delta 53, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	if account.Characters[0].Points[bootstrapPlayerPointValueIndex] != 51 {
+		t.Fatalf("expected persisted item-use owner points[%d] to keep reduced retaliation value plus use-effect delta 51, got %d", bootstrapPlayerPointValueIndex, account.Characters[0].Points[bootstrapPlayerPointValueIndex])
 	}
 	if !reflect.DeepEqual(account.Characters[0].Inventory, []inventory.ItemInstance{{ID: 1001, Vnum: 27001, Count: 2, Slot: 5}}) {
 		t.Fatalf("unexpected persisted inventory after runtime-only item-use persistence: %#v", account.Characters[0].Inventory)
@@ -56445,8 +56445,8 @@ func TestGameSessionFlowPracticeMobUseItemKeepsRetaliationPointLossRuntimeOnlyWh
 	if err != nil {
 		t.Fatalf("decode reconnect bootstrap point-change after runtime-only item-use persistence: %v", err)
 	}
-	if reconnectPointChange.Value != 53 {
-		t.Fatalf("expected reconnect bootstrap after item use to rebuild persisted points[%d] value 53 without retaliation loss, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
+	if reconnectPointChange.Value != 51 {
+		t.Fatalf("expected reconnect bootstrap after item use to rebuild persisted points[%d] value 51 with retaliation loss plus use-effect delta, got %+v", bootstrapPlayerPointValueIndex, reconnectPointChange)
 	}
 }
 

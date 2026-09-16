@@ -87,7 +87,7 @@ The same packet is now also reused by the first non-player reward seam:
 
 The same packet is also reused by the first content-practice-mob retaliation seam:
 - accepted owner-side hits and the delayed server-origin retaliation cadence can append self-only HP point-loss updates to the engaged owner
-- those retaliation point-loss updates are runtime-only today; they do not persist to the selected account snapshot until broader player-death/recovery policy is owned
+- those retaliation point-loss updates now persist the selected-character bootstrap HP point on each immediate or delayed beat, including above-floor (partial) loss, so a later reconnect / `/phase_select` / `ENTERGAME` rebuilds the reduced HP from the account snapshot
 - when retaliation reaches the current bootstrap zero-HP floor, the combat/death docs own the companion `DEAD(owner_vid)` and target-clear choreography
 
 ## Out of scope

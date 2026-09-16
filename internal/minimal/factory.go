@@ -5729,22 +5729,6 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			return frames, true
 		}
-		commitSelectedRuntimeOnlyMutationFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
-			if selectedPlayer == nil {
-				return nil, false
-			}
-			updatedSelected := selectedPlayer.LiveCharacter()
-			if updatedSelected.ID == 0 {
-				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
-				refreshLiveCharacterRegistration()
-				return nil, false
-			}
-			refreshLiveCharacterRegistration()
-			if ownsLiveSharedWorldSession() {
-				sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
-			}
-			return frames, true
-		}
 		commitSelectedDeathFloorPersistenceFrames := func(selectedPlayer *player.Runtime, previousSelected loginticket.Character, frames [][]byte, stablePeerFrames [][]byte) ([][]byte, bool) {
 			if selectedPlayer == nil {
 				return nil, false
@@ -5756,10 +5740,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				refreshLiveCharacterRegistration()
 				return nil, false
 			}
-			if updatedSelected.Points[bootstrapPlayerPointValueIndex] > 0 {
-				return commitSelectedRuntimeOnlyMutationFrames(selectedPlayer, previousSelected, frames, stablePeerFrames)
-			}
 			if !ownsLiveSharedWorldSession() {
+				if updatedSelected.Points[bootstrapPlayerPointValueIndex] > 0 {
+					refreshLiveCharacterRegistration()
+					return frames, true
+				}
 				selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 				refreshLiveCharacterRegistration()
 				return frames, true
@@ -5770,7 +5755,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sessionTicket.Characters = updatedCharacters
 				selectedPlayer.SetPersistedSnapshot(persistedSelected)
 			}
-			// Live death/clear frames already advanced; keep them even if account persistence fails.
+			// Live retaliation/death frames already advanced; keep them even if account persistence fails.
 			refreshLiveCharacterRegistration()
 			sharedWorld.UpdateCharacterWithVisibilityTransition(sharedWorldID, previousSelected, updatedSelected, stablePeerFrames)
 			return frames, true

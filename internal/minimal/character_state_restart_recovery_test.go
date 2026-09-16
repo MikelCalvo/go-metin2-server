@@ -1756,7 +1756,9 @@ func TestGameRuntimePendingGroundItemAndGoldRematerializeAcrossDaemonRestart(t *
 // that an accepted practice-mob killing-hit drop reuses the same GroundItem FileStore
 // rematerialize path as player drops: exclusive ownership / despawn absolute timers
 // survive process restart, a peer stays fail-closed mid-window, and the killer can
-// reclaim the rematerialized reward after rejoin.
+// reclaim the rematerialized reward after rejoin. GroundItemPickupFor compares the
+// reconnect killer snapshot (reduced above-floor HP) rather than the original
+// full-HP fixture.
 func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t *testing.T) {
 	defer worldruntime.DisableDurableGroundItemSyncForTest()()
 
@@ -1924,6 +1926,13 @@ func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t
 	}
 	killerID := killerEntity.Entity.ID
 	peerID := peerEntity.Entity.ID
+	reconnectKiller := killerEntity.Character
+	if reconnectKiller.Points[bootstrapPlayerPointValueIndex] <= 0 {
+		t.Fatal("expected rematerialized killer reconnect HP to stay above the death floor")
+	}
+	if reconnectKiller.Points[bootstrapPlayerPointValueIndex] >= killer.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected rematerialized killer reconnect HP to rebuild reduced retaliation loss, got %d want < %d", reconnectKiller.Points[bootstrapPlayerPointValueIndex], killer.Points[bootstrapPlayerPointValueIndex])
+	}
 
 	items, mapOK := reloaded.GroundItemsForMap(bootstrapMapIndex)
 	if !mapOK || len(items) != 1 || items[0].VID != ground.VID {
@@ -1932,8 +1941,8 @@ func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t
 	if _, ok := reloaded.sharedWorld.GroundItemPickupFor(peerID, peer, ground.VID); ok {
 		t.Fatal("expected rematerialized exclusive kill-reward ownership to block peer mid-window")
 	}
-	if pickup, ok := reloaded.sharedWorld.GroundItemPickupFor(killerID, killer, ground.VID); !ok || pickup.Item.Vnum != 27001 || pickup.Item.Count != 1 {
-		t.Fatalf("expected rematerialized exclusive kill-reward ownership to allow killer pickup, ok=%v pickup=%+v", ok, pickup)
+	if pickup, ok := reloaded.sharedWorld.GroundItemPickupFor(killerID, reconnectKiller, ground.VID); !ok || pickup.Item.Vnum != 27001 || pickup.Item.Count != 1 {
+		t.Fatalf("expected rematerialized exclusive kill-reward ownership to allow killer pickup at reconnect HP, ok=%v pickup=%+v", ok, pickup)
 	}
 
 	pickupOut := pickupGroundItem(t, killerRestartFlow, ground.VID)
