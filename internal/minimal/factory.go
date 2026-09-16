@@ -6105,7 +6105,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			frames := [][]byte{
 				worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{VID: previousSelected.VID, Type: bootstrapGoldPointType, Amount: -int32(amount), Value: int32(updatedSelected.Gold)}),
-				itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: 1, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
+				itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: groundVID, Vnum: 1, Count: amount, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
 				itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: groundVID, OwnerName: previousSelected.Name}),
 			}
 			frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)

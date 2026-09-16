@@ -79,6 +79,7 @@ const (
 	usePayloadSize                   = positionSize + 4 + 4 + 4
 	updatePayloadSize                = positionSize + 1 + (ItemSocketCount * 4) + (ItemAttributeCount * attributeSize)
 	groundAddPayloadSize             = 4 + 4 + 4 + 4 + 4
+	groundAddGoldCountPayloadSize    = groundAddPayloadSize + 4
 	groundDelPayloadSize             = 4
 	ownershipPayloadSize             = 4 + (CharacterNameMaxLength + 1)
 	getPayloadSize                   = 4 + 1 + 1 + (CharacterNameMaxLength + 1)
@@ -324,11 +325,12 @@ type ServerExchangePacket struct {
 }
 
 type GroundAddPacket struct {
-	VID  uint32
-	Vnum uint32
-	X    int32
-	Y    int32
-	Z    int32
+	VID   uint32
+	Vnum  uint32
+	Count uint32
+	X     int32
+	Y     int32
+	Z     int32
 }
 
 type GroundDelPacket struct {
@@ -995,12 +997,19 @@ func DecodeUpdate(f frame.Frame) (UpdatePacket, error) {
 }
 
 func EncodeGroundAdd(packet GroundAddPacket) []byte {
-	payload := make([]byte, groundAddPayloadSize)
+	size := groundAddPayloadSize
+	if packet.Count != 0 {
+		size = groundAddGoldCountPayloadSize
+	}
+	payload := make([]byte, size)
 	binary.LittleEndian.PutUint32(payload[0:], uint32(packet.X))
 	binary.LittleEndian.PutUint32(payload[4:], uint32(packet.Y))
 	binary.LittleEndian.PutUint32(payload[8:], uint32(packet.Z))
 	binary.LittleEndian.PutUint32(payload[12:], packet.VID)
 	binary.LittleEndian.PutUint32(payload[16:], packet.Vnum)
+	if packet.Count != 0 {
+		binary.LittleEndian.PutUint32(payload[20:], packet.Count)
+	}
 	return frame.Encode(HeaderGroundAdd, payload)
 }
 
@@ -1008,16 +1017,22 @@ func DecodeGroundAdd(f frame.Frame) (GroundAddPacket, error) {
 	if f.Header != HeaderGroundAdd {
 		return GroundAddPacket{}, ErrUnexpectedHeader
 	}
-	if len(f.Payload) != groundAddPayloadSize {
+	switch len(f.Payload) {
+	case groundAddPayloadSize, groundAddGoldCountPayloadSize:
+	default:
 		return GroundAddPacket{}, ErrInvalidPayload
 	}
-	return GroundAddPacket{
+	packet := GroundAddPacket{
 		X:    int32(binary.LittleEndian.Uint32(f.Payload[0:])),
 		Y:    int32(binary.LittleEndian.Uint32(f.Payload[4:])),
 		Z:    int32(binary.LittleEndian.Uint32(f.Payload[8:])),
 		VID:  binary.LittleEndian.Uint32(f.Payload[12:]),
 		Vnum: binary.LittleEndian.Uint32(f.Payload[16:]),
-	}, nil
+	}
+	if len(f.Payload) == groundAddGoldCountPayloadSize {
+		packet.Count = binary.LittleEndian.Uint32(f.Payload[20:])
+	}
+	return packet, nil
 }
 
 func EncodeGroundDel(packet GroundDelPacket) []byte {
