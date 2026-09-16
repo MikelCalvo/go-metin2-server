@@ -3,7 +3,7 @@
 ## Objective
 
 Freeze a read-only `metin2-migrate backup-tree-status` inspector for a
-retained `backup-restore-drill` tree so operators can re-check the eight
+retained `backup-restore-drill` tree so operators can re-check the nine
 manifested FileStore backups as one metadata-only evidence artifact
 **without** restoring, emptying live stores, opening a database, or
 trusting a hand-walk of `$BASE/<store>/`.
@@ -26,10 +26,10 @@ inspector (`catalog-status`, `plan-artifact-status`,
 `export-tree-status-status`).
 
 `backup-restore-drill` already creates
-`/var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/` with eight lab store
+`/var/metin2/backups/YYYYMMDDTHHMMSSZ-<commit12>/` with nine lab store
 subdirs (`accounts`, `login-tickets`, `item-templates`,
 `interaction-store`, `static-actors`, `quest-state`, `ground-items`,
-`safebox`) and the printed script already curls per-store
+`safebox`, `cube-recipes`) and the printed script already curls per-store
 `/local/*/backup/validate` **while gamed is up**. After the tree is
 copied aside, archived, or the daemon is down, there is no small CLI
 command that re-validates those manifested backups as one tree — the
@@ -39,7 +39,7 @@ Opening RED without freezing:
 
 - exact command / flag names,
 - outer status envelope + per-store checksum / count fields,
-- which eight lab subdirs and dummy snapshot basenames GREEN must use,
+- which nine lab subdirs and dummy snapshot basenames GREEN must use,
 - how missing vs invalid store children behave,
 - whether `ValidateBackupFrom` may restore or open a database,
 - which printed `backup-restore-drill` line adopts the new inspector,
@@ -84,7 +84,7 @@ Rules:
 2. Rejects a present symlink or non-directory path with exit `1`, a
    short stderr reason, and **no** stdout status JSON.
 3. Other `Lstat` errors fail closed the same way.
-4. When present, inspects the eight lab store subdirs in this **fixed
+4. When present, inspects the nine lab store subdirs in this **fixed
    order** (same names and order as `backup-restore-drill` `mkdir -p`
    / backup curls):
 
@@ -96,6 +96,7 @@ Rules:
    6. `quest-state`
    7. `ground-items`
    8. `safebox`
+   9. `cube-recipes`
 
 5. Missing child store subdirs are reported as `present: false` /
    `valid: false` inside the store entry and do **not** fail the
@@ -130,6 +131,7 @@ Constructor / dummy snapshot path for the inspecting FileStore:
 | `quest-state` | `queststate.NewFileStore(join(subdir, "quest-state.json"))` | conventional lab snapshot basename |
 | `ground-items` | `worldruntime.NewGroundItemFileStore(join(subdir, "ground-items.json"))` | conventional lab snapshot basename |
 | `safebox` | `safeboxstore.NewFileStore(join(subdir, "safebox.json"))` | conventional lab snapshot basename |
+| `cube-recipes` | `cubestore.NewFileStore(join(subdir, "cube-recipes.json"))` | conventional lab snapshot basename |
 
 Those dummy file-path basenames are the lab topology /
 `backup-restore-drill` names. They do **not** need to exist as live
@@ -151,8 +153,8 @@ remain valid, matching FileStore backup of an empty store.
   "format": "go-metin2-backup-tree-status-v1",
   "present": true,
   "backup_tree": "/var/metin2/backups/20260906T120000Z-abcdef012345",
-  "store_count": 8,
-  "store_present_count": 8,
+  "store_count": 9,
+  "store_present_count": 9,
   "stores_complete": true,
   "stores": [
     {
@@ -198,6 +200,7 @@ bytes** after `ValidateBackupFrom` succeeds. `manifest_filename` /
 | `quest-state` | `quest-state-backup-manifest.json` | `go-metin2-quest-state-backup-v1` |
 | `ground-items` | `ground-item-backup-manifest.json` | `go-metin2-ground-item-backup-v1` |
 | `safebox` | `safebox-backup-manifest.json` | `go-metin2-safebox-backup-v1` |
+| `cube-recipes` | `cube-recipe-backup-manifest.json` | `go-metin2-cube-recipe-backup-v1` |
 
 Count fields are additive `omitempty` integers copied from the
 `ValidateBackupFrom` summary **without** identity slices:
@@ -210,15 +213,16 @@ Count fields are additive `omitempty` integers copied from the
 - `quest-state`: `flag_count`
 - `ground-items`: `ground_item_count`
 - `safebox`: `character_count`, `cell_count`
+- `cube-recipes`: `npc_count`, `recipe_count`
 
 Do **not** copy `logins`, `login_keys`, `vnums`, `vids`, `actor_ids`,
 `actor_names`, `characters`, `quest_refs`, `flag_keys`,
 `character_keys`, `definition_keys`, or crash-temp **filenames**.
 
-`store_count` is always `8` on a present tree. `store_present_count` is
+`store_count` is always `9` on a present tree. `store_present_count` is
 how many store entries have `present: true` (and therefore `valid:
 true`, because invalid present children fail closed before JSON).
-`stores_complete` is true only when `store_present_count == 8`.
+`stores_complete` is true only when `store_present_count == 9`.
 
 Correlation files (`runtime-config.json`, `persistence-status-*.json`,
 `notes.md`, daemon logs / build-info) are **out of scope** for
@@ -241,7 +245,7 @@ Ungated missing-tree `present: false` remains exit `0`.
 ### F. Printer wiring (same GREEN as the inspector)
 
 GREEN must add a matching `backup-tree-status` redirect **immediately
-after** the existing eight-store backup/validate curls and **before**
+after** the existing nine-store backup/validate curls and **before**
 aside-rename / restore, so a bad tree fails closed under `set -eu`
 before live destinations are emptied:
 
@@ -357,7 +361,7 @@ GREEN on `lane/persistence`.
   tree without restoring, emptying live stores, opening a database, or
   walking live gamed FileStores.
 - Outer envelope is `go-metin2-backup-tree-status-v1`; missing path is
-  ungated `present: false`; present trees walk the eight lab store subdirs
+  ungated `present: false`; present trees walk the nine lab store subdirs
   through existing `ValidateBackupFrom` seams and report checksums / counts
   without identity slices.
 - `backup-restore-drill` prints a matching
@@ -383,7 +387,7 @@ GREEN on `lane/persistence`.
 ## Exit criteria for this freeze
 
 - this plan exists and names exact command / flags / envelope /
-  eight-store walk / `ValidateBackupFrom` seams / printer wiring /
+  nine-store walk / `ValidateBackupFrom` seams / printer wiring /
   hermetic `PATH` requirement
 - Track E / migration-contract point at this freeze as the next GREEN
   target

@@ -18,6 +18,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/buildinfo"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	itemcatalog "github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -53,6 +54,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	questStatePath := filepath.Join(root, "quest-state", "quest-state.json")
 	groundItemPath := filepath.Join(root, "ground-items", "ground-items.json")
 	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	cubeRecipePath := filepath.Join(root, "cube-recipes", "cube-recipes.json")
 	backupBase := filepath.Join(root, "backups")
 	binDir := filepath.Join(root, "bin")
 	mustMkdirAll(t, accountDir)
@@ -63,6 +65,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	mustMkdirAll(t, filepath.Dir(questStatePath))
 	mustMkdirAll(t, filepath.Dir(groundItemPath))
 	mustMkdirAll(t, filepath.Dir(safeboxPath))
+	mustMkdirAll(t, filepath.Dir(cubeRecipePath))
 	mustMkdirAll(t, backupBase)
 	mustMkdirAll(t, binDir)
 
@@ -79,6 +82,9 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	if err := safeboxstore.NewFileStore(safeboxPath).Save(sampleRuntimeDurableSafebox()); err != nil {
 		t.Fatalf("seed safebox store: %v", err)
 	}
+	if err := cubestore.NewFileStore(cubeRecipePath).Save(cubestore.BootstrapSnapshot()); err != nil {
+		t.Fatalf("seed cube recipe store: %v", err)
+	}
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(
 		config.Service{
@@ -92,6 +98,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 			QuestStateStorePath:   questStatePath,
 			GroundItemStorePath:   groundItemPath,
 			SafeboxStorePath:      safeboxPath,
+			CubeRecipeStorePath:   cubeRecipePath,
 		},
 		loginticket.NewFileStore(loginTicketDir),
 		accounts,
@@ -197,6 +204,7 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		"quest-state",
 		"ground-items",
 		"safebox",
+		"cube-recipes",
 	} {
 		assertDirExists(t, filepath.Join(retentionTree, subdir))
 	}
@@ -216,12 +224,14 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	}
 	assertRegularFileExists(t, filepath.Join(retentionTree, "accounts", accountstore.BackupManifestFilename))
 	assertRegularFileExists(t, filepath.Join(retentionTree, "safebox", safeboxstore.BackupManifestFilename))
+	assertRegularFileExists(t, filepath.Join(retentionTree, "cube-recipes", cubestore.BackupManifestFilename))
 	assertBackupTreeStatusComplete(t, retentionTree)
 	assertBackupTreeStatusStatusComplete(t, retentionTree)
 	assertPersistenceStatusStatusComplete(t, retentionTree)
 
 	assertDirExists(t, accountDir+".aside-"+retentionTreeTimestamp(t, retentionTree))
 	assertDirExists(t, filepath.Dir(safeboxPath)+".aside-"+retentionTreeTimestamp(t, retentionTree))
+	assertDirExists(t, filepath.Dir(cubeRecipePath)+".aside-"+retentionTreeTimestamp(t, retentionTree))
 
 	restoredAccount, err := accountstore.NewFileStore(accountDir).Load("drill-owner")
 	if err != nil {
@@ -240,6 +250,14 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	}
 	if len(restoredSafebox.Characters[0].Cells) != len(wantSafebox.Characters[0].Cells) {
 		t.Fatalf("unexpected restored safebox cells: %#v", restoredSafebox.Characters[0].Cells)
+	}
+	restoredCube, err := cubestore.NewFileStore(cubeRecipePath).Load()
+	if err != nil {
+		t.Fatalf("load restored cube recipes: %v", err)
+	}
+	wantCube := cubestore.BootstrapSnapshot()
+	if len(restoredCube.NPCs) != 1 || restoredCube.NPCs[0].NPCVnum != wantCube.NPCs[0].NPCVnum || len(restoredCube.NPCs[0].Recipes) != len(wantCube.NPCs[0].Recipes) {
+		t.Fatalf("unexpected restored cube recipes: %#v", restoredCube)
 	}
 
 	statusResp, err := http.Get(gamedServer.URL + "/local/persistence/status")
@@ -338,7 +356,7 @@ func assertBackupTreeStatusComplete(t *testing.T, retentionTree string) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatalf("decode backup-tree-status.json: %v\nbody:\n%s", err, raw)
 	}
-	if got.Format != "go-metin2-backup-tree-status-v1" || !got.Present || !got.StoresComplete || got.StoreCount != 8 || got.StorePresentCount != 8 || len(got.Stores) != 8 {
+	if got.Format != "go-metin2-backup-tree-status-v1" || !got.Present || !got.StoresComplete || got.StoreCount != 9 || got.StorePresentCount != 9 || len(got.Stores) != 9 {
 		t.Fatalf("unexpected backup-tree-status.json envelope: %#v", got)
 	}
 	if got.Stores[0].Kind != "accounts" || !got.Stores[0].Present || !got.Stores[0].Valid || got.Stores[0].AccountCount != 1 {
@@ -382,7 +400,7 @@ func assertBackupTreeStatusStatusComplete(t *testing.T, retentionTree string) {
 	if got.Format != "go-metin2-backup-tree-status-status-v1" || !got.Present || got.Status == nil || got.BackupTreeStatusSHA256 != wantSHA {
 		t.Fatalf("unexpected backup-tree-status-status.json envelope: %#v", got)
 	}
-	if got.Status.Format != "go-metin2-backup-tree-status-v1" || !got.Status.Present || !got.Status.StoresComplete || got.Status.StoreCount != 8 {
+	if got.Status.Format != "go-metin2-backup-tree-status-v1" || !got.Status.Present || !got.Status.StoresComplete || got.Status.StoreCount != 9 {
 		t.Fatalf("unexpected inner backup-tree-status in status-status.json: %#v", got.Status)
 	}
 	body := string(raw)

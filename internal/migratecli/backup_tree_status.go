@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -87,6 +88,13 @@ var backupTreeStoreSpecs = []backupTreeStoreSpec{
 		ManifestFormat:   safeboxstore.BackupManifestFormat,
 		SnapshotBasename: "safebox.json",
 	},
+	{
+		Kind:             "cube-recipes",
+		Subdir:           "cube-recipes",
+		ManifestFilename: cubestore.BackupManifestFilename,
+		ManifestFormat:   cubestore.BackupManifestFormat,
+		SnapshotBasename: "cube-recipes.json",
+	},
 }
 
 type backupTreeStoreStatus struct {
@@ -107,6 +115,8 @@ type backupTreeStoreStatus struct {
 	FlagCount        int    `json:"flag_count,omitempty"`
 	GroundItemCount  int    `json:"ground_item_count,omitempty"`
 	CellCount        int    `json:"cell_count,omitempty"`
+	NPCCount         int    `json:"npc_count,omitempty"`
+	RecipeCount      int    `json:"recipe_count,omitempty"`
 }
 
 type backupTreeStatus struct {
@@ -322,6 +332,14 @@ func validateBackupTreeStore(spec backupTreeStoreSpec, storeDir string) (backupT
 		entry.CrashTempCount = summary.CrashTempCount
 		entry.CharacterCount = summary.CharacterCount
 		entry.CellCount = summary.CellCount
+	case "cube-recipes":
+		summary, err := cubestore.NewFileStore(dummyPath).ValidateBackupFrom(storeDir)
+		if err != nil {
+			return backupTreeStoreStatus{}, err
+		}
+		entry.CrashTempCount = summary.CrashTempCount
+		entry.NPCCount = summary.NPCCount
+		entry.RecipeCount = summary.RecipeCount
 	default:
 		return backupTreeStoreStatus{}, fmt.Errorf("unknown backup-tree store kind %q", spec.Kind)
 	}

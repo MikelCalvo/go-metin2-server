@@ -1467,6 +1467,66 @@ func RegisterLocalItemTemplateStoreRestoreEndpoint(mux *http.ServeMux, restore f
 	return mux
 }
 
+func RegisterLocalCubeRecipeStoreValidateEndpoint(mux *http.ServeMux, validate func() (any, error)) *http.ServeMux {
+	if mux == nil || validate == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/cube-recipe-store/validate", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := validate()
+		if err != nil {
+			slog.Warn("local cube recipe store validation failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
+func RegisterLocalCubeRecipeStoreCrashTempCleanupEndpoint(mux *http.ServeMux, cleanup func() (any, error)) *http.ServeMux {
+	if mux == nil || cleanup == nil {
+		return mux
+	}
+
+	mux.HandleFunc("/local/cube-recipe-store/crash-temps/cleanup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		status, ok := requireEmptyLocalAccountStoreMutationBody(r)
+		if !ok {
+			w.WriteHeader(status)
+			return
+		}
+		summary, err := cleanup()
+		if err != nil {
+			slog.Warn("local cube recipe store crash temp cleanup failed", "err", err)
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		writeLocalJSONMutationResponse(w, summary, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalCubeRecipeStoreBackupEndpoint(mux *http.ServeMux, backup func(string) (any, error)) *http.ServeMux {
 	if mux == nil || backup == nil {
 		return mux

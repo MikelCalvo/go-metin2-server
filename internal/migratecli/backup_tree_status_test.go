@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -70,10 +71,10 @@ func TestRunBackupTreeStatusReportsCompleteEmptyAndSeededStores(t *testing.T) {
 	if got.Format != backupTreeStatusFormat || !got.Present || got.BackupTree != tree {
 		t.Fatalf("unexpected complete envelope: %#v", got)
 	}
-	if got.StoreCount != 8 || got.StorePresentCount != 8 || got.StoresComplete == nil || !*got.StoresComplete || len(got.Stores) != 8 {
+	if got.StoreCount != 9 || got.StorePresentCount != 9 || got.StoresComplete == nil || !*got.StoresComplete || len(got.Stores) != 9 {
 		t.Fatalf("unexpected complete aggregates: %#v", got)
 	}
-	wantKinds := []string{"accounts", "login-tickets", "item-templates", "interaction-store", "static-actors", "quest-state", "ground-items", "safebox"}
+	wantKinds := []string{"accounts", "login-tickets", "item-templates", "interaction-store", "static-actors", "quest-state", "ground-items", "safebox", "cube-recipes"}
 	for i, kind := range wantKinds {
 		entry := got.Stores[i]
 		if entry.Kind != kind || !entry.Present || !entry.Valid || entry.Path != kind || entry.ManifestFilename == "" || entry.Format == "" || entry.ManifestSHA256 == "" {
@@ -112,8 +113,8 @@ func TestRunBackupTreeStatusReportsIncompleteStoresUngated(t *testing.T) {
 	disableBackupTreeStatusDurableSync(t)
 	tree := filepath.Join(t.TempDir(), "backups", "20260906T130000Z-abcdef012345")
 	mustMaterializeCompleteBackupTree(t, tree, false)
-	if err := os.RemoveAll(filepath.Join(tree, "safebox")); err != nil {
-		t.Fatalf("remove safebox store: %v", err)
+	if err := os.RemoveAll(filepath.Join(tree, "cube-recipes")); err != nil {
+		t.Fatalf("remove cube-recipes store: %v", err)
 	}
 
 	var stdout bytes.Buffer
@@ -126,12 +127,12 @@ func TestRunBackupTreeStatusReportsIncompleteStoresUngated(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("decode incomplete backup-tree-status JSON: %v\nbody:\n%s", err, stdout.String())
 	}
-	if !got.Present || got.StoreCount != 8 || got.StorePresentCount != 7 || got.StoresComplete == nil || *got.StoresComplete {
+	if !got.Present || got.StoreCount != 9 || got.StorePresentCount != 8 || got.StoresComplete == nil || *got.StoresComplete {
 		t.Fatalf("unexpected incomplete aggregates: %#v", got)
 	}
 	last := got.Stores[len(got.Stores)-1]
-	if last.Kind != "safebox" || last.Present || last.Valid || last.Path != "" {
-		t.Fatalf("expected missing safebox entry, got %#v", last)
+	if last.Kind != "cube-recipes" || last.Present || last.Valid || last.Path != "" {
+		t.Fatalf("expected missing cube-recipes entry, got %#v", last)
 	}
 	if !strings.Contains(stdout.String(), `"stores_complete": false`) {
 		t.Fatalf("expected incomplete JSON to emit stores_complete=false, got %s", stdout.String())
@@ -269,7 +270,7 @@ func TestRunBackupTreeStatusRequireNoCrashTempsSucceedsOnCompleteCleanTree(t *te
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("decode require-no-crash-temps clean JSON: %v\nbody:\n%s", err, stdout.String())
 	}
-	if got.StoresComplete == nil || !*got.StoresComplete || got.StorePresentCount != 8 {
+	if got.StoresComplete == nil || !*got.StoresComplete || got.StorePresentCount != 9 {
 		t.Fatalf("unexpected require-no-crash-temps clean aggregates: %#v", got)
 	}
 	for _, entry := range got.Stores {
@@ -298,7 +299,7 @@ func TestRunBackupTreeStatusRequireNoCrashTempsAllowsIncompleteCleanTree(t *test
 	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
 		t.Fatalf("decode incomplete clean JSON: %v\nbody:\n%s", err, stdout.String())
 	}
-	if !got.Present || got.StorePresentCount != 7 || got.StoresComplete == nil || *got.StoresComplete {
+	if !got.Present || got.StorePresentCount != 8 || got.StoresComplete == nil || *got.StoresComplete {
 		t.Fatalf("unexpected incomplete clean aggregates: %#v", got)
 	}
 }
@@ -565,6 +566,7 @@ func disableBackupTreeStatusDurableSync(t *testing.T) {
 		queststate.DisableDurableSyncForTest(),
 		worldruntime.DisableDurableGroundItemSyncForTest(),
 		safeboxstore.DisableDurableSyncForTest(),
+		cubestore.DisableDurableSyncForTest(),
 	}
 	t.Cleanup(func() {
 		for i := len(restores) - 1; i >= 0; i-- {
@@ -612,5 +614,8 @@ func mustMaterializeCompleteBackupTree(t *testing.T, tree string, seedAccount bo
 	}
 	if err := safeboxstore.NewFileStore(filepath.Join(live, "safebox", "safebox.json")).BackupTo(filepath.Join(tree, "safebox")); err != nil {
 		t.Fatalf("backup safebox: %v", err)
+	}
+	if err := cubestore.NewFileStore(filepath.Join(live, "cube-recipes", "cube-recipes.json")).BackupTo(filepath.Join(tree, "cube-recipes")); err != nil {
+		t.Fatalf("backup cube recipes: %v", err)
 	}
 }

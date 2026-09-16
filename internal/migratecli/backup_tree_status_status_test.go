@@ -100,7 +100,7 @@ func TestRunBackupTreeStatusStatusReadsValidPresentSnapshotWithoutWalkingTree(t 
 	if got.Format != "go-metin2-backup-tree-status-status-v1" || !got.Present || got.Status == nil || got.BackupTreeStatusSHA256 != sha256Hex(raw) {
 		t.Fatalf("unexpected present envelope: %#v", got)
 	}
-	if got.Status.Format != backupTreeStatusFormat || !got.Status.Present || got.Status.StoreCount != 8 || got.Status.StorePresentCount != 8 || got.Status.StoresComplete == nil || !*got.Status.StoresComplete {
+	if got.Status.Format != backupTreeStatusFormat || !got.Status.Present || got.Status.StoreCount != 9 || got.Status.StorePresentCount != 9 || got.Status.StoresComplete == nil || !*got.Status.StoresComplete {
 		t.Fatalf("unexpected inner present snapshot: %#v", got.Status)
 	}
 	body := stdout.String()

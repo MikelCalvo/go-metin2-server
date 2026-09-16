@@ -151,7 +151,9 @@ func validateRetainedBackupTreeStore(entry backupTreeStoreStatus, spec backupTre
 			entry.ActorCount != 0 ||
 			entry.FlagCount != 0 ||
 			entry.GroundItemCount != 0 ||
-			entry.CellCount != 0 {
+			entry.CellCount != 0 ||
+			entry.NPCCount != 0 ||
+			entry.RecipeCount != 0 {
 			return fmt.Errorf("%w: missing %s store has extra fields", ErrBackupTreeStatus, spec.Kind)
 		}
 		return nil
@@ -202,6 +204,9 @@ func validateBackupTreeStoreCounts(entry backupTreeStoreStatus) error {
 	case "safebox":
 		allowed["character_count"] = true
 		allowed["cell_count"] = true
+	case "cube-recipes":
+		allowed["npc_count"] = true
+		allowed["recipe_count"] = true
 	default:
 		return fmt.Errorf("%w: unknown kind %q", ErrBackupTreeStatus, entry.Kind)
 	}
@@ -219,6 +224,8 @@ func validateBackupTreeStoreCounts(entry backupTreeStoreStatus) error {
 		{"flag_count", entry.FlagCount},
 		{"ground_item_count", entry.GroundItemCount},
 		{"cell_count", entry.CellCount},
+		{"npc_count", entry.NPCCount},
+		{"recipe_count", entry.RecipeCount},
 	}
 	for _, count := range counts {
 		if count.value < 0 {

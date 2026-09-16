@@ -45,7 +45,7 @@ type backupRestorePersistenceConfig struct {
 	QuestStateStorePath   string `json:"quest_state_store_path"`
 	GroundItemStorePath   string `json:"ground_item_store_path"`
 	SafeboxStorePath      string `json:"safebox_store_path"`
-	CubeRecipeStorePath   string `json:"cube_recipe_store_path,omitempty"`
+	CubeRecipeStorePath   string `json:"cube_recipe_store_path"`
 }
 
 type backupRestoreDatabaseConfig struct {
@@ -337,12 +337,9 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 	if err != nil {
 		return backupRestoreDrillPlan{}, err
 	}
-	var cubeRecipePath string
-	if strings.TrimSpace(snapshot.Persistence.CubeRecipeStorePath) != "" {
-		cubeRecipePath, err = normalizeAbsoluteCleanPath(snapshot.Persistence.CubeRecipeStorePath, "persistence.cube_recipe_store_path")
-		if err != nil {
-			return backupRestoreDrillPlan{}, err
-		}
+	cubeRecipePath, err := normalizeAbsoluteCleanPath(snapshot.Persistence.CubeRecipeStorePath, "persistence.cube_recipe_store_path")
+	if err != nil {
+		return backupRestoreDrillPlan{}, err
 	}
 
 	if cleanedPathEqualsOrNests(accountDir, loginTicketDir) {
@@ -356,9 +353,7 @@ func buildBackupRestoreDrillPlan(runtimeRaw, buildInfoRaw []byte, opsBaseURL, au
 		"quest_state_store_path":   filepath.Dir(questStatePath),
 		"ground_item_store_path":   filepath.Dir(groundItemPath),
 		"safebox_store_path":       filepath.Dir(safeboxPath),
-	}
-	if cubeRecipePath != "" {
-		fileParents["cube_recipe_store_path"] = filepath.Dir(cubeRecipePath)
+		"cube_recipe_store_path":   filepath.Dir(cubeRecipePath),
 	}
 	seenParents := make(map[string]string, len(fileParents))
 	for label, parent := range fileParents {
@@ -498,15 +493,13 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	fmt.Fprintf(&b, "QUEST_STATE_STORE_PATH=%s\n", shellSingleQuote(plan.QuestStateStorePath))
 	fmt.Fprintf(&b, "GROUND_ITEM_STORE_PATH=%s\n", shellSingleQuote(plan.GroundItemStorePath))
 	fmt.Fprintf(&b, "SAFEBOX_STORE_PATH=%s\n", shellSingleQuote(plan.SafeboxStorePath))
-	if strings.TrimSpace(plan.CubeRecipeStorePath) != "" {
-		fmt.Fprintf(&b, "CUBE_RECIPE_STORE_PATH=%s\n", shellSingleQuote(plan.CubeRecipeStorePath))
-	}
+	fmt.Fprintf(&b, "CUBE_RECIPE_STORE_PATH=%s\n", shellSingleQuote(plan.CubeRecipeStorePath))
 	b.WriteString("\n")
 	b.WriteString("TS=$(date -u +%Y%m%dT%H%M%SZ)\n")
 	b.WriteString(`BASE="${BACKUPS_BASE}/${TS}-${COMMIT12}"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== prepare lab backup retention tree =='\n")
-	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items "$BASE"/safebox` + "\n")
+	b.WriteString(`mkdir -p "$BASE"/accounts "$BASE"/login-tickets "$BASE"/item-templates "$BASE"/interaction-store "$BASE"/static-actors "$BASE"/quest-state "$BASE"/ground-items "$BASE"/safebox "$BASE"/cube-recipes` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== retain daemon identity / runtime correlation =='\n")
 	b.WriteString(`curl -sS "$OPS/local/build-info" > "$BASE/gamed-build-info.json"` + "\n")
@@ -555,6 +548,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString(`curl -sS -X POST "$OPS/local/ground-item-store/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/safebox-store/validate"` + "\n")
 	b.WriteString(`curl -sS -X POST "$OPS/local/safebox-store/crash-temps/cleanup"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/cube-recipe-store/validate"` + "\n")
+	b.WriteString(`curl -sS -X POST "$OPS/local/cube-recipe-store/crash-temps/cleanup"` + "\n")
 	b.WriteString(`curl -sS "$OPS/local/persistence/status"` + "\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup =='\n")
@@ -566,6 +561,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/cube-recipe-store/backup\" -H 'Content-Type: application/json' -d \"{\\\"dst_dir\\\":\\\"$BASE/cube-recipes\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup validate =='\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
@@ -576,6 +572,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/cube-recipe-store/backup/validate\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/cube-recipes\\\"}\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== backup-tree status =='\n")
 	b.WriteString("metin2-migrate backup-tree-status --backup-tree \"$BASE\" \\\n")
@@ -604,6 +601,8 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("mkdir -p \"$(dirname \"$GROUND_ITEM_STORE_PATH\")\"\n")
 	b.WriteString("mv \"$(dirname \"$SAFEBOX_STORE_PATH\")\" \"$(dirname \"$SAFEBOX_STORE_PATH\").aside-${TS}\"\n")
 	b.WriteString("mkdir -p \"$(dirname \"$SAFEBOX_STORE_PATH\")\"\n")
+	b.WriteString("mv \"$(dirname \"$CUBE_RECIPE_STORE_PATH\")\" \"$(dirname \"$CUBE_RECIPE_STORE_PATH\").aside-${TS}\"\n")
+	b.WriteString("mkdir -p \"$(dirname \"$CUBE_RECIPE_STORE_PATH\")\"\n")
 	b.WriteString("curl -sS \"$OPS/local/persistence/status\"\n")
 	b.WriteString("\n")
 	b.WriteString("echo '== restore =='\n")
@@ -613,6 +612,7 @@ func renderBackupRestoreDrillScript(plan backupRestoreDrillPlan) string {
 	b.WriteString("curl -sS -X POST \"$OPS/local/quest-state/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/quest-state\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/ground-item-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/ground-items\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/safebox-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/safebox\\\"}\"\n")
+	b.WriteString("curl -sS -X POST \"$OPS/local/cube-recipe-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/cube-recipes\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/account-store/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/accounts\\\"}\"\n")
 	b.WriteString("curl -sS -X POST \"$OPS/local/login-tickets/restore\" -H 'Content-Type: application/json' -d \"{\\\"src_dir\\\":\\\"$BASE/login-tickets\\\"}\"\n")
 	b.WriteString("\n")

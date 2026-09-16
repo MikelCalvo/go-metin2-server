@@ -34,7 +34,7 @@ Prefer explicit absolute paths for durable QA / drill runs instead of process-te
 /var/metin2/data/quest-state/quest-state.json
 /var/metin2/data/ground-items/ground-items.json          # durable pending ground handles
 /var/metin2/data/safebox/safebox.json                     # durable same-account safebox cells + warehouse gold
-/var/metin2/data/cube-recipes/cube-recipes.json           # authored cube recipes (no backup/restore endpoints yet)
+/var/metin2/data/cube-recipes/cube-recipes.json           # authored cube recipes
 ```
 
 Example environment (service-specific overrides win over globals):
@@ -74,6 +74,7 @@ Keep operator evidence outside live data trees:
     quest-state/
     ground-items/
     safebox/
+    cube-recipes/
     runtime-config.json
     persistence-status-before.json
     persistence-status-before-status.json

@@ -1,12 +1,14 @@
 package minimal
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/MikelCalvo/go-metin2-server/internal/cubestore"
 	"github.com/MikelCalvo/go-metin2-server/internal/ops"
 )
 
-// RegisterGamedFileStorePersistenceOps registers the loopback-only eight-store
+// RegisterGamedFileStorePersistenceOps registers the loopback-only nine-store
 // validate / crash-temp cleanup / backup / backup-validate / restore surface
 // plus runtime-config and persistence-status. It is the single owner shared by
 // cmd/gamed and the hermetic backup-restore drill proof so those routes cannot
@@ -114,6 +116,30 @@ func RegisterGamedFileStorePersistenceOps(mux *http.ServeMux, runtime *gameRunti
 	})
 	mux = ops.RegisterLocalSafeboxStoreRestoreEndpoint(mux, func(srcDir string) (any, error) {
 		return runtime.RestoreSafeboxStore(srcDir)
+	})
+	mux = ops.RegisterLocalCubeRecipeStoreValidateEndpoint(mux, func() (any, error) {
+		return runtime.ValidateCubeRecipeStore()
+	})
+	mux = ops.RegisterLocalCubeRecipeStoreCrashTempCleanupEndpoint(mux, func() (any, error) {
+		if runtime.cubeStore == nil {
+			return cubestore.SnapshotSummary{NPCVnums: []uint32{}}, nil
+		}
+		cleaner, ok := runtime.cubeStore.(interface {
+			CleanupCrashTempFiles() (cubestore.SnapshotSummary, error)
+		})
+		if !ok {
+			return cubestore.SnapshotSummary{}, fmt.Errorf("cube recipe store crash temp cleanup is not supported")
+		}
+		return cleaner.CleanupCrashTempFiles()
+	})
+	mux = ops.RegisterLocalCubeRecipeStoreBackupEndpoint(mux, func(dstDir string) (any, error) {
+		return runtime.BackupCubeRecipeStore(dstDir)
+	})
+	mux = ops.RegisterLocalCubeRecipeStoreBackupValidateEndpoint(mux, func(srcDir string) (any, error) {
+		return runtime.ValidateCubeRecipeStoreBackup(srcDir)
+	})
+	mux = ops.RegisterLocalCubeRecipeStoreRestoreEndpoint(mux, func(srcDir string) (any, error) {
+		return runtime.RestoreCubeRecipeStore(srcDir)
 	})
 	mux = ops.RegisterLocalQuestStateStoreBackupEndpoint(mux, func(dstDir string) (any, error) {
 		return runtime.BackupQuestStateStore(dstDir)

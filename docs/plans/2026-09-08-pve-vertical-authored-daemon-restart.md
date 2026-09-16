@@ -57,8 +57,8 @@ restart.
 - Cube-recipe FileStore backup/restore loopback helpers now exist on
   `cubestore.FileStore` (`BackupTo` / `ValidateBackupFrom` / `RestoreFrom`)
   and `ops.RegisterLocalCubeRecipeStore*` for `/local/cube-recipe-store/*`.
-  `gamed_ops` remains the eight-store persistence mux; drill printing and
-  `/local/persistence` mounting of cube-recipe endpoints stay a later slice.
+  `gamed_ops` now mounts cube-recipes as the ninth drill store so
+  `backup-restore-drill` / `backup-tree-status` `store_count` is `9`.
 
 ## Verification
 
