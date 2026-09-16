@@ -11456,6 +11456,10 @@ func ticketChangeSpeedPacket(character loginticket.Character) worldproto.ChangeS
 }
 
 func ticketCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {
+	return ticketCharacterAddPacketWithTemplates(character, nil)
+}
+
+func ticketCharacterAddPacketWithTemplates(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterAddPacket {
 	return worldproto.CharacterAddPacket{
 		VID:         character.VID,
 		Angle:       90.5,
@@ -11468,6 +11472,7 @@ func ticketCharacterAddPacket(character loginticket.Character) worldproto.Charac
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+		Parts:       ticketCharacterAppearanceParts(character, templates),
 	}
 }
 

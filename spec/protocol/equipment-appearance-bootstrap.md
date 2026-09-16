@@ -4,7 +4,8 @@ This document freezes the first minimal link between owned equipped-item state a
 
 The goal of this slice is narrow:
 - project equipped item state into the already-owned `parts` arrays carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
-- keep the behavior deterministic for the selected-character bootstrap burst, the current peer-visibility reuse path, and the first stable peer refresh after equip/unequip
+- reuse that same projected `parts` array on the `CHARACTER_ADD` packet builder for bootstrap, peer-visibility inserts, and one live visibility-membership change during equip/unequip
+- keep the behavior deterministic for the selected-character bootstrap burst, the current peer-visibility reuse path, the first stable peer refresh after equip/unequip, and the membership-change insert burst
 - avoid claiming final costume semantics or broader live appearance choreography too early
 
 It does **not** yet define the full compatibility-grade appearance system.
@@ -21,17 +22,18 @@ This first appearance slice currently applies only to:
 - duplicate-live retry-`ENTERGAME` peer-visibility bursts emitted after another visible session already changed supported equipment at runtime
 - self-only live `CHARACTER_UPDATE` refreshes emitted after successful `/equip_item` / `/unequip_item` mutations
 - queued peer-visible live `CHARACTER_UPDATE` refreshes for already-visible stable peers after those same successful `/equip_item` / `/unequip_item` mutations
-- visible part refresh values carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`
+- one live visibility-membership change during those same successful `/equip_item` / `/unequip_item` mutations, which reuses the ordinary peer-insert burst (`CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE`) instead of the stable `CHARACTER_UPDATE` refresh
+- visible part refresh values carried by `CHARACTER_ADD` packet builders, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 
 It does **not** yet apply to:
-- `CHARACTER_ADD`
-- `CHAR_ADDITIONAL_INFO` fanout during live equip/unequip mutations
+- changing the frozen 34-byte `CHARACTER_ADD` wire layout; companion `CHAR_ADDITIONAL_INFO` / `CHARACTER_UPDATE` in the same burst remain the client-visible parts carrier
+- extra `CHAR_ADDITIONAL_INFO` fanout to already-visible stable peers during live equip/unequip mutations
 - broader costume / transmutation semantics beyond the first hair-slot projection
 - mount, affect, or combat-side appearance transitions
 
 ## Parts layout
 
-The project already owns the visible-parts order carried by `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE`:
+The project already owns the visible-parts order carried by `CHARACTER_ADD` packet builders, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`:
 - `parts[0]` — armor/body
 - `parts[1]` — weapon
 - `parts[2]` — head
@@ -62,15 +64,18 @@ The resolved appearance value is now template-backed when the authored template 
 ## Packet impact
 
 When a character has equipped `body`, `weapon`, `head`, or `hair` items in the persisted bootstrap snapshot:
+- `CHARACTER_ADD` packet builders must expose those projected part values
 - `CHAR_ADDITIONAL_INFO` must expose those projected part values
 - `CHARACTER_UPDATE` must expose the same projected part values
-- both self-bootstrap and peer-visibility bursts must agree because they reuse the same projection helper
+- self-bootstrap and peer-visibility bursts must agree because they reuse the same projection helper
 
 When the selected character successfully equips or unequips a supported `body`, `weapon`, `head`, or `hair` item after bootstrap:
 - the self-only equip/unequip response must append one `CHARACTER_UPDATE`
 - that refresh must expose the same current projected part values derived from the updated selected-character snapshot
 - each already-visible peer that remains visible after the mutation must also receive one queued `CHARACTER_UPDATE`
 - that queued peer refresh must reuse the same projected part values and must not introduce extra `CHARACTER_ADD` / `CHAR_ADDITIONAL_INFO` frames
+- if the same mutation also closes an active bootstrap exchange shell, the paired peer must receive `GC::EXCHANGE END` before that queued `CHARACTER_UPDATE`
+- if the same mutation also changes visibility membership, each newly visible peer must receive the ordinary insert burst whose `CHARACTER_ADD` builder carries those same projected part values, followed by the already-frozen `CHAR_ADDITIONAL_INFO` and `CHARACTER_UPDATE` companions
 - any later peer-visibility burst for a newly entering visible player must also reuse the latest projected part values from the updated shared-world character snapshot
 - any later radius-AOI move-into-range peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
 - any later transfer-driven peer-entry burst must also reuse those latest projected part values from the updated shared-world character snapshot
@@ -78,13 +83,14 @@ When the selected character successfully equips or unequips a supported `body`, 
 - any later duplicate-live retry-`ENTERGAME` peer-entry burst must also reuse those latest projected part values from the updated persisted account snapshot instead of stale pre-rejection selection state
 - if a stale old socket later loses live ownership because another session reclaimed that character, any later `/equip_item` / `/unequip_item` on the stale socket may remain self-local only, but it must not change the persisted/shared-world authoritative appearance seen by peers or the replacement live owner's exact-name loopback inventory/equipment snapshots
 
-`CHARACTER_ADD` remains unchanged in this slice.
+`CHARACTER_ADD` packet builders now reuse the same projected `body` / `weapon` / `head` / `hair` parts. The frozen 34-byte `CHARACTER_ADD` wire layout is unchanged.
 
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- live peer appearance fanout that also changes visibility membership during the same mutation itself
-- other visibility-membership changes beyond the currently frozen late-join, transfer-driven, reconnect-driven, duplicate-live retry-`ENTERGAME`, and radius-AOI move-into-range branches
+- rewriting the `CHARACTER_ADD` wire layout or introducing `CHARACTER_ADD2`
+- extra `CHAR_ADDITIONAL_INFO` fanout to already-visible stable peers during live equip/unequip
+- other visibility-membership changes beyond the currently frozen late-join, transfer-driven, reconnect-driven, duplicate-live retry-`ENTERGAME`, radius-AOI move-into-range, and one live equip/unequip membership-change insert branches
 - shield, arrow, unique-slot, necklace, bracelet, or shoes appearance semantics
 - costume, transmutation, refine-glow, or affect overlays
 - validation or repair behavior for manually-corrupted snapshots containing duplicate equipped slots
@@ -93,9 +99,10 @@ This slice does **not** yet freeze:
 
 After this slice, the repository should be able to say:
 - bootstrap visible-character packets no longer ignore equipped `body`, `weapon`, `head`, and `hair` items
-- self-bootstrap and peer-visibility bursts project the same deterministic appearance values from the persisted equipped-item snapshot
+- self-bootstrap and peer-visibility bursts project the same deterministic appearance values from the persisted equipped-item snapshot onto `CHARACTER_ADD` builders, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`
 - successful `/equip_item` / `/unequip_item` mutations now append one deterministic self-only `CHARACTER_UPDATE` carrying the updated projected appearance
 - already-visible stable peers now also receive one queued deterministic `CHARACTER_UPDATE` carrying that same updated projected appearance
+- a live visibility-membership change during those same mutations now inserts the peer with the ordinary `CHARACTER_ADD` burst whose builder carries that same projected appearance, without extra stable-peer `CHAR_ADDITIONAL_INFO` frames
 - late-joining visible peers now also see that latest projected appearance through the normal peer-visibility burst without requiring the mutating session to reconnect
 - radius-AOI move-into-range peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened
 - transfer-driven peer-entry bursts now also reuse that latest projected appearance when visibility is rebuilt after the runtime mutation already happened

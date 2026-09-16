@@ -87,8 +87,8 @@ The first bootstrap equipment surface freezes a small named worn-slot set that i
 Rules for this first stage:
 - each equipment slot may contain at most one item instance
 - equipped items remain part of the same owned character item state as carried inventory
-- peer-visible appearance for equipped `body`, `weapon`, `head`, and `hair` items is now frozen separately in `spec/protocol/equipment-appearance-bootstrap.md` for bootstrap/peer-visibility packet builders
-- live equip/unequip appearance fanout still remains out of scope here
+- peer-visible appearance for equipped `body`, `weapon`, `head`, and `hair` items is now frozen separately in `spec/protocol/equipment-appearance-bootstrap.md` for bootstrap/peer-visibility packet builders, including the `CHARACTER_ADD` builder used by one live visibility-membership change during equip/unequip
+- broader live equip/unequip appearance choreography beyond that frozen appearance contract still remains out of scope here
 
 ## Persisted snapshot boundary
 
@@ -145,7 +145,7 @@ Refresh rules for a successful self-only mutation:
 - authored equipment templates must be non-stackable at the item-template snapshot boundary; a template that combines `stackable = true` with `equip_slot` is rejected before runtime construction, so malformed equipment metadata cannot later choose between stack merge and equip semantics at packet time
 - the current self-only equip/unequip `CHARACTER_UPDATE` reuses the appearance projection frozen in `spec/protocol/equipment-appearance-bootstrap.md`, including template-authored `appearance_vnum` overrides for the visible `body`, `weapon`, `head`, and `hair` part slots
 - the first equip-driven point refresh is still intentionally narrow: it is self-only, template-authored, and limited to the selected session's runtime/persisted point snapshot; peer-visible point fanout and bootstrap recomputation from already-worn bonus items remain out of scope
-- the direct item-slot response stays self-only; when the mutating character is already registered in shared-world visibility, already-visible stable peers now also receive one queued `CHARACTER_UPDATE` reusing the same projected appearance
+- the direct item-slot response stays self-only; when the mutating character is already registered in shared-world visibility, already-visible stable peers now also receive one queued `CHARACTER_UPDATE` reusing the same projected appearance; if the same socket has an active bootstrap exchange shell, the paired peer receives one queued `GC::EXCHANGE END` before that appearance refresh
 - if a stale old socket has already lost live shared-world ownership because another session reclaimed that character, later `/equip_item` / `/unequip_item` may still return those self-local frames but must not persist carried/equipped state, must not queue peer-visible appearance refreshes, and must not overwrite the replacement live owner's exact-name loopback inventory/equipment snapshots
 
 ## Frozen wire position addressing

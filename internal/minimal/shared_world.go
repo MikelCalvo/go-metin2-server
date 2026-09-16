@@ -7319,7 +7319,7 @@ func encodePeerVisibilityFramesWithTemplates(character loginticket.Character, te
 		return nil
 	}
 	return [][]byte{
-		worldproto.EncodeCharacterAdd(ticketCharacterAddPacket(character)),
+		worldproto.EncodeCharacterAdd(ticketCharacterAddPacketWithTemplates(character, templates)),
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(ticketCharacterUpdatePacketWithTemplates(character, templates)),
 	}

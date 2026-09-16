@@ -140,6 +140,11 @@ type CharacterAddPacket struct {
 	AttackSpeed uint8
 	StateFlag   uint8
 	AffectFlags [AffectFlagCount]uint32
+	// Parts carries the same projected body/weapon/head/hair appearance used by
+	// CHAR_ADDITIONAL_INFO / CHARACTER_UPDATE. The current 34-byte CHARACTER_ADD
+	// wire layout does not serialize this field; companion packets in the same
+	// visibility burst remain the client-visible appearance carrier.
+	Parts [CharacterEquipmentPartCount]uint16
 }
 
 type CharacterAdditionalInfoPacket struct {

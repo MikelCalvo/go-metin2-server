@@ -1383,7 +1383,9 @@ Expected result:
 Expected result:
 - the mutating client still gets only the normal self item-slot frames plus its self refresh
 - already-visible stable peers now also receive one visible-character refresh carrying the same projected appearance
-- no reconnect, duplicate peer insert, or forced visibility reset is required
+- if the mutating player had a trade window open, the partner sees that window close before the appearance refresh
+- if that same mutation also newly makes another player visible, that player receives the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` insert with the same projected appearance instead of a lone `CHARACTER_UPDATE`
+- no reconnect, duplicate peer insert, or forced visibility reset is required for already-visible stable peers
 
 ### 6.8 Late join after peer appearance mutation
 

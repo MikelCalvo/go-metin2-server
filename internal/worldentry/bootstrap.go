@@ -23,7 +23,7 @@ func BuildBootstrapFramesWithTemplates(character loginticket.Character, template
 		return nil, err
 	}
 	frames := [][]byte{
-		worldproto.EncodeCharacterAdd(bootstrapCharacterAddPacket(character)),
+		worldproto.EncodeCharacterAdd(bootstrapCharacterAddPacket(character, templates)),
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(bootstrapCharacterUpdatePacket(character, templates)),
 		worldproto.EncodePlayerPointChange(bootstrapPlayerPointChangePacket(character)),
@@ -51,7 +51,7 @@ func sortedBootstrapQuickslots(quickslots []loginticket.Quickslot) []loginticket
 	return sorted
 }
 
-func bootstrapCharacterAddPacket(character loginticket.Character) worldproto.CharacterAddPacket {
+func bootstrapCharacterAddPacket(character loginticket.Character, templates map[uint32]itemcatalog.Template) worldproto.CharacterAddPacket {
 	return worldproto.CharacterAddPacket{
 		VID:         character.VID,
 		Angle:       90.5,
@@ -64,6 +64,7 @@ func bootstrapCharacterAddPacket(character loginticket.Character) worldproto.Cha
 		AttackSpeed: 100,
 		StateFlag:   2,
 		AffectFlags: [worldproto.AffectFlagCount]uint32{0x11111111, 0x22222222},
+		Parts:       bootstrapCharacterAppearanceParts(character, templates),
 	}
 }
 
