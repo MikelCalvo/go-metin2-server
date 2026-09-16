@@ -5,6 +5,7 @@ This document freezes the first carried-item stacking contract for `go-metin2-se
 The goal is intentionally narrow:
 - make stack behavior explicit before more merchant/item paths build on implicit runtime rules
 - define how a carried merchant grant may merge into one or more existing carried stacks or claim a fresh carried slot
+- reuse that same placement contract for one lab mail or letter grant into carried inventory
 - keep the first contract deterministic enough that focused RED tests can pin it down without pretending the repo already owns the final legacy inventory UX
 
 It sits on top of:
@@ -18,13 +19,15 @@ This first stack contract applies only to:
 - carried inventory slots
 - owned item-template metadata from `internal/itemstore`
 - the first merchant-buy grant path into the selected character runtime
+- one first mail/letter grant companion into the same carried inventory
 - deterministic self-facing item refresh semantics when one or more carried slots change
 
 This slice does **not** yet apply to:
 - equipment slots
 - drag-and-drop split/merge UX
 - sell-back or safebox semantics
-- world drops, loot, quest rewards, or mail/mall grants
+- world drops, loot, quest rewards, or mall checkout / cash-shop purchase
+- the full mailbox UI family (`POST`, attach/detach, inbox list, read/delete)
 
 ## Template-owned facts
 
@@ -44,6 +47,8 @@ This document defines how runtime inventory placement is allowed to depend on th
 ## Merchant-grant placement contract
 
 When a merchant buy resolves to an owned template plus an authored `count`, the runtime must treat placement as a deterministic carried-inventory decision.
+
+The first mail/letter grant companion reuses that same placement decision. It does not debit gold and does not open a mailbox window.
 
 ### 1. Validate the grant against template metadata
 
@@ -123,9 +128,9 @@ When placement succeeds, one or more carried slots change in this contract:
 
 That property matters for the current bootstrap runtime because the self-facing refresh contract can stay deterministic:
 - one `ITEM_SET` for a fresh carried slot that appears
-- one `ITEM_UPDATE` for bought-item or pickup merge successes that only change an already-known carried cell's count
-- one refresh per changed carried slot in carried-slot order for multi-slot merchant-buy success and multi-stack pickup fill paths, using `ITEM_SET` for newly occupied slots and `ITEM_UPDATE` for existing-stack count refreshes
-- the exact `ITEM_UPDATE` packet shape is now codec-owned and emitted by merchant buy/sell, pickup, and other carried-stack paths for count/socket/attribute-only refreshes of already-known carried cells
+- one `ITEM_UPDATE` for bought-item, mail-grant, or pickup merge successes that only change an already-known carried cell's count
+- one refresh per changed carried slot in carried-slot order for multi-slot merchant-buy success, the first mail/letter grant companion, and multi-stack pickup fill paths, using `ITEM_SET` for newly occupied slots and `ITEM_UPDATE` for existing-stack count refreshes
+- the exact `ITEM_UPDATE` packet shape is now codec-owned and emitted by merchant buy/sell, pickup, mail grant, and other carried-stack paths for count/socket/attribute-only refreshes of already-known carried cells
 
 The selected-character persistence boundary remains the same as other M3 item mutations:
 - persist the updated selected snapshot before committing the new live state
@@ -144,9 +149,24 @@ The first stack contract must fail closed when any of these are true:
 
 Failure behavior in this bootstrap contract:
 - no gold may be debited on merchant-buy failure
+- a mail/letter grant never debits gold on success or failure
 - no carried stack may remain partially mutated if the remainder cannot also be placed and persisted
 - no partial remainder placement may be committed on failure
 - the selected runtime must preserve the pre-request state
+
+## First mail/letter grant companion
+
+The first owned mail/letter grant is a lab slash, not a mailbox protocol family:
+
+- `/mail_grant <vnum>` grants count `1` of a catalog-valid template into carried inventory
+- `/mail_grant <vnum> <count>` grants that exact count through the same placement contract as merchant buy
+- `/letter_grant` is an alias of `/mail_grant`
+- recognized but malformed attempts (`/mail_grant`, `/mail_grant 0`, `/mail_grant potion`, extra args, zero count) consume the slash fail-closed: no ordinary talking-chat fallthrough, no inventory/gold mutation, and no mailbox window
+- unknown or catalog-invalid vnums, selected-character restriction failures, `anti_get`, and no-valid-placement also consume fail-closed with no mutation
+- private-shop host busy and the bootstrap zero-HP floor stay fail-closed before placement
+- success emits the same self-only `ITEM_SET` / `ITEM_UPDATE` refresh family already owned by merchant buy, persists the selected snapshot, and does not invent `POST` / inbox / attach / detach / mall checkout packets
+
+This companion exists so a player can receive an item by mail without buying it or picking it up. The mailbox UI family and mall checkout remain deferred.
 
 ## Relationship to item use
 
@@ -165,6 +185,7 @@ This first stack contract does **not** yet freeze:
 - merchant sell-back or rebuy semantics
 - automatic consolidation of duplicate stacks outside the current grant path
 - peer-visible inventory/equipment deltas
+- the full mailbox UI family, mail attach/detach, inbox persistence, or mall checkout / cash-shop purchase
 - final legacy item packet families beyond the already-owned `ITEM_SET` / `ITEM_DEL` refresh slice and the codec-owned `ITEM_UPDATE` shape
 
 ## Success definition
@@ -173,3 +194,4 @@ After this slice, the repository should be able to say:
 - the first carried-item stack contract is no longer implicit runtime behavior
 - merchant grants now have a frozen order of decisions: validate, when not `anti_stack` prefer one full merge into a non-locked stack, otherwise allow full fan-out across existing compatible non-locked stacks, otherwise allow deterministic existing-stack fan-out plus one fresh-slot remainder; `anti_stack` grants skip those merge/fan-out paths and go directly to fresh-slot placement; otherwise fail closed
 - template metadata (`stackable`, `max_count`, `anti_stack`) now explicitly controls carried merchant-grant placement
+- one lab mail/letter grant (`/mail_grant` / `/letter_grant`) now reuses that same placement contract to put a catalog-valid item into carried inventory without gold debit, mailbox UI, or mall checkout
