@@ -6973,6 +6973,43 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							return gameflow.ChatResult{Accepted: true, Frames: result.Frames}
 						}
+						if vnum, count, parsed, recognized := player.ParseMailGrantCommand(packet.Message); recognized {
+							if !parsed {
+								// Recognized /mail_grant or /letter_grant with missing or
+								// invalid args must stay fail-closed: consume the slash so
+								// it does not fall through as ordinary talking chat, emit
+								// no mailbox UI, and leave inventory/gold unchanged.
+								return gameflow.ChatResult{Accepted: true}
+							}
+							selectedPlayer, ok := currentSelectedPlayer()
+							if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							if hasActiveMyShopOpen {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							template, ok := runtime.itemTemplates[vnum]
+							if !ok || !itemcatalog.ValidTemplate(template) {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							previousSelected := selectedPlayer.LiveCharacter()
+							grant, ok := selectedPlayer.GrantCarriedMailItem(template, count)
+							if !ok {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							frames, err := merchantBuyResultFrames(player.MerchantBuyResult{Items: grant.Items, ItemChanges: grant.ItemChanges}, runtime.itemTemplates)
+							if err != nil {
+								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+								refreshLiveCharacterRegistration()
+								return gameflow.ChatResult{Accepted: true}
+							}
+							chatResult := commitSelectedNonPointItemMutation(selectedPlayer, previousSelected, frames)
+							if !chatResult.Accepted {
+								return chatResult
+							}
+							chatResult.Frames = prependExchangeCloseFrame(chatResult.Frames)
+							return chatResult
+						}
 						if size, sizeExplicit, ok := slashOpenSafeboxCommand(packet.Message); ok {
 							selectedPlayer, selectedOK := currentSelectedPlayer()
 							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
