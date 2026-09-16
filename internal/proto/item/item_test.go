@@ -958,6 +958,24 @@ func TestDecodeGroundAddReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestEncodeGroundAddWithGoldCountAppendsTrailer(t *testing.T) {
+	want := frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x01, 0, 0, 0, 0xb0, 0x04, 0, 0})
+	got := EncodeGroundAdd(GroundAddPacket{VID: 0x12345678, Vnum: 1, Count: 1200, X: 10000, Y: -2000, Z: 8000})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected gold-count ground add frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeGroundAddReturnsGoldCountTrailer(t *testing.T) {
+	packet, err := DecodeGroundAdd(decodeSingleFrame(t, frame.Encode(HeaderGroundAdd, []byte{0x10, 0x27, 0, 0, 0x30, 0xf8, 0xff, 0xff, 0x40, 0x1f, 0, 0, 0x78, 0x56, 0x34, 0x12, 0x01, 0, 0, 0, 0xb0, 0x04, 0, 0})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (GroundAddPacket{VID: 0x12345678, Vnum: 1, Count: 1200, X: 10000, Y: -2000, Z: 8000}) {
+		t.Fatalf("unexpected gold-count ground-add packet: %+v", packet)
+	}
+}
+
 func TestEncodeGroundDelBuildsAFrame(t *testing.T) {
 	want := frame.Encode(HeaderGroundDel, []byte{0x78, 0x56, 0x34, 0x12})
 	got := EncodeGroundDel(GroundDelPacket{VID: 0x12345678})
@@ -1203,9 +1221,15 @@ func TestDecodeGroundAddRejectsUnexpectedHeader(t *testing.T) {
 }
 
 func TestDecodeGroundAddRejectsInvalidPayload(t *testing.T) {
-	_, err := DecodeGroundAdd(frame.Frame{Header: HeaderGroundAdd, Length: 23, Payload: make([]byte, groundAddPayloadSize-1)})
-	if !errors.Is(err, ErrInvalidPayload) {
-		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	for _, payload := range [][]byte{
+		make([]byte, groundAddPayloadSize-1),
+		make([]byte, groundAddPayloadSize+1),
+		make([]byte, groundAddGoldCountPayloadSize+1),
+	} {
+		_, err := DecodeGroundAdd(frame.Frame{Header: HeaderGroundAdd, Length: uint16(4 + len(payload)), Payload: payload})
+		if !errors.Is(err, ErrInvalidPayload) {
+			t.Fatalf("expected ErrInvalidPayload for %d-byte payload, got %v", len(payload), err)
+		}
 	}
 }
 
