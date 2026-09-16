@@ -16,11 +16,12 @@ The authored item-template snapshot boundary that feeds this runtime path is doc
 This first contract applies only to:
 - the currently selected character already in `GAME`
 - one carried-inventory consumable path
+- one first worn-cell companion on unique1 (`cell = 97`)
 - self-only point/state change
 - self-only item refresh
 - self-only feedback/effect delivery
 
-It does **not** yet apply to peers, world drops, merchants, or quest-scripted items.
+It does **not** yet apply to peers, world drops, merchants, quest-scripted items, or other worn cells.
 
 ## First owned ingress seam
 
@@ -30,9 +31,10 @@ The first owned item-use ingress remains bootstrap-scoped and deliberately narro
 - `ITEM_USE` currently carries only one packed `TItemPos` payload: `window_type:uint8`, `cell:uint16` (little-endian)
 - accepted client-originated `ITEM_USE` now has a self-only server echo packet, also named `ITEM_USE`, with framed header `0x0512`; its payload is `TItemPos cell`, `character_vid:uint32`, `victim_vid:uint32`, and `vnum:uint32` in little-endian order
 - the packet-ingress echo is emitted before the existing point/item/placeholder refresh burst; the older slash `/use_item <slot>` harness remains a test/debug seam and does not synthesize that packet-only echo
-- only carried inventory slots are valid live runtime inputs (`cell < 90`)
-- the player mutation boundary also rejects slots outside that carried-inventory range before template effects are applied, so equipment/extended cells cannot mutate points or stacks even if a stale or direct runtime caller has an item snapshot there
-- equipped items remain out of scope even though equipment still uses the legacy combined inventory/equipment cell namespace elsewhere in the bootstrap item family
+- carried inventory slots remain valid live runtime inputs (`cell < 90`)
+- the first worn-cell companion now also accepts the unique1 equipment cell in the legacy combined inventory namespace: `window_type = INVENTORY`, `cell = 90 + 7` (`97`); `/use_item 97` and packet `ITEM_USE` share that same unique1 address
+- the player mutation boundary still rejects every other slot outside carried inventory and unique1 before template effects are applied, so weapon/head/unique2/extended cells cannot mutate points or stacks even if a stale or direct runtime caller has an item snapshot there
+- other equipped items remain out of scope; unique1 is the only owned worn-cell `ITEM_USE` / `/use_item` companion in this slice
 
 The client source also exposes a separate drag-to-item packet family, `ITEM_USE_TO_ITEM`:
 - framed header `0x0506`
@@ -75,16 +77,18 @@ When no runtime handler is installed, the default game-flow handler still reject
 
 For the first owned packet ingress, the runtime only accepts:
 - `window_type = INVENTORY`
-- `cell < 90`
+- carried inventory `cell < 90`, or unique1 worn cell `97`
 
-Any other `TItemPos` currently fails closed.
+Any other `TItemPos` currently fails closed. Unique1 is the only owned worn-cell exception; unique2, weapon, and every other wear index stay fail-closed.
 
 ## First consumable prototype
 
 Exactly one consumable shape is frozen here:
-- supported source surface: carried inventory only
+- supported source surface: carried inventory, plus one unique1 worn-cell companion
 - the runtime resolves the consumed slot through file-backed item-template metadata keyed by that item's `vnum`
-- only non-equippable templates with a valid `use_effect` payload are currently eligible for the ordinary consumable `/use_item <slot>` / `ITEM_USE` path
+- only non-equippable templates with a valid `use_effect` payload are currently eligible for the ordinary consumable `/use_item <slot>` / `ITEM_USE` path, including unique1
+- unique1 occupancy does not rewrite the item-template catalog: authored `equip_slot` plus `use_effect` remains invalid at the store boundary, so the first worn-cell GREEN uses a catalog-valid non-equippable `use_effect` template that already occupies unique1
+- unique1 last-stack consume does not retarget or delete item quickslots; carried last-stack quickslot cleanup stays carried-only
 - one dedicated non-consumable companion is now also owned for carried ordinary shop bag `50200` and silk bag `71049`: those vnums open the private-shop setup UI through self-only `CHAT_TYPE_COMMAND` frames without requiring `use_effect` and without debiting inventory (`docs/plans/2026-08-28-myshop-bag-use-openprivateshop-pricelist.md`, companion notes in `npc-shop-transaction-bootstrap.md`)
 - templates with an authored `equip_slot` are rejected for direct consumable use even if they also carry a valid `use_effect`, so equipment metadata cannot accidentally execute the consumable point-effect path
 - templates with authored `confirm_when_use = true` plus a valid non-equippable `use_effect` follow the ordinary direct consumable success path after the client-local confirm dialog; `confirm_when_use` is not a server ack/second-packet protocol in this bootstrap (`docs/plans/2026-08-22-item-use-confirm-when-use-ordinary-path.md`). Existing transfer / selected-character / `use_reject_message` guards still apply before mutation; `quest_use` / `quest_use_multiple` / `applicable` remain fail-closed
@@ -114,7 +118,7 @@ That companion document owns merge/new-slot/fail-closed placement semantics for 
 
 ## Success path
 
-When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})` targets a carried inventory slot whose item resolves to a valid template-backed `use_effect` with enough live stack count for the authored `consume_count`:
+When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})` targets a carried inventory slot, or the unique1 worn cell `97`, whose item resolves to a valid template-backed `use_effect` with enough live stack count for the authored `consume_count`:
 
 1. the runtime decrements the stack by exactly `template.use_effect.consume_count` when it is authored, or by `1` when it is omitted, while preserving the carried-stack bounds frozen in `item-stack-bootstrap.md`
 2. the selected character's live `Points[point_index]` changes by exactly the signed `point_delta`
@@ -123,8 +127,8 @@ When `/use_item <slot>` or `ITEM_USE(TItemPos{window = INVENTORY, cell = slot})`
 5. the server emits a deterministic self-only item-use response burst. For the packet ingress, the burst starts with `ITEM_USE` echo (`0x0512`) whose `cell` is the consumed inventory cell, whose `character_vid` and `victim_vid` are both the selected character `VID`, and whose `vnum` is the consumed item template `vnum`; the older slash harness omits this packet-only echo.
 6. after the optional exchange close and packet-ingress echo, both ingress seams emit the remaining frames in this order:
    1. `PLAYER_POINT_CHANGE`
-   2. item refresh for that same carried slot
-   3. zero or more `QUICKSLOT_DEL` frames for item quickslots that referenced the removed carried slot, only when the stack reaches zero
+   2. item refresh for that same consumed slot (carried cell, or unique1 cell `97`)
+   3. zero or more `QUICKSLOT_DEL` frames for item quickslots that referenced the removed carried slot, only when a carried stack reaches zero; unique1 last-stack consume does not emit this cleanup
    4. one self-only `SPECIAL_EFFECT` delivery when `use_effect.special_effect_type` is non-zero
    5. one self-only `CHAT_TYPE_INFO` delivery acting as the temporary text placeholder
 
@@ -144,6 +148,7 @@ For the current seeded bootstrap consumable template this still means:
 The item refresh for the consumed slot must use the existing owned item family:
 - if the stack remains non-zero after consume, emit `ITEM_UPDATE(slot)` with the decremented `count`
 - if the consumed stack reaches zero, emit `ITEM_DEL(slot)`
+- unique1 uses the same refresh family against the legacy combined equipment cell `97`; a unique1 remainder stays equipped on unique1, and a unique1 last stack emits `ITEM_DEL` for that worn cell without carried-slot quickslot cleanup
 
 The minimal session/runtime packet path now freezes partial-stack `ITEM_USE` with template-authored output: `ITEM_USE` echo, `PLAYER_POINT_CHANGE`, `ITEM_UPDATE` for the already-known carried cell's decremented count, then the template-authored `CHAT_TYPE_INFO` placeholder. The slash harness keeps the same sequence without the packet-only echo. That count-only `ITEM_UPDATE` projects presence-aware instance sockets/attributes via ordinary `EffectiveSockets` / `EffectiveAttributes` (instance presence including explicit zero wins over template; omitted instance keeps template fallback) while only the stack count changes, and the remainder keeps an independent presence clone so later writes cannot alias the pre-use live inventory pointer (`docs/plans/2026-09-05-item-use-partial-remainder-preserve-instance-sockets-attributes.md`). The persisted account snapshot keeps the item instance in the same carried slot with the decremented count and independent presence-aware fields (including explicit zero; omit→omit), persists the updated point value, and leaves both item and non-item quickslots for that still-occupied cell unchanged. The same burst applies when the template-authored `point_delta` is negative: `PLAYER_POINT_CHANGE.amount` carries the negative delta and `value` carries the decreased signed point value. When `use_effect.consume_count` is greater than one, the same count-refresh rule applies after subtracting that authored count exactly.
 
@@ -183,8 +188,10 @@ The first consumable path must fail closed when any of these are true:
 - the resolved template carries authored `confirm_when_use = true` without a valid ordinary consumable `use_effect` path (for example missing/invalid effect, equippable template, or other owned fail-closed gates such as `quest_use` / `applicable`); when `confirm_when_use` is present with a valid `use_effect`, the ordinary success path above applies instead of rejecting for confirmation
 - the resolved template carries authored `quest_use`, `quest_use_multiple`, or `applicable` metadata; the minimal session/runtime packet path freezes these as no-mutation behavior with inventory, quickslots, point values, and successful-use placeholder chat unchanged until later quest/applicable item flows are owned; when the template authors non-empty `use_reject_message`, the rejection emits exactly one self-only `CHAT_TYPE_INFO` with that text, otherwise it preserves the older no-frame rejection
 - the resolved template carries an authored `anti_stack`, `anti_get`, `anti_drop`, `anti_give`, or `anti_sell` guard; for direct `ITEM_USE` / `/use_item`, when the template authors non-empty `use_reject_message`, the rejection emits exactly one self-only `CHAT_TYPE_INFO` with that text, otherwise it preserves the older no-frame rejection; for `ITEM_USE_TO_ITEM`, the packet path freezes these as no-frame/no-mutation transfer guards rather than chat-emitting drop/pickup policy
-- the item is not in carried inventory
-- the request uses any `TItemPos` outside the current carried-inventory-only subset
+- the item is not in carried inventory and is not occupying unique1
+- the request uses any `TItemPos` outside the current carried-inventory subset plus unique1 cell `97`
+- unique1 is empty, duplicate-occupied, locked, or occupied by a vnum that does not resolve to a valid non-equippable `use_effect` template
+- unique2, weapon, and every other worn cell besides unique1 remain fail-closed
 - frame construction fails
 - snapshot persistence fails
 
@@ -243,6 +250,7 @@ With the first implementation slice landed, the repository can now say:
 - the first owned item-use vertical is no longer undefined
 - exactly one template-backed consumable shape is frozen and implemented before broader gameplay scripting begins
 - `/use_item <slot>` and the first owned client-originated `ITEM_USE` packet now both mutate the first carried template-backed consumable in the bootstrap minimal runtime
+- the same two ingress seams now also mutate one unique1 worn cell (`cell = 97`) when that cell holds a catalog-valid non-equippable `use_effect` template; other worn cells stay fail-closed, and catalog `equip_slot` plus `use_effect` stays invalid
 - the self-only consumable outputs are explicit and exercised: `PLAYER_POINT_CHANGE`, `ITEM_SET`/`ITEM_DEL`, last-stack `QUICKSLOT_DEL`, and one `CHAT_TYPE_INFO` placeholder effect
 - the first live `ITEM_USE_TO_ITEM` runtime case now reuses the carried-stack merge path for compatible same-`vnum` inventory stacks, persists the merged inventory, refreshes already-known cells with count-only `ITEM_UPDATE` that projects presence-aware instance sockets/attributes (destination-wins on the target; independent source-remainder clone on partial merge), and deliberately avoids falling back to the normal consumable `use_effect`
 - the selected-character writeback still preserves the existing atomic persistence and rollback boundary for both direct `ITEM_USE` and `ITEM_USE_TO_ITEM`, including focused save-failure coverage for full and partial drag-to-item merges

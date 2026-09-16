@@ -254,6 +254,7 @@ Expected result:
 - a consumable whose template-authored negative point delta would underflow the bootstrap signed 32-bit point value fails closed before stack, quickslot, point, placeholder-chat, or persisted-state mutation
 - if operator/test fixtures can force account persistence failure during an otherwise-valid `ITEM_USE`, the consume fails closed: no point change, item refresh, quickslot change, or placeholder chat is visible, and reconnect shows the pre-use inventory/points/quickslots unchanged
 - the placeholder `CHAT_TYPE_INFO` message uses template-authored `use_effect.info_message` when non-empty, otherwise it falls back to `use_effect.message` for older templates and the built-in bootstrap fallback; authored snapshots with embedded NUL bytes in either field should fail item-template validation/runtime startup rather than reaching the client as truncated chat text
+- unique1 (`cell = 97`) is the first owned worn-cell companion: using a catalog-valid non-equippable `use_effect` item already occupying unique1 follows the same self-only point/item/info burst against that worn cell; empty unique1, unique2, weapon, and other worn cells fail closed with no mutation; unique1 last-stack consume does not clear carried item quickslots
 
 ### 4.5.2 Drag stack onto stack (`ITEM_USE_TO_ITEM`)
 
@@ -930,6 +931,7 @@ Expected result:
 - the response burst stays self-only and ordered as `PLAYER_POINT_CHANGE` then `ITEM_SET`/`ITEM_DEL` then authored `SPECIAL_EFFECT` then `CHAT_TYPE_INFO`
 - selected-character job/sex/empire/`min_level` anti-flag templates fail closed before the consumable point/effect path runs
 - the selected-character snapshot persists atomically through the current save/rollback boundary
+- unique1 (`cell = 97`) is the first owned worn-cell use companion: a catalog-valid non-equippable `use_effect` item already occupying unique1 can be used through packet `ITEM_USE` or `/use_item 97`; other worn cells stay fail-closed; catalog `equip_slot` plus `use_effect` stays invalid
 
 ### 5.7.1 Drag-to-item stack consolidation
 
@@ -1954,7 +1956,7 @@ These are currently out of scope for the present server state unless the milesto
 
 - [ ] inventory UX completeness
 - [ ] full equipment UX/stat semantics beyond the current bootstrap equip/unequip + shared-world appearance refresh slice
-- [ ] item use beyond the currently owned bootstrap special-effect / transfer ITEM_USE guards
+- [ ] item use beyond the currently owned bootstrap special-effect / transfer ITEM_USE guards and the first unique1 worn-cell companion
 - [ ] richer merchant-window choreography beyond the current bootstrap open / buy / sell / close slice (for example stock depletion, cash shops, or extra `UPDATE_ITEM` / `UPDATE_PRICE` polish)
 - [ ] broader mob/skill combat beyond the current `training_dummy` / content-loaded `practice_mob` target -> hit -> death -> timed-respawn loop
 - [ ] client quest packets, quest acceptance/completion UI, branching dialog trees, or script-VM quest runtime beyond the owned `quest_flag` / kill-quest credit compare-and-set seam
