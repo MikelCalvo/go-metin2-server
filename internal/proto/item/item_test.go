@@ -789,6 +789,14 @@ func TestEncodeClientRefineBuildsAFrame(t *testing.T) {
 	}
 }
 
+func TestEncodeClientRefineScrollTypeBuildsAFrame(t *testing.T) {
+	want := frame.Encode(HeaderClientRefine, []byte{5, RefineTypeScroll})
+	got := EncodeClientRefine(ClientRefinePacket{Position: 5, Type: RefineTypeScroll})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected scroll-catalyst refine frame bytes: got %x want %x", got, want)
+	}
+}
+
 func TestDecodeClientRefineReturnsExpectedFields(t *testing.T) {
 	packet, err := DecodeClientRefine(decodeSingleFrame(t, frame.Encode(HeaderClientRefine, []byte{5, 2})))
 	if err != nil {
@@ -796,6 +804,28 @@ func TestDecodeClientRefineReturnsExpectedFields(t *testing.T) {
 	}
 	if packet != (ClientRefinePacket{Position: 5, Type: 2}) {
 		t.Fatalf("unexpected item-refine packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientRefineReturnsScrollType(t *testing.T) {
+	packet, err := DecodeClientRefine(decodeSingleFrame(t, frame.Encode(HeaderClientRefine, []byte{5, RefineTypeScroll})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet != (ClientRefinePacket{Position: 5, Type: RefineTypeScroll}) {
+		t.Fatalf("unexpected scroll-catalyst refine packet: %+v", packet)
+	}
+}
+
+func TestRefineScrollCatalystConstants(t *testing.T) {
+	if RefineTypeScroll != 1 {
+		t.Fatalf("expected RefineTypeScroll=1, got %d", RefineTypeScroll)
+	}
+	if RefineTypeCancel != 255 {
+		t.Fatalf("expected RefineTypeCancel=255, got %d", RefineTypeCancel)
+	}
+	if RefineScrollCatalystVnum != 39001 {
+		t.Fatalf("expected RefineScrollCatalystVnum=39001, got %d", RefineScrollCatalystVnum)
 	}
 }
 

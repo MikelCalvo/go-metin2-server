@@ -248,6 +248,16 @@ type ClientRefinePacket struct {
 	Type     uint8
 }
 
+const (
+	// RefineTypeScroll is the first owned catalyst confirm type: matching
+	// confirm consumes one authored scroll catalyst (RefineScrollCatalystVnum).
+	RefineTypeScroll uint8 = 1
+	// RefineTypeCancel closes an open refine dialog with no mutation.
+	RefineTypeCancel uint8 = 255
+	// RefineScrollCatalystVnum is the authored extra consume for RefineTypeScroll.
+	RefineScrollCatalystVnum uint32 = 39001
+)
+
 type RefineMaterial struct {
 	Vnum  uint32
 	Count int32

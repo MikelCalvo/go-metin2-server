@@ -1872,6 +1872,307 @@ func TestGameRuntimeItemRefineConfirmAfterPreviewProbability75FailResultVnumMiss
 	}
 }
 
+func TestGameRuntimeItemRefineConfirmAfterPreviewScrollCatalystConsumesAndEmitsBurst(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineScrollCat", 0x010307A1, 0x020407A1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 690, Vnum: 11290, Count: 1, Slot: 5},
+		{ID: 691, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 692, Vnum: itemproto.RefineScrollCatalystVnum, Count: 1, Slot: 7},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeItem, Slot: 7},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-scroll", 0x707070A1, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-scroll", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine scroll-catalyst account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum: 11290, Name: "Scroll Catalyst Practice Blade", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11291, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11291, Name: "Scroll Catalyst Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	catalyst := itemcatalog.Template{Vnum: itemproto.RefineScrollCatalystVnum, Name: "Scroll Refine Catalyst", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material, catalyst})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine scroll-catalyst runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-scroll", 0x707070A1)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected scroll-catalyst preview one frame, got %d err=%v", len(previewOut), err)
+	}
+	if _, err := itemproto.DecodeRefineInformationNew(decodeSingleFrame(t, previewOut[0])); err != nil {
+		t.Fatalf("decode scroll-catalyst preview: %v", err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil {
+		t.Fatalf("unexpected scroll-catalyst confirm error: %v", err)
+	}
+	if len(confirmOut) != 6 {
+		t.Fatalf("expected scroll-catalyst success burst of 6 frames, got %d", len(confirmOut))
+	}
+	materialDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[0]))
+	if err != nil {
+		t.Fatalf("decode scroll-catalyst material ITEM_DEL: %v", err)
+	}
+	if materialDel.Position.WindowType != itemproto.WindowInventory || materialDel.Position.Cell != 6 {
+		t.Fatalf("unexpected scroll-catalyst material delete: %+v", materialDel.Position)
+	}
+	catalystDel, err := itemproto.DecodeDel(decodeSingleFrame(t, confirmOut[1]))
+	if err != nil {
+		t.Fatalf("decode scroll-catalyst ITEM_DEL: %v", err)
+	}
+	if catalystDel.Position.WindowType != itemproto.WindowInventory || catalystDel.Position.Cell != 7 {
+		t.Fatalf("unexpected scroll-catalyst delete: %+v", catalystDel.Position)
+	}
+	catalystQuickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode scroll-catalyst QUICKSLOT_DEL: %v", err)
+	}
+	if catalystQuickslotDel.Position != 3 {
+		t.Fatalf("unexpected scroll-catalyst quickslot delete: %+v", catalystQuickslotDel)
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[3]))
+	if err != nil {
+		t.Fatalf("decode scroll-catalyst result ITEM_SET: %v", err)
+	}
+	if resultSet.Position.WindowType != itemproto.WindowInventory || resultSet.Position.Cell != 5 || resultSet.Vnum != 11291 || resultSet.Count != 1 {
+		t.Fatalf("unexpected scroll-catalyst ITEM_SET: %+v", resultSet)
+	}
+	goldChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, confirmOut[4]))
+	if err != nil {
+		t.Fatalf("decode scroll-catalyst gold PLAYER_POINT_CHANGE: %v", err)
+	}
+	if goldChange.VID != owner.VID || goldChange.Type != bootstrapGoldPointType || goldChange.Amount != -1000 || goldChange.Value != 4000 {
+		t.Fatalf("unexpected scroll-catalyst gold point change: %+v", goldChange)
+	}
+	assertRefineSucceededCommandChat(t, confirmOut[5], itemproto.RefineTypeScroll, "scroll-catalyst refine confirm")
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after scroll-catalyst confirm, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("item-refine-scroll")
+	if err != nil {
+		t.Fatalf("load persisted scroll-catalyst account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{{ID: 690, Vnum: 11291, Count: 1, Slot: 5}}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("unexpected persisted inventory after scroll-catalyst confirm:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+	wantQuickslots := []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 4, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	if persisted.Characters[0].Gold != 4000 || !reflect.DeepEqual(persisted.Characters[0].Quickslots, wantQuickslots) {
+		t.Fatalf("unexpected persisted scalars after scroll-catalyst confirm: gold=%d quickslots=%+v want=%+v", persisted.Characters[0].Gold, persisted.Characters[0].Quickslots, wantQuickslots)
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewScrollCatalystMissingFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineScrollMiss", 0x010307A2, 0x020407A2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 693, Vnum: 11292, Count: 1, Slot: 5},
+		{ID: 694, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-scroll-miss", 0x707070A2, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-scroll-miss", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine scroll-missing account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum: 11292, Name: "Missing Scroll Catalyst Blade", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11293, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11293, Name: "Unreached Scroll Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	catalyst := itemcatalog.Template{Vnum: itemproto.RefineScrollCatalystVnum, Name: "Scroll Refine Catalyst", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material, catalyst})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine scroll-missing runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-scroll-miss", 0x707070A2)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected missing-scroll preview one frame, got %d err=%v", len(previewOut), err)
+	}
+
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil {
+		t.Fatalf("unexpected missing-scroll confirm error: %v", err)
+	}
+	if len(confirmOut) != 0 {
+		t.Fatalf("expected missing-scroll confirm to fail closed with no frames, got %d", len(confirmOut))
+	}
+
+	account, err := accounts.Load("item-refine-scroll-miss")
+	if err != nil {
+		t.Fatalf("load missing-scroll account: %v", err)
+	}
+	if account.Characters[0].Gold != 5000 {
+		t.Fatalf("expected unchanged gold after missing-scroll confirm, got %d", account.Characters[0].Gold)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 693, Vnum: 11292, Count: 1, Slot: 5},
+		{ID: 694, Vnum: 27001, Count: 2, Slot: 6},
+	}
+	if !reflect.DeepEqual(account.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected unchanged inventory after missing-scroll confirm, got %#v", account.Characters[0].Inventory)
+	}
+
+	laterOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil {
+		t.Fatalf("unexpected later missing-scroll confirm error: %v", err)
+	}
+	if len(laterOut) != 0 {
+		t.Fatalf("expected still-open missing-scroll dialog to stay fail-closed, got %d frames", len(laterOut))
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewNonScrollTypeLeavesCatalystUnconsumed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineNoScroll", 0x010307A3, 0x020407A3, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 695, Vnum: 11294, Count: 1, Slot: 5},
+		{ID: 696, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 697, Vnum: itemproto.RefineScrollCatalystVnum, Count: 1, Slot: 7},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-no-scroll", 0x707070A3, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-no-scroll", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine non-scroll account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum: 11294, Name: "Ordinary Confirm Blade", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11295, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+	}
+	resultTemplate := itemcatalog.Template{Vnum: 11295, Name: "Ordinary Confirm Result Blade", Stackable: false, MaxCount: 1}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	catalyst := itemcatalog.Template{Vnum: itemproto.RefineScrollCatalystVnum, Name: "Scroll Refine Catalyst", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material, catalyst})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine non-scroll runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-no-scroll", 0x707070A3)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected non-scroll preview one frame, got %d err=%v", len(previewOut), err)
+	}
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: 3})))
+	if err != nil {
+		t.Fatalf("unexpected non-scroll confirm error: %v", err)
+	}
+	if len(confirmOut) != 4 {
+		t.Fatalf("expected ordinary confirm burst of 4 frames, got %d", len(confirmOut))
+	}
+	assertRefineSucceededCommandChat(t, confirmOut[3], 3, "non-scroll refine confirm")
+
+	persisted, err := accounts.Load("item-refine-no-scroll")
+	if err != nil {
+		t.Fatalf("load persisted non-scroll account: %v", err)
+	}
+	wantInventory := []inventory.ItemInstance{
+		{ID: 695, Vnum: 11295, Count: 1, Slot: 5},
+		{ID: 697, Vnum: itemproto.RefineScrollCatalystVnum, Count: 1, Slot: 7},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, wantInventory) {
+		t.Fatalf("expected non-scroll confirm to leave catalyst unconsumed:\n got: %+v\nwant: %+v", persisted.Characters[0].Inventory, wantInventory)
+	}
+}
+
+func TestGameRuntimeItemRefineConfirmAfterPreviewScrollCatalystPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	activeSockets := inventory.SocketValues{11, 0, -3}
+	activeAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("RefineScrollPreserve", 0x010307A4, 0x020407A4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 698, Vnum: 11290, Count: 1, Slot: 5, Sockets: &activeSockets, Attributes: &activeAttributes},
+		{ID: 699, Vnum: 27001, Count: 2, Slot: 6},
+		{ID: 700, Vnum: itemproto.RefineScrollCatalystVnum, Count: 1, Slot: 7},
+	}
+	issuePeerTicket(t, ticketStore, "item-refine-scroll-preserve", 0x707070A4, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-refine-scroll-preserve", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-refine scroll-preserve account: %v", err)
+	}
+	sourceTemplate := itemcatalog.Template{
+		Vnum: 11290, Name: "Scroll Preserve Blade", Stackable: false, MaxCount: 1, Refineable: true,
+		RefineInfo: &itemcatalog.RefineInfo{ResultVnum: 11291, Cost: 1000, Probability: 100, Materials: []itemcatalog.RefineMaterial{{Vnum: 27001, Count: 2}}},
+		Sockets:    itemcatalog.SocketValues{1, 2, 3},
+		Attributes: itemcatalog.AttributeValues{{Type: 1, Value: 1}},
+	}
+	resultTemplate := itemcatalog.Template{
+		Vnum: 11291, Name: "Scroll Preserve Result Blade", Stackable: false, MaxCount: 1,
+		Sockets:    itemcatalog.SocketValues{21, 22, 23},
+		Attributes: itemcatalog.AttributeValues{{Type: 2, Value: 8}},
+	}
+	material := itemcatalog.Template{Vnum: 27001, Name: "Refine Material A", Stackable: true, MaxCount: 200}
+	catalyst := itemcatalog.Template{Vnum: itemproto.RefineScrollCatalystVnum, Name: "Scroll Refine Catalyst", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{sourceTemplate, resultTemplate, material, catalyst})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-refine scroll-preserve runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-refine-scroll-preserve", 0x707070A4)
+	defer closeSessionFlow(t, flow)
+
+	previewOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil || len(previewOut) != 1 {
+		t.Fatalf("expected scroll-preserve preview one frame, got %d err=%v", len(previewOut), err)
+	}
+	confirmOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientRefine(itemproto.ClientRefinePacket{Position: 5, Type: itemproto.RefineTypeScroll})))
+	if err != nil {
+		t.Fatalf("unexpected scroll-preserve confirm error: %v", err)
+	}
+	if len(confirmOut) != 5 {
+		t.Fatalf("expected scroll-preserve burst of 5 frames, got %d", len(confirmOut))
+	}
+	resultSet, err := itemproto.DecodeSet(decodeSingleFrame(t, confirmOut[2]))
+	if err != nil {
+		t.Fatalf("decode scroll-preserve result ITEM_SET: %v", err)
+	}
+	if resultSet.Vnum != 11291 || resultSet.Count != 1 || resultSet.Position.Cell != 5 {
+		t.Fatalf("unexpected scroll-preserve ITEM_SET: %+v", resultSet)
+	}
+	wantSockets := [itemproto.ItemSocketCount]int32{11, 0, -3}
+	if resultSet.Sockets != wantSockets {
+		t.Fatalf("expected preserved scroll-catalyst ITEM_SET sockets %+v, got %+v", wantSockets, resultSet.Sockets)
+	}
+	if resultSet.Attributes[0] != (itemproto.Attribute{Type: 4, Value: 55}) || resultSet.Attributes[1] != (itemproto.Attribute{Type: 9, Value: -7}) {
+		t.Fatalf("unexpected scroll-preserve ITEM_SET attributes %+v", resultSet.Attributes)
+	}
+	account, err := accounts.Load("item-refine-scroll-preserve")
+	if err != nil {
+		t.Fatalf("load scroll-preserve account: %v", err)
+	}
+	got := account.Characters[0].Inventory[0]
+	if got.ID != 698 || got.Vnum != 11291 || !got.HasSockets() || !got.HasAttributes() || *got.Sockets != activeSockets || *got.Attributes != activeAttributes {
+		t.Fatalf("expected persisted scroll-preserve presence, got %#v", got)
+	}
+	if len(account.Characters[0].Inventory) != 1 {
+		t.Fatalf("expected catalyst consumed after scroll-preserve confirm, inventory=%+v", account.Characters[0].Inventory)
+	}
+}
+
 func assertRefineSucceededCommandChat(t *testing.T, frame []byte, refineType uint8, label string) {
 	t.Helper()
 	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frame))

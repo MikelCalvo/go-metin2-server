@@ -7747,10 +7747,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || packet.Position >= uint8(inventory.CarriedInventorySlotCount) {
 						return gameflow.ItemRefineResult{Accepted: false}
 					}
-					if packet.Type != 255 && hasActiveMyShopOpen {
+					if packet.Type != itemproto.RefineTypeCancel && hasActiveMyShopOpen {
 						return gameflow.ItemRefineResult{Accepted: false}
 					}
-					if packet.Type == 255 {
+					if packet.Type == itemproto.RefineTypeCancel {
 						if !hasActiveRefineDialog {
 							return gameflow.ItemRefineResult{Accepted: false}
 						}
@@ -7774,6 +7774,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if activeRefineDialog.RefineInfo.FailResultVnum != 0 {
 							failResultTemplate, ok = runtime.itemTemplates[activeRefineDialog.RefineInfo.FailResultVnum]
 							if !ok || !itemcatalog.ValidTemplate(failResultTemplate) {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+						}
+						if packet.Type == itemproto.RefineTypeScroll {
+							catalystTemplate, ok := runtime.itemTemplates[itemproto.RefineScrollCatalystVnum]
+							if !ok || !itemcatalog.ValidTemplate(catalystTemplate) {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							sourceExclude := map[inventory.SlotIndex]struct{}{inventory.SlotIndex(packet.Position): {}}
+							if !selectedPlayer.HasCarriedItemExcludingSlots(itemproto.RefineScrollCatalystVnum, sourceExclude) {
 								return gameflow.ItemRefineResult{Accepted: false}
 							}
 						}
@@ -7804,6 +7814,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							if len(materialQuickslotFrames) > 0 {
 								insertAt := len(result.MaterialChanges)
 								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+							}
+							catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							if len(catalystFrames) > 0 {
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+								frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
 							}
 							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 							if !ok {
@@ -7837,13 +7855,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								insertAt := len(result.MaterialChanges)
 								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
 							}
+							catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							if len(catalystFrames) > 0 {
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+								frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
+							}
 							sourceQuickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, result.SourceSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								return gameflow.ItemRefineResult{Accepted: false}
 							}
 							if len(sourceQuickslotFrames) > 0 {
-								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + 1
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + len(catalystFrames) + 1
 								frames = append(frames[:insertAt], append(sourceQuickslotFrames, frames[insertAt:]...)...)
 							}
 							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
@@ -7887,6 +7913,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									insertAt := len(result.MaterialChanges)
 									frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
 								}
+								catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+								if !ok {
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								if len(catalystFrames) > 0 {
+									insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+									frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
+								}
 								committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 								if !ok {
 									return gameflow.ItemRefineResult{Accepted: false}
@@ -7917,6 +7951,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									insertAt := len(result.MaterialChanges)
 									frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
 								}
+								catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+								if !ok {
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								if len(catalystFrames) > 0 {
+									insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+									frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
+								}
 								committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 								if !ok {
 									return gameflow.ItemRefineResult{Accepted: false}
@@ -7946,6 +7988,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								if len(materialQuickslotFrames) > 0 {
 									insertAt := len(result.MaterialChanges)
 									frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
+								}
+								catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+								if !ok {
+									return gameflow.ItemRefineResult{Accepted: false}
+								}
+								if len(catalystFrames) > 0 {
+									insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+									frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
 								}
 								committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 								if !ok {
@@ -7980,13 +8030,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 								insertAt := len(result.MaterialChanges)
 								frames = append(frames[:insertAt], append(materialQuickslotFrames, frames[insertAt:]...)...)
 							}
+							catalystFrames, ok := consumeRefineConfirmCatalyst(selectedPlayer, previousSelected, packet.Type, inventory.SlotIndex(packet.Position), runtime.itemTemplates)
+							if !ok {
+								return gameflow.ItemRefineResult{Accepted: false}
+							}
+							if len(catalystFrames) > 0 {
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames)
+								frames = append(frames[:insertAt], append(catalystFrames, frames[insertAt:]...)...)
+							}
 							sourceQuickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, result.SourceSlot)
 							if !ok {
 								selectedPlayer.ApplyPersistedSnapshot(previousSelected)
 								return gameflow.ItemRefineResult{Accepted: false}
 							}
 							if len(sourceQuickslotFrames) > 0 {
-								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + 1
+								insertAt := len(result.MaterialChanges) + len(materialQuickslotFrames) + len(catalystFrames) + 1
 								frames = append(frames[:insertAt], append(sourceQuickslotFrames, frames[insertAt:]...)...)
 							}
 							committed, ok := commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
@@ -12056,6 +12114,45 @@ func carriedItemConsumeResultFrames(result player.CarriedItemConsumeResult, temp
 		frames = append(frames, updateFrame)
 	}
 	return frames, nil
+}
+
+func consumeRefineConfirmCatalyst(selectedPlayer *player.Runtime, previousSelected loginticket.Character, refineType uint8, sourceSlot inventory.SlotIndex, templates map[uint32]itemcatalog.Template) ([][]byte, bool) {
+	if selectedPlayer == nil {
+		return nil, false
+	}
+	if refineType != itemproto.RefineTypeScroll {
+		return nil, true
+	}
+	catalystTemplate, ok := templates[itemproto.RefineScrollCatalystVnum]
+	if !ok || catalystTemplate.Vnum != itemproto.RefineScrollCatalystVnum || !itemcatalog.ValidTemplate(catalystTemplate) {
+		selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+		return nil, false
+	}
+	consumeResult, ok := selectedPlayer.ConsumeCarriedItemsExcludingSlots(
+		[]player.CarriedItemConsumeRequirement{{ItemVnum: itemproto.RefineScrollCatalystVnum, Count: 1}},
+		map[inventory.SlotIndex]struct{}{sourceSlot: {}},
+	)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+		return nil, false
+	}
+	frames, err := carriedItemConsumeResultFrames(consumeResult, templates)
+	if err != nil {
+		selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+		return nil, false
+	}
+	for _, change := range consumeResult.Changes {
+		if !change.ItemRemoved {
+			continue
+		}
+		quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, change.Slot)
+		if !ok {
+			selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+			return nil, false
+		}
+		frames = append(frames, quickslotFrames...)
+	}
+	return frames, true
 }
 
 func refineSuccessResultFrames(character loginticket.Character, result player.RefineSuccessResult, templates map[uint32]itemcatalog.Template, refineType uint8) ([][]byte, error) {
