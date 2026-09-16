@@ -39,4 +39,6 @@ go test ./internal/minimal -run 'TestGameRuntimeUpdateStaticActorSameMapSpawnGro
   runtime path already shared)~~ Done: see [spawn step AOI membership](2026-08-25-spawn-step-aoi-membership.md).
 - absolute schedule rematerialize for chase / return / homeward across restart
 - cross-map MOVE / `GC WARP`
-- pack AI / synchronized respawn / pathfinding
+- pack AI / synchronized respawn / navmesh pathfinding
+- one occupancy-avoiding chase detour is owned separately by
+  `spec/protocol/spawn-leash-bootstrap.md` (not this AOI membership seam)

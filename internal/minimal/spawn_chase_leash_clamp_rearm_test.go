@@ -294,3 +294,232 @@ func TestGameRuntimeFlushServerFramesClearsLeashClampedSpawnGroupChaseStepAndRea
 		t.Fatalf("expected follow-up chase step to keep selected combat target, ok=%v snapshot=%+v", ok, snapshot)
 	}
 }
+
+func TestApplySpawnGroupChaseOccupancyDetourSidestepsOccupiedCell(t *testing.T) {
+	current := worldruntime.NewPosition(42, 1700, 2800)
+	preferred := worldruntime.NewPosition(42, 1800, 2800)
+	evaluation, ok := worldruntime.EvaluateSpawnLeash(current, current, worldruntime.DefaultSpawnLeashRadius)
+	if !ok {
+		t.Fatal("expected authored-home leash evaluation for occupancy detour")
+	}
+	plan := worldruntime.SpawnChaseStepPlan{Evaluation: evaluation, Next: preferred}
+	got := applySpawnGroupChaseOccupancyDetour(1, []StaticActorSnapshot{{
+		EntityID: 2,
+		MapIndex: 42,
+		X:        1800,
+		Y:        2800,
+	}}, plan, 100)
+	want := worldruntime.NewPosition(42, 1700, 2801)
+	if !got.Next.Equal(want) || got.Complete {
+		t.Fatalf("expected north occupancy detour at %+v complete=false, got next=%+v complete=%v", want, got.Next, got.Complete)
+	}
+}
+
+func TestApplySpawnGroupChaseOccupancyDetourKeepsFreeStraightLine(t *testing.T) {
+	current := worldruntime.NewPosition(42, 1700, 2800)
+	preferred := worldruntime.NewPosition(42, 1800, 2800)
+	evaluation, ok := worldruntime.EvaluateSpawnLeash(current, current, worldruntime.DefaultSpawnLeashRadius)
+	if !ok {
+		t.Fatal("expected authored-home leash evaluation for free-cell chase")
+	}
+	plan := worldruntime.SpawnChaseStepPlan{Evaluation: evaluation, Next: preferred}
+	got := applySpawnGroupChaseOccupancyDetour(1, nil, plan, 100)
+	if !got.Next.Equal(preferred) || got.Complete {
+		t.Fatalf("expected free-cell chase to keep %+v, got next=%+v complete=%v", preferred, got.Next, got.Complete)
+	}
+}
+
+func TestApplySpawnGroupChaseOccupancyDetourStaysPutWhenSidestepOccupied(t *testing.T) {
+	current := worldruntime.NewPosition(42, 1700, 2800)
+	preferred := worldruntime.NewPosition(42, 1800, 2800)
+	evaluation, ok := worldruntime.EvaluateSpawnLeash(current, current, worldruntime.DefaultSpawnLeashRadius)
+	if !ok {
+		t.Fatal("expected authored-home leash evaluation for blocked sidestep")
+	}
+	plan := worldruntime.SpawnChaseStepPlan{Evaluation: evaluation, Next: preferred}
+	got := applySpawnGroupChaseOccupancyDetour(1, []StaticActorSnapshot{
+		{EntityID: 2, MapIndex: 42, X: 1800, Y: 2800},
+		{EntityID: 3, MapIndex: 42, X: 1700, Y: 2801},
+		{EntityID: 4, MapIndex: 42, X: 1700, Y: 2799},
+	}, plan, 1)
+	if !got.Next.Equal(current) || !got.Complete {
+		t.Fatalf("expected blocked occupancy detour to stay at %+v complete=true, got next=%+v complete=%v", current, got.Next, got.Complete)
+	}
+}
+
+// Live chase executor must sidestep one occupied straight-line cell instead of
+// landing on another live static actor. Engagement / selected-target stay owned
+// and chase re-arms so a later beat can continue around the blocker.
+func TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep(t *testing.T) {
+	const chaserProfile = "practice_chase_occupancy_detour_wolf"
+	const blockerProfile = "practice_chase_occupancy_blocker_wolf"
+
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ChaseOccupancyOwner", 0x01030321, 0x02040321, 1940, 2800, 0, 141, 241)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "chase-occupancy-owner", 0xd1d1d1d1, owner)
+
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	currentTime := time.Unix(1700004300, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     800,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionStore,
+	)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	t.Cleanup(func() {
+		worldruntime.UnregisterStaticActorCombatProfileForTest(chaserProfile)
+		worldruntime.UnregisterStaticActorCombatProfileForTest(blockerProfile)
+	})
+
+	if _, err := runtime.ImportContentBundle(contentbundle.Bundle{
+		SpawnGroups: []contentbundle.SpawnGroup{
+			{
+				Ref:           "practice.chase_occupancy_detour",
+				Name:          "ChaseOccupancyMob",
+				MapIndex:      42,
+				X:             1700,
+				Y:             2800,
+				RaceNum:       20350,
+				CombatProfile: chaserProfile,
+			},
+			{
+				Ref:           "practice.chase_occupancy_blocker",
+				Name:          "ChaseOccupancyBlocker",
+				MapIndex:      42,
+				X:             1800,
+				Y:             2800,
+				RaceNum:       20351,
+				CombatProfile: blockerProfile,
+			},
+		},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{
+			{
+				Profile:        chaserProfile,
+				MaxHP:          24,
+				AttackValue:    8,
+				DefenseValue:   2,
+				RespawnDelayMs: 1500,
+				AggroRadius:    120,
+				LeashRadius:    worldruntime.DefaultSpawnLeashRadius,
+			},
+			{
+				Profile:        blockerProfile,
+				MaxHP:          24,
+				AttackValue:    8,
+				DefenseValue:   2,
+				RespawnDelayMs: 1500,
+				AggroRadius:    1,
+				LeashRadius:    worldruntime.DefaultSpawnLeashRadius,
+			},
+		},
+	}); err != nil {
+		t.Fatalf("import occupancy-detour spawn-group bundle: %v", err)
+	}
+	chaser, ok := runtime.SpawnGroupByRef("practice.chase_occupancy_detour")
+	if !ok {
+		t.Fatal("expected occupancy-detour chase spawn group to resolve by ref")
+	}
+	blocker, ok := runtime.SpawnGroupByRef("practice.chase_occupancy_blocker")
+	if !ok {
+		t.Fatal("expected occupancy-detour blocker spawn group to resolve by ref")
+	}
+	targetVID := uint32(chaser.EntityID)
+
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "chase-occupancy-owner", 0xd1d1d1d1)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected owner target error before occupancy-detour chase arm: %v", err)
+	}
+	if len(selectOut) != 1 {
+		t.Fatalf("expected owner to select occupancy-detour practice mob, got %d frames", len(selectOut))
+	}
+	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted hit before occupancy-detour chase arm: %v", err)
+	}
+	if len(attackOut) != 4 {
+		t.Fatalf("expected target refresh, immediate retaliation, and damage-info on first chase-arming hit, got %d frames", len(attackOut))
+	}
+	if pending, ok := runtime.SpawnGroupChaseStep(chaser.EntityID); !ok || pending.EntityID != chaser.EntityID {
+		t.Fatalf("expected engaged hit to arm a pending chase-step row, ok=%v snapshot=%+v", ok, pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, flow); len(queued) != 2 {
+		t.Fatalf("expected the owned delayed retaliation beat to fire before the first chase step, got %d frames", len(queued))
+	}
+
+	pending, ok := runtime.SpawnGroupChaseStep(chaser.EntityID)
+	if !ok || pending.Step.Next.X != 1700 || pending.Step.Next.Y != 2801 || pending.Step.Complete {
+		t.Fatalf("expected occupancy-aware pending chase next to sidestep north of the blocker, got %+v", pending)
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, flow)
+	if len(queued) == 0 {
+		t.Fatal("expected occupancy-detour chase-step to queue retained owner MOVE replication")
+	}
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode occupancy-detour chase-step MOVE: %v", err)
+	}
+	if moveAck.VID != targetVID || moveAck.X != 1700 || moveAck.Y != 2801 || moveAck.Duration == 0 {
+		t.Fatalf("expected occupancy-detour chase MOVE at 1700,2801, got %+v", moveAck)
+	}
+	for _, raw := range queued[1:] {
+		if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, raw)); err == nil && deleted.VID == targetVID {
+			t.Fatalf("expected occupancy-detour chase MOVE not to emit retained-viewer CHARACTER_DEL, got %+v", deleted)
+		}
+		if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, raw)); err == nil && add.VID == targetVID {
+			t.Fatalf("expected occupancy-detour chase MOVE not to emit retained-viewer CHARACTER_ADD, got %+v", add)
+		}
+		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
+			t.Fatalf("expected occupancy-detour chase step to preserve selected combat target, got clear frame %+v", target)
+		}
+	}
+
+	stepped, ok := runtime.SpawnGroup(chaser.EntityID)
+	if !ok || stepped.X != 1700 || stepped.Y != 2801 || stepped.Dead || stepped.SpawnLeash == nil || stepped.SpawnLeash.ReturnRequired {
+		t.Fatalf("expected occupancy-detour chase step to land north of the blocker, ok=%v snapshot=%+v", ok, stepped)
+	}
+	stillBlocker, ok := runtime.SpawnGroup(blocker.EntityID)
+	if !ok || stillBlocker.X != 1800 || stillBlocker.Y != 2800 {
+		t.Fatalf("expected occupancy blocker to stay put, ok=%v snapshot=%+v", ok, stillBlocker)
+	}
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName("ChaseOccupancyOwner")
+	if !ok {
+		t.Fatal("expected occupancy-detour owner entity to remain registered")
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(chaser.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected occupancy-detour chase step to preserve engagement ownership for entity %d", chaser.EntityID)
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("ChaseOccupancyOwner"); !ok || snapshot.TargetVID != targetVID {
+		t.Fatalf("expected occupancy-detour chase step to preserve selected combat target, ok=%v snapshot=%+v", ok, snapshot)
+	}
+	runtime.spawnChaseMu.Lock()
+	_, stillScheduled := runtime.spawnChaseStepDueAt[chaser.EntityID]
+	runtime.spawnChaseMu.Unlock()
+	if !stillScheduled {
+		t.Fatal("expected still-engaged occupancy-detour chase actor to re-arm after the sidestep")
+	}
+}

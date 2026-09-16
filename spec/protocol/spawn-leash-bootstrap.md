@@ -229,14 +229,52 @@ Current implementation status:
 - due chase steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
 - focused live-owner replan coverage now freezes owner movement between chase arm and the first due flush: the due retained-viewer `MOVE` plans toward the live post-move owner coords rather than an arm-time snapshot (`TestGameRuntimeFlushServerFramesReplansSpawnGroupChaseTowardOwnerMovedBetweenArmAndDue`)
 - leash-clamped complete chase steps that stop on the effective leash boundary now have focused live coverage: the pending chase deadline clears even when the owner was not reached, engagement / selected-target stay preserved, no automatic follow-up fires while cleared, a later same-engagement accepted hit re-arms the owned `5s` deadline, and after the owner walks inward so the actor is again safely inside leash the re-armed due chase applies another retained-viewer `MOVE` (`TestGameRuntimeFlushServerFramesClearsLeashClampedSpawnGroupChaseStepAndRearmsOnHit`)
+- one occupancy-avoiding chase detour is now owned beside that straight-line planner: when the planned same-map `next` is occupied by another live static actor, the due chase / pending inspection sidestep to one in-leash axis-aligned cell instead of landing on that occupied cell (`TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep`)
 - return-step, respawn, remove, return-home, operator/runtime `UpdateStaticActor`, and content-bundle prune/restore paths clear or restore chase deadlines alongside the return-step schedule; focused coverage now also proves that a same-map position-only `UpdateStaticActor` clears any armed chase deadline so a stale `5s` chase MOVE cannot fire after that engagement-release boundary
 - the read-only pending chase inspection endpoints above are now live over that already-owned schedule
 
 Explicit non-goals for this chase-step executor freeze:
-- pathfinding, navmesh, patrol, or multi-actor flocking
+- navmesh, patrol, multi-step search, or multi-actor flocking beyond one occupancy detour
 - chasing while `return_required` or across map boundaries
 - persisting a live mob position schema distinct from the current static-actor snapshot path
 - operator POST chase-step triggers
+
+## First owned occupancy-avoiding chase-step seam
+
+Question frozen here:
+
+**Once the pending-frame chase executor already applies one straight-line same-map step, what is the smallest honest obstacle-avoiding companion that can sidestep one occupied chase cell without inventing navmesh, pack AI, or cross-map MOVE/WARP?**
+
+Contract for one occupancy-avoiding chase detour:
+
+- reuse the already-owned `PlanStaticActorSpawnChaseStep` straight-line result as the preferred `next`
+- a chase cell is occupied only when another **live** static actor (not the chasing entity, not a dead corpse) currently sits on the same map at that exact `x/y`; the engaged owner player is not occupancy
+- if that preferred `next` is free, keep the straight-line plan unchanged
+- if it is occupied, skip remaining candidates on the blocked axis (same `y` when the preferred cell shares `y`, same `x` when it shares `x`) and replace `next` with the first perpendicular axis-aligned candidate at most `max_step` away that:
+  - stays on the same map
+  - stays `at_home` / `within_radius` against the actor's preserved authored home
+  - is not the current cell and not the occupied preferred cell
+  - does not reverse the dominant chase axis (the larger of `|dx|` / `|dy|` toward the preferred `next`)
+  - is not itself occupied by another live static actor
+- candidate order is nearest squared-distance to the blocked preferred `next`, then higher `y`, then higher `x`
+- a successful detour is **not** complete merely because it avoided the blocker; re-arm while the actor remains chase-eligible so a later beat can continue around
+- if every candidate fails, treat the due step as a complete no-move at the current cell (clear chase, do not walk into the occupied cell, preserve engagement / selected-target)
+- pending chase inspection uses the same occupancy-aware `next` the due flush will apply
+- retained-viewer `MOVE` / remove/add membership stay on the already-owned chase choreography; pack assist, homeward, return-step, and cross-map MOVE/WARP stay unchanged
+
+Current implementation status:
+
+- live due chase and read-only chase inspection honor that occupancy detour in `internal/minimal`
+- focused coverage owns a blocker sitting on the first `+100` east cell: pending inspection and the retained-viewer `MOVE` sidestep one cell north (`1700,2801`) instead of landing on the blocker, engagement / selected-target stay preserved, and chase re-arms (`TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep`)
+- the older leash-clamp re-arm proof stays the free-cell straight-line twin
+
+Explicit non-goals for this occupancy detour freeze:
+
+- navmesh, A*, waypoint graphs, or multi-beat search around concave geometry
+- treating players, ground items, or map collision attributes as occupancy
+- pack AI, flocking, or synchronized sibling MOVE
+- inventing cross-map chase MOVE / `GC WARP`
+- changing homeward / return-step planners in the same slice
 
 ## First owned chase MOVE packet choreography seam
 

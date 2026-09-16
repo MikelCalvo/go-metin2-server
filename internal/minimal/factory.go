@@ -2586,10 +2586,12 @@ func (r *gameRuntime) spawnGroupChaseStepSnapshot(entityID uint64, dueAt time.Ti
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
-	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID))
+	maxStep := r.effectiveSpawnGroupMaxStep(entityID)
+	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, maxStep)
 	if !ok {
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
+	plan = applySpawnGroupChaseOccupancyDetour(entityID, r.sharedWorld.StaticActors(), plan, maxStep)
 	remaining := dueAt.Sub(now).Milliseconds()
 	if remaining < 0 {
 		remaining = 0
@@ -3068,6 +3070,176 @@ func (r *gameRuntime) applySpawnGroupPackAssistEngagement(hitEntityID uint64, su
 	return assisted
 }
 
+func spawnGroupChaseSquaredDistance(left worldruntime.Position, right worldruntime.Position) int64 {
+	dx := int64(left.X) - int64(right.X)
+	dy := int64(left.Y) - int64(right.Y)
+	return dx*dx + dy*dy
+}
+
+func spawnGroupChaseCellOccupied(entityID uint64, actors []StaticActorSnapshot, cell worldruntime.Position) bool {
+	if !cell.Valid() {
+		return false
+	}
+	for _, actor := range actors {
+		if actor.EntityID == 0 || actor.EntityID == entityID || actor.Dead {
+			continue
+		}
+		if actor.MapIndex != cell.MapIndex || actor.X != cell.X || actor.Y != cell.Y {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func spawnGroupChaseDetourReversesDominantAxis(current worldruntime.Position, preferred worldruntime.Position, candidate worldruntime.Position) bool {
+	dx := preferred.X - current.X
+	dy := preferred.Y - current.Y
+	absDX := dx
+	if absDX < 0 {
+		absDX = -absDX
+	}
+	absDY := dy
+	if absDY < 0 {
+		absDY = -absDY
+	}
+	if absDX > absDY {
+		return (dx > 0 && candidate.X < current.X) || (dx < 0 && candidate.X > current.X)
+	}
+	if absDY > absDX {
+		return (dy > 0 && candidate.Y < current.Y) || (dy < 0 && candidate.Y > current.Y)
+	}
+	return (dx > 0 && candidate.X < current.X) || (dx < 0 && candidate.X > current.X) ||
+		(dy > 0 && candidate.Y < current.Y) || (dy < 0 && candidate.Y > current.Y)
+}
+
+func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSnapshot, plan worldruntime.SpawnChaseStepPlan, maxStep int32) worldruntime.SpawnChaseStepPlan {
+	if maxStep <= 0 || !plan.Next.Valid() || !plan.Evaluation.Current.Valid() {
+		return plan
+	}
+	current := plan.Evaluation.Current
+	if plan.Complete && plan.Next.Equal(current) {
+		return plan
+	}
+	if !plan.Next.SameMap(current) || !spawnGroupChaseCellOccupied(entityID, actors, plan.Next) {
+		return plan
+	}
+	preferred := plan.Next
+	home := plan.Evaluation.Home
+	radius := plan.Evaluation.Radius
+	best := worldruntime.Position{}
+	bestDist := int64(-1)
+	found := false
+	for delta := int32(1); delta <= maxStep; delta++ {
+		candidates := [4]worldruntime.Position{
+			worldruntime.NewPosition(current.MapIndex, current.X+delta, current.Y),
+			worldruntime.NewPosition(current.MapIndex, current.X-delta, current.Y),
+			worldruntime.NewPosition(current.MapIndex, current.X, current.Y+delta),
+			worldruntime.NewPosition(current.MapIndex, current.X, current.Y-delta),
+		}
+		for _, candidate := range candidates {
+			if !candidate.Valid() || candidate.Equal(current) || candidate.Equal(preferred) {
+				continue
+			}
+			if current.Y == preferred.Y && candidate.Y == current.Y {
+				continue
+			}
+			if current.X == preferred.X && candidate.X == current.X {
+				continue
+			}
+			if spawnGroupChaseDetourReversesDominantAxis(current, preferred, candidate) {
+				continue
+			}
+			leash, ok := worldruntime.EvaluateSpawnLeash(home, candidate, radius)
+			if !ok || leash.ReturnRequired {
+				continue
+			}
+			if spawnGroupChaseCellOccupied(entityID, actors, candidate) {
+				continue
+			}
+			dist := spawnGroupChaseSquaredDistance(candidate, preferred)
+			if !found || dist < bestDist || (dist == bestDist && (candidate.Y > best.Y || (candidate.Y == best.Y && candidate.X > best.X))) {
+				best = candidate
+				bestDist = dist
+				found = true
+			}
+		}
+	}
+	if !found {
+		plan.Next = current
+		plan.Complete = true
+		return plan
+	}
+	plan.Next = best
+	plan.Complete = false
+	return plan
+}
+
+func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool) {
+	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 || !plan.Next.Valid() {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	world := r.sharedWorld
+	world.mu.Lock()
+	defer world.mu.Unlock()
+	actor, ok := world.entities.StaticActor(entityID)
+	if !ok || actor.SpawnGroupRef == "" {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	currentHP, ok := world.ensureStaticActorCombatCurrentHPLocked(actor)
+	if !ok || currentHP == 0 {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	snapshotFor := func(updated worldruntime.StaticEntity, complete bool) SpawnGroupReturnStepSnapshot {
+		return SpawnGroupReturnStepSnapshot{
+			Actor: world.markStaticActorSnapshotStateLocked(staticActorSnapshot(world.topology, updated)),
+			Step: SpawnLeashReturnStepSnapshot{
+				SpawnLeashSnapshot: worldruntime.SpawnLeashSnapshotFromEvaluation(plan.Evaluation),
+				Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
+				Complete:           complete,
+			},
+		}
+	}
+	if plan.Complete && plan.Next.Equal(actor.Position) {
+		return snapshotFor(actor, true), true
+	}
+	if !plan.Next.SameMap(actor.Position) {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	steppedActor := actor
+	steppedActor.Position = plan.Next
+	targetDiff := world.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
+	updated, ok := world.entities.UpdateStaticActor(steppedActor)
+	if !ok {
+		return SpawnGroupReturnStepSnapshot{}, false
+	}
+	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
+		for _, target := range targetDiff.RetainedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			world.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+		}
+	}
+	if deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor); deleteEncodable {
+		for _, target := range targetDiff.RemovedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			world.enqueueToEntityLocked(target.Entity.ID, [][]byte{deleteRaw})
+		}
+	}
+	if addFrames := world.encodeStaticActorVisibilityStateFramesLocked(updated); len(addFrames) > 0 {
+		for _, target := range targetDiff.AddedVisibleTargets {
+			if characterAtBootstrapHPFloor(target.Character) {
+				continue
+			}
+			world.enqueueToEntityLocked(target.Entity.ID, addFrames)
+		}
+	}
+	return snapshotFor(updated, plan.Complete), true
+}
+
 func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
@@ -3110,6 +3282,7 @@ func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, resche
 		r.clearSpawnGroupHomewardStep(entityID)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
+	plan = applySpawnGroupChaseOccupancyDetour(entityID, current, plan, maxStep)
 	if plan.Complete && plan.Next.Equal(worldruntime.NewPosition(current[idx].MapIndex, current[idx].X, current[idx].Y)) {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.clearSpawnGroupHomewardStep(entityID)
@@ -3130,7 +3303,7 @@ func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, resche
 	if !r.persistStaticActorSnapshot(target) {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	stepped, ok := r.sharedWorld.StepSpawnGroupChase(entityID, ownerPos, maxStep)
+	stepped, ok := r.applySpawnGroupChaseStepPlan(entityID, plan)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupReturnStepSnapshot{}, false
