@@ -111,4 +111,7 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
 
 Docs/spec freeze landed first; the authoring GREEN that widens
 `regen_spawns.count` with required `pack_spacing` is now owned on `lane/content`.
-Live runtime remains independent one-actor `spawn_groups` with no pack AI object.
+Live runtime remains independent one-actor `spawn_groups` with no pack object.
+The first pack-member assist GREEN now copies `engaged_by` onto live `{ref}.mNN`
+siblings after an accepted hit, without MOVE/chase or pack-wide synchronized
+respawn.

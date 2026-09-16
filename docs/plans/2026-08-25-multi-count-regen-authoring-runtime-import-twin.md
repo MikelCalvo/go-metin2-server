@@ -39,7 +39,7 @@ git diff --check
 
 ## Follow-up options
 
-1. Keep pack AI / synchronized respawn deferred until a dedicated runtime seam
-   exists.
+1. Pack-member assist is now owned on the world runtime as copied `engaged_by`
+   among live `{ref}.mNN` siblings; keep pack-wide synchronized respawn deferred.
 2. Add further checked-in negatives only when a later reject case still forces
    QA to invent JSON.

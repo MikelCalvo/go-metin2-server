@@ -2975,6 +2975,99 @@ func (r *gameRuntime) flushProximitySpawnGroupAggroAcquisition() {
 	}
 }
 
+// spawnGroupPackMemberPrefix returns the authored pack prefix for a multi-count
+// regen member ref `{prefix}.mNN` (NN in 01..08). One-count refs without that
+// suffix stay independent and do not participate in pack assist.
+func spawnGroupPackMemberPrefix(ref string) (string, bool) {
+	if ref == "" || !worldruntime.ValidStaticActorSpawnGroupRef(ref) {
+		return "", false
+	}
+	lastDot := strings.LastIndexByte(ref, '.')
+	if lastDot <= 0 || lastDot+1 >= len(ref) {
+		return "", false
+	}
+	member := ref[lastDot+1:]
+	if len(member) != 3 || member[0] != 'm' || member[1] < '0' || member[1] > '9' || member[2] < '0' || member[2] > '9' {
+		return "", false
+	}
+	index := int(member[1]-'0')*10 + int(member[2]-'0')
+	if index < 1 || index > 8 {
+		return "", false
+	}
+	prefix := ref[:lastDot]
+	if prefix == "" || !worldruntime.ValidStaticActorSpawnGroupRef(prefix) {
+		return "", false
+	}
+	return prefix, true
+}
+
+// applySpawnGroupPackAssistEngagement copies the hit member's owner lock onto
+// other live same-prefix `{ref}.mNN` siblings. It does not invent a pack object,
+// arm chase/MOVE, rewrite respawn due-at, steal a different live owner, or
+// engage dead / return-required members.
+func (r *gameRuntime) applySpawnGroupPackAssistEngagement(hitEntityID uint64, subjectID uint64) []uint64 {
+	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || hitEntityID == 0 || subjectID == 0 {
+		return nil
+	}
+	hit, ok := r.SpawnGroup(hitEntityID)
+	if !ok || hit.Dead || hit.SpawnGroupRef == "" {
+		return nil
+	}
+	prefix, ok := spawnGroupPackMemberPrefix(hit.SpawnGroupRef)
+	if !ok {
+		return nil
+	}
+	if !r.sharedWorld.StaticActorCombatEngagedBySubject(hitEntityID, subjectID) {
+		return nil
+	}
+
+	assisted := make([]uint64, 0)
+	for _, sibling := range r.SpawnGroups() {
+		if sibling.EntityID == 0 || sibling.EntityID == hitEntityID || sibling.Dead || sibling.MapIndex != hit.MapIndex {
+			continue
+		}
+		siblingPrefix, ok := spawnGroupPackMemberPrefix(sibling.SpawnGroupRef)
+		if !ok || siblingPrefix != prefix {
+			continue
+		}
+		if sibling.SpawnLeash != nil && sibling.SpawnLeash.ReturnRequired {
+			continue
+		}
+		if !staticActorSpawnGroupAggroLiteCombatKind(sibling.CombatProfile) {
+			continue
+		}
+
+		r.sharedWorld.mu.Lock()
+		actor, ok := r.sharedWorld.entities.StaticActor(sibling.EntityID)
+		if !ok || actor.Entity.ID == 0 || actor.SpawnGroupRef != sibling.SpawnGroupRef {
+			r.sharedWorld.mu.Unlock()
+			continue
+		}
+		if currentHP, hpOK := r.sharedWorld.staticActorCombatHP[sibling.EntityID]; hpOK && currentHP == 0 {
+			r.sharedWorld.mu.Unlock()
+			continue
+		}
+		if _, waiting := r.sharedWorld.staticActorCombatRespawnAt[sibling.EntityID]; waiting {
+			r.sharedWorld.mu.Unlock()
+			continue
+		}
+		if existing := r.sharedWorld.staticActorCombatEngagedBy[sibling.EntityID]; existing != 0 {
+			r.sharedWorld.mu.Unlock()
+			continue
+		}
+		r.sharedWorld.setStaticActorCombatEngagementLocked(sibling.EntityID, subjectID)
+		copied := r.sharedWorld.staticActorCombatEngagedBy[sibling.EntityID] == subjectID
+		r.sharedWorld.mu.Unlock()
+		if !copied {
+			continue
+		}
+		assisted = append(assisted, sibling.EntityID)
+		_ = r.persistSpawnGroupCombatState(sibling.EntityID)
+	}
+	sort.Slice(assisted, func(i int, j int) bool { return assisted[i] < assisted[j] })
+	return assisted
+}
+
 func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
@@ -9607,6 +9700,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 					} else if resolution.Actor.EntityID != 0 {
 						runtime.syncSpawnGroupChaseStepScheduleForEntity(resolution.Actor.EntityID)
+						runtime.applySpawnGroupPackAssistEngagement(resolution.Actor.EntityID, sharedWorldID)
 					}
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {

@@ -151,7 +151,7 @@ Still missing:
 - richer NPC service kinds,
 - live reload/update policy.
 
-Bootstrap note: one-count and multi-count `regen_spawns` / fixed `drop_tables` ingestion and the composed authoring-form PvE vertical fixture (`docs/examples/bootstrap-pve-vertical-authoring-bundle.json`) are now owned; multi-count authoring expands into independent one-actor `spawn_groups` only. Weighted/random loot and pack AI / synchronized respawn remain out of scope.
+Bootstrap note: one-count and multi-count `regen_spawns` / fixed `drop_tables` ingestion and the composed authoring-form PvE vertical fixture (`docs/examples/bootstrap-pve-vertical-authoring-bundle.json`) are now owned; multi-count authoring expands into independent one-actor `spawn_groups` only. First pack-member assist now copies owner lock onto live `{ref}.mNN` siblings without MOVE; pack-wide synchronized respawn remains out of scope.
 
 ### Combat, mobs, death, restart, and rewards
 
@@ -179,7 +179,7 @@ Still missing:
 - attack types and animations beyond the current normal path,
 - accepted skill/ranged/projectile runtime behavior,
 - PvP/duel policy,
-- broader mob AI beyond the owned proximity aggro, chase-step, leash, and return seams (patrol, target switching, independent attack cadence packets),
+- broader mob AI beyond the owned proximity aggro, chase-step, leash, return, and pack-member assist seams (patrol, target switching, independent attack cadence packets, pack-wide synchronized respawn),
 - weighted/random loot tables and pickup mutation beyond fixed descriptors,
 - full death/revive/corpse/menu behavior.
 
