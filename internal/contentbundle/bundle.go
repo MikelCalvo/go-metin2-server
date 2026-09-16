@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"io"
+	"math"
 	"reflect"
 	"sort"
 	"strings"
@@ -21,6 +22,7 @@ import (
 )
 
 const maxRegenSpawnCount = 8
+const maxRegenRectangleExtent int32 = 10000
 const maxWeightedDropTableEntries = 8
 
 var ErrInvalidBundle = errors.New("invalid content bundle")
@@ -68,6 +70,8 @@ type RegenSpawn struct {
 	CombatProfile      string   `json:"combat_profile,omitempty"`
 	Count              uint16   `json:"count,omitempty"`
 	PackSpacing        int32    `json:"pack_spacing,omitempty"`
+	Sx                 int32    `json:"sx,omitempty"`
+	Sy                 int32    `json:"sy,omitempty"`
 	RewardExperience   uint64   `json:"reward_experience,omitempty"`
 	RewardGold         uint64   `json:"reward_gold,omitempty"`
 	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
@@ -4885,8 +4889,19 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 			if regenSpawn.PackSpacing != 0 {
 				return nil, false
 			}
-			spawnGroups = append(spawnGroups, spawnGroupFromRegenSpawn(regenSpawn, regenSpawn.Ref, regenSpawn.Name, regenSpawn.X, regenSpawn.Y))
+			x, y := regenSpawn.X, regenSpawn.Y
+			if regenSpawn.Sx != 0 || regenSpawn.Sy != 0 {
+				sampledX, sampledY, ok := regenRectanglePoint(regenSpawn, 1)
+				if !ok {
+					return nil, false
+				}
+				x, y = sampledX, sampledY
+			}
+			spawnGroups = append(spawnGroups, spawnGroupFromRegenSpawn(regenSpawn, regenSpawn.Ref, regenSpawn.Name, x, y))
 			continue
+		}
+		if regenSpawn.Sx != 0 || regenSpawn.Sy != 0 {
+			return nil, false
 		}
 		if regenSpawn.PackSpacing <= 0 {
 			return nil, false
@@ -4914,6 +4929,37 @@ func regenPackColumnCount(count int) int {
 		}
 	}
 	return count
+}
+
+func regenRectanglePoint(regenSpawn RegenSpawn, member uint16) (int32, int32, bool) {
+	if member == 0 || regenSpawn.Sx <= 0 || regenSpawn.Sy <= 0 || regenSpawn.Sx > maxRegenRectangleExtent || regenSpawn.Sy > maxRegenRectangleExtent {
+		return 0, 0, false
+	}
+	area := uint64(regenSpawn.Sx) * uint64(regenSpawn.Sy)
+	if area == 0 {
+		return 0, 0, false
+	}
+	digest := fnv.New64a()
+	_, _ = digest.Write([]byte(fmt.Sprintf(
+		"regen_rectangle:%s:%d:%d:%d:%d:%d:%d",
+		strings.TrimSpace(regenSpawn.Ref),
+		regenSpawn.MapIndex,
+		regenSpawn.X,
+		regenSpawn.Y,
+		regenSpawn.Sx,
+		regenSpawn.Sy,
+		member,
+	)))
+	slot := digest.Sum64() % area
+	dx := int32(slot % uint64(regenSpawn.Sx))
+	dy := int32(slot / uint64(regenSpawn.Sx))
+	if dx > 0 && regenSpawn.X > math.MaxInt32-dx {
+		return 0, 0, false
+	}
+	if dy > 0 && regenSpawn.Y > math.MaxInt32-dy {
+		return 0, 0, false
+	}
+	return regenSpawn.X + dx, regenSpawn.Y + dy, true
 }
 
 func spawnGroupFromRegenSpawn(regenSpawn RegenSpawn, ref string, name string, x int32, y int32) SpawnGroup {

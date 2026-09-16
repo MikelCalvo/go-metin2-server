@@ -4878,6 +4878,161 @@ func TestCanonicalizeExpandsAuthoringRegenSpawnsIntoSpawnGroups(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeExpandsOneCountRegenRectangleIntoSpawnGroup(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:      "practice.qa_rect_regen_mob",
+			Name:     "QARectRegenMob",
+			MapIndex: 1,
+			X:        469900,
+			Y:        964200,
+			RaceNum:  20350,
+			Count:    1,
+			Sx:       200,
+			Sy:       100,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize one-count regen rectangle: %v", err)
+	}
+	if len(bundle.RegenSpawns) != 0 {
+		t.Fatalf("expected authoring-only regen spawns to be stripped from canonical bundle, got %+v", bundle.RegenSpawns)
+	}
+	wantX, wantY, ok := regenRectanglePoint(RegenSpawn{
+		Ref:      "practice.qa_rect_regen_mob",
+		MapIndex: 1,
+		X:        469900,
+		Y:        964200,
+		Sx:       200,
+		Sy:       100,
+	}, 1)
+	if !ok {
+		t.Fatal("expected owned regen rectangle sampler to accept the authored extents")
+	}
+	if wantX != 470067 || wantY != 964284 {
+		t.Fatalf("expected pinned FNV rectangle cell (470067,964284), got (%d,%d)", wantX, wantY)
+	}
+	if wantX < 469900 || wantX >= 469900+200 || wantY < 964200 || wantY >= 964200+100 {
+		t.Fatalf("sampled rectangle cell (%d,%d) is outside authored [469900,470100) x [964200,964300)", wantX, wantY)
+	}
+	want := []SpawnGroup{{
+		Ref:           "practice.qa_rect_regen_mob",
+		Name:          "QARectRegenMob",
+		MapIndex:      1,
+		X:             wantX,
+		Y:             wantY,
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfilePracticeMob,
+	}}
+	if !reflect.DeepEqual(bundle.SpawnGroups, want) {
+		t.Fatalf("unexpected canonical regen rectangle expansion:\n got: %#v\nwant: %#v", bundle.SpawnGroups, want)
+	}
+}
+
+func TestCanonicalizeRegenRectanglePlacementIsStableAcrossCalls(t *testing.T) {
+	authored := Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:      "practice.qa_rect_regen_mob",
+			Name:     "QARectRegenMob",
+			MapIndex: 1,
+			X:        469900,
+			Y:        964200,
+			RaceNum:  20350,
+			Count:    1,
+			Sx:       200,
+			Sy:       100,
+		}},
+	}
+	first, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("first canonicalize regen rectangle: %v", err)
+	}
+	second, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("second canonicalize regen rectangle: %v", err)
+	}
+	if !reflect.DeepEqual(first.SpawnGroups, second.SpawnGroups) {
+		t.Fatalf("expected deterministic rectangle sampling, got first=%#v second=%#v", first.SpawnGroups, second.SpawnGroups)
+	}
+}
+
+func TestCanonicalizeRejectsPartialRegenRectangleExtents(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:      "practice.partial_rect_regen",
+			Name:     "PartialRectRegen",
+			MapIndex: 1,
+			X:        469900,
+			Y:        964200,
+			RaceNum:  20350,
+			Count:    1,
+			Sx:       200,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for one-count regen rectangle with only sx, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsMultiCountRegenRectangle(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.multi_rect_regen",
+			Name:        "MultiRectRegen",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       2,
+			PackSpacing: 100,
+			Sx:          200,
+			Sy:          100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for multi-count regen rectangle, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsOneCountRegenRectangleWithPackSpacing(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.rect_with_spacing",
+			Name:        "RectWithSpacing",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       1,
+			PackSpacing: 100,
+			Sx:          200,
+			Sy:          100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for one-count regen rectangle with pack_spacing, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsOverMaxRegenRectangleExtent(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:      "practice.over_max_rect_regen",
+			Name:     "OverMaxRectRegen",
+			MapIndex: 1,
+			X:        469900,
+			Y:        964200,
+			RaceNum:  20350,
+			Count:    1,
+			Sx:       maxRegenRectangleExtent + 1,
+			Sy:       100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for regen rectangle sx above %d, got %v", maxRegenRectangleExtent, err)
+	}
+}
+
 func TestCanonicalizeExpandsMultiCountRegenSpawnIntoPackMembers(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		DropTables: []DropTable{{Ref: "loot.qa_multi_regen_reward", RewardExperience: 90, RewardGold: 45, DropVnums: []uint32{27002, 27001}}},

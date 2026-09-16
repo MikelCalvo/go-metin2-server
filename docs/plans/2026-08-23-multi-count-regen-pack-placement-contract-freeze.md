@@ -81,15 +81,53 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
     - `count == 1` and `pack_spacing > 0`
     - any synthesized member ref is non-canonical or collides
 
+### First one-count random-rectangle placement (GREEN target — now owned)
+
+11. One-count `regen_spawns[]` may opt into a closed rectangle instead of a
+    single authored point. This is an authoring-only placement convenience over
+    the already-owned one-count regen path; it does not add a pack object or
+    live RNG.
+12. Optional integer fields `sx` and `sy` (world units) are the inclusive-origin
+    exclusive-end extents of that rectangle:
+    - omitted / `0` / both zero keeps the existing point placement at authored
+      `(x, y)`
+    - when either is present and non-zero, **both** must be `> 0` and
+      `<= 10000`
+    - `count == 1` is required; `count >= 2` must omit `sx` / `sy` (keep the
+      owned `pack_spacing` grid)
+    - `pack_spacing` must stay omitted or `0` on a rectangle row (same rule as
+      every other one-count regen row)
+13. Canonicalization samples **one** integer cell inside
+    `[x, x+sx) × [y, y+sy)` with the already-owned FNV-1a 64 helper, then writes
+    that cell onto the expanded one-actor `spawn_groups[]` row:
+    - seed = `regen_rectangle:{ref}:{map_index}:{x}:{y}:{sx}:{sy}:{member}`
+      with `member = 1` for this one-count seam
+    - `slot = digest % (sx * sy)`
+    - `x' = x + (slot % sx)`
+    - `y' = y + (slot / sx)` (integer division)
+    - the same authored row always yields the same `(x', y')`; there is no live
+      `math/rand` and no per-death re-roll
+14. After expansion, canonicalization still strips `regen_spawns`. Live
+    import/export/respawn/leash continue to see only the sampled one-actor
+    `spawn_groups` home. Respawn rebuilds at that sampled home, not a fresh
+    rectangle roll.
+15. Reject before runtime mutation when:
+    - only one of `sx` / `sy` is non-zero
+    - either extent is `< 0` or `> 10000`
+    - `count >= 2` carries `sx` / `sy`
+    - a rectangle row also carries `pack_spacing > 0`
+    - sampled `x'` / `y'` would overflow `int32`
+
 ### Explicit non-goals for this freeze / first GREEN
 
 - pack-wide synchronized respawn or shared HP
 - pack aggro / assist / multi-mob linkage
-- random rectangle / anywhere placement, direction, or legacy regen timers
+- direction, or legacy regen timers
 - roaming, pathing, or group formations beyond the deterministic grid offsets
 - changing built-in one-count fixtures to synthesize `.m01` suffixes
 - weighted/random loot
 - branching quest scripts
+- live RNG, per-respawn rectangle re-rolls, or multi-count rectangle sampling
 
 ## TDD shape after the freeze lands
 
@@ -101,6 +139,11 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
    - `count = 2` without `pack_spacing` fails closed
    - `count = 9` fails closed
    - colliding synthesized member refs fail closed
+   - one-count `sx = 200`, `sy = 100` at `(469900, 964200)` expands to the
+     pinned FNV cell `(470067, 964284)` and strips `regen_spawns`
+   - the same rectangle row canonicalizes to the same cell on a second call
+   - partial `sx` without `sy`, multi-count + rectangle, rectangle +
+     `pack_spacing`, and `sx > 10000` fail closed
 2. Ops validate endpoint: pretty-printed canonical multi-count expansion and the
    updated negative fixtures return `400` for the owned reject cases.
 3. Positive QA fixture: `docs/examples/bootstrap-multi-count-regen-authoring-bundle.json`
@@ -115,3 +158,7 @@ Live runtime remains independent one-actor `spawn_groups` with no pack object.
 The first pack-member assist GREEN now copies `engaged_by` onto live `{ref}.mNN`
 siblings after an accepted hit, without MOVE/chase or pack-wide synchronized
 respawn.
+The first one-count random-rectangle GREEN now samples a deterministic FNV cell
+inside authored `sx` × `sy` at canonicalize time and writes that cell onto the
+expanded `spawn_groups` home. Direction, legacy regen timers, live RNG, and
+per-respawn re-rolls stay deferred.
