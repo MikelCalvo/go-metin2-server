@@ -57,10 +57,41 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 ## What this is not yet
 
 - retipping safebox-state exports to `migration_version=28`
-- DB-backed live safebox repositories
+- mounting `SQLStore` as the stock `gamed` rematerialize path / silent FileStore-to-SQL cutover
 - remote admin / daemon mutation route / secrets in git
 - mall open/checkout / GD/DB myshop
 - tip-`0010` ground-item attribute SQL companion (separate follow-on)
+- a stock production database driver
+
+## Follow-on: live DB-backed safebox repository
+
+First GREEN for an opt-in `safeboxstore.SQLStore` that implements the same
+`Store` Load/Save seam (plus `CharacterSafeboxStateExporter`) against the
+already-owned tip-`0015` + additive `0025` / `0028` tables, beside FileStore
+and `ImportCharacterSafeboxState`.
+
+Contract:
+
+1. Caller supplies a `database/sql`-compatible executor (`*sql.DB` /
+   `*sql.Conn`). The package does not select a driver, load a DSN, embed
+   secrets, or register a production engine.
+2. Schema preflight reuses tip-`0015` + `0025` + `0028` before any SELECT /
+   DELETE / INSERT (`ErrCharacterSafeboxStateImportSchemaRequired` when any
+   required boundary is missing).
+3. `Load` projects `character_safebox_passwords` + `character_safebox_items`
+   into a normalized `Snapshot`, including presence-aware sockets and
+   attributes (explicit all-zero / type-zero stay authoritative). Empty
+   tables are an empty warehouse, not a missing FileStore snapshot. Orphan
+   item rows (no password parent, or login mismatch) fail closed.
+4. `Save` is a transactional **full snapshot replace** (delete all safebox
+   child rows, then insert the canonicalized export). This matches FileStore
+   `Save` of a whole JSON snapshot; it is not insert-only import and not
+   scoped replace. Parent `characters` rows must already exist (FK fail-closed).
+5. Stock `gamed` stays on FileStore. `SQLStore` is not a daemon mutation
+   route, backup/restore primitive, or remote-admin endpoint.
+
+Proof: `go test ./internal/safeboxstore -run 'SQLStore' -count=1` plus
+`go test -tags=sqlite_harness ./internal/safeboxstore -run SQLiteHarnessSQLStore -count=1`.
 
 ## Likely files to change (GREEN follow-on)
 
@@ -78,7 +109,7 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 ## TDD and validation (after GREEN opens)
 
 - `go test ./db/migrations -run 'BuiltInCatalog|CatalogSummaryUsesBuiltIn|PlanUpToLatestUsesBuiltIn' -count=1`
-- `go test ./internal/safeboxstore -run 'ExportCharacterSafebox|ValidateCharacterSafebox|QuarantineCharacterSafebox|ImportCharacterSafebox|InstanceAttributes' -count=1`
+- `go test ./internal/safeboxstore -run 'ExportCharacterSafebox|ValidateCharacterSafebox|QuarantineCharacterSafebox|ImportCharacterSafebox|InstanceAttributes|SQLStore' -count=1`
 - `go test -tags=sqlite_harness ./internal/safeboxstore -run SQLiteHarness -count=1`
 - `go test ./internal/migratecli -run 'QuarantineExport|ImportExport' -count=1`
 - `go test ./internal/ops -run 'LocalMigrationStatus|CharacterSafebox' -count=1`
@@ -97,3 +128,8 @@ preflight requiring tip-`0015` + `0025` + `0028`
 Follow-on tip sync: seeded hermetic tip-`0015`+`0028` safebox cell attributes in
 the shared `import-export-drill` is owned by
 [seeded safebox cell instance-attributes tip sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
+
+GREEN follow-on live repository: opt-in `safeboxstore.SQLStore` Load/Save against
+the same tip-`0015`+`0025`+`0028` tables, beside FileStore and tip-`0015` SQL
+import (`feat(db): add live SQL safebox repository seam`). Stock `gamed` stays
+on FileStore; no stock production driver, remote admin, or secrets in git.
