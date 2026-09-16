@@ -119,3 +119,67 @@ func TestGameRuntimeGoldDropProjectsCountOnSelfGroundAdd(t *testing.T) {
 		t.Fatal("expected only the drop2 gold-count marker to remain after pickup")
 	}
 }
+
+func TestGameRuntimeGoldDropProjectsCountOnPeerGroundAdd(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GoldCountPeerOwner", 0x010301c2, 0x020401c2, 1300, 2300, 0, 101, 201)
+	owner.Gold = 5000
+	owner.Inventory = []inventory.ItemInstance{{ID: 2101, Vnum: 27030, Count: 2, Slot: 5}}
+	watcher := peerVisibilityCharacter("GoldCountPeerWatcher", 0x010301c3, 0x020401c3, 1350, 2350, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "gold-count-peer-owner", 0xc2c2c2c2, owner)
+	issuePeerTicket(t, ticketStore, "gold-count-peer-watcher", 0xc3c3c3c3, watcher)
+	for _, account := range []accountstore.Account{
+		{Login: "gold-count-peer-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})},
+		{Login: "gold-count-peer-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})},
+	} {
+		if err := accounts.Save(account); err != nil {
+			t.Fatalf("seed %s account: %v", account.Login, err)
+		}
+	}
+
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
+	if err != nil {
+		t.Fatalf("unexpected gold-count peer runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-count-peer-owner", 0xc2c2c2c2)
+	defer closeSessionFlow(t, ownerFlow)
+	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gold-count-peer-watcher", 0xc3c3c3c3)
+	defer closeSessionFlow(t, watcherFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, watcherFlow)
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientDrop(itemproto.ClientDropPacket{Position: itemproto.InventoryPosition(5), Elk: 1200})))
+	if err != nil {
+		t.Fatalf("unexpected gold-count peer drop error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected gold-count peer drop to emit POINT_CHANGE, GROUND_ADD, and OWNERSHIP, got %d frames", len(out))
+	}
+	ground, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode gold-count owner ground add: %v", err)
+	}
+	if ground.VID == 0 || ground.Vnum != 1 || ground.Count != 1200 || ground.X != owner.X || ground.Y != owner.Y || ground.Z != owner.Z {
+		t.Fatalf("unexpected gold-count owner ground add: %+v", ground)
+	}
+
+	queued := flushServerFrames(t, watcherFlow)
+	if len(queued) != 2 {
+		t.Fatalf("expected gold-count peer drop to queue GROUND_ADD and OWNERSHIP, got %d frames", len(queued))
+	}
+	peerGround, err := itemproto.DecodeGroundAdd(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode gold-count peer ground add: %v", err)
+	}
+	if peerGround != ground {
+		t.Fatalf("unexpected gold-count peer ground add: got %+v want %+v", peerGround, ground)
+	}
+	ownership, err := itemproto.DecodeOwnership(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode gold-count peer ownership: %v", err)
+	}
+	if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: owner.Name}) {
+		t.Fatalf("unexpected gold-count peer ownership: %+v", ownership)
+	}
+}

@@ -4537,7 +4537,11 @@ func sortSharedGroundItemsByVID(items []sharedGroundItem) {
 }
 
 func encodeGroundItemAddFrame(ground sharedGroundItem) []byte {
-	return itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: ground.VID, Vnum: ground.Item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z})
+	packet := itemproto.GroundAddPacket{VID: ground.VID, Vnum: ground.Item.Vnum, X: ground.X, Y: ground.Y, Z: ground.Z}
+	if ground.GoldAmount != 0 {
+		packet.Count = ground.GoldAmount
+	}
+	return itemproto.EncodeGroundAdd(packet)
 }
 
 func groundItemSnapshot(ground sharedGroundItem) GroundItemSnapshot {
