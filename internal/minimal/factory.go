@@ -5476,7 +5476,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !hasTicket || !hasSelected {
 				return false
 			}
-			account, ok := loadOrCreateAccountFromTicket(accounts, sessionTicket)
+			account, ok := loadOrCreateAccount(accounts, sessionTicket.Login)
 			if !ok {
 				selectedPlayer = nil
 				clearLiveCharacterRegistration()
@@ -6738,7 +6738,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
 					}
 					if accounts != nil {
-						account, ok := loadOrCreateAccountFromTicket(accounts, ticket)
+						account, ok := loadOrCreateAccount(accounts, packet.Login)
 						if !ok {
 							return loginflow.Result{Accepted: false, FailureStatus: "FAILED"}
 						}
@@ -10411,13 +10411,9 @@ func issueLoginTicket(store loginticket.Store, login string, empire uint8, chara
 }
 
 func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.Account, bool) {
-	return loadOrCreateAccountFromTicket(store, loginticket.Ticket{Login: login})
-}
-
-func loadOrCreateAccountFromTicket(store accountstore.Store, ticket loginticket.Ticket) (accountstore.Account, bool) {
-	login := ticket.Login
 	if store == nil {
-		return seededAccountFromTicketOrStub(ticket), true
+		characters := cloneCharacters(stubCharacters())
+		return accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}, true
 	}
 	account, err := store.Load(login)
 	if err == nil {
@@ -10433,31 +10429,13 @@ func loadOrCreateAccountFromTicket(store accountstore.Store, ticket loginticket.
 	if !errors.Is(err, accountstore.ErrAccountNotFound) {
 		return accountstore.Account{}, false
 	}
-	account = seededAccountFromTicketOrStub(ticket)
-	if account.Login == "" || len(account.Characters) == 0 {
-		return accountstore.Account{}, false
-	}
+	characters := cloneCharacters(stubCharacters())
+	account = accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}
 	if err := store.Save(account); err != nil {
 		return accountstore.Account{}, false
 	}
 	account.Characters = cloneCharacters(account.Characters)
 	return account, true
-}
-
-func seededAccountFromTicketOrStub(ticket loginticket.Ticket) accountstore.Account {
-	if hasAnyCharacters(ticket.Characters) && !strings.EqualFold(ticket.Login, StubLogin) {
-		return accountstore.Account{
-			Login:      ticket.Login,
-			Empire:     ticketEmpire(ticket),
-			Characters: cloneCharacters(ticket.Characters),
-		}
-	}
-	characters := cloneCharacters(stubCharacters())
-	return accountstore.Account{
-		Login:      ticket.Login,
-		Empire:     ticketEmpire(loginticket.Ticket{Empire: ticket.Empire, Characters: characters}),
-		Characters: characters,
-	}
 }
 
 func normalizeBootstrapStubAccount(account accountstore.Account) (accountstore.Account, bool) {

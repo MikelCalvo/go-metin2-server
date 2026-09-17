@@ -50105,6 +50105,9 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsRewardsBeforeOw
 	if err := accounts.Save(accountstore.Account{Login: "clh-reward-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed combined last-hit reward owner account: %v", err)
 	}
+	if err := accounts.Save(accountstore.Account{Login: "clh-reward-watch", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
+		t.Fatalf("seed combined last-hit reward watcher account: %v", err)
+	}
 
 	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(
 		config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"},
@@ -50215,8 +50218,9 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsRewardsBeforeOw
 	if err != nil {
 		t.Fatalf("decode combined last-hit reward ownership: %v", err)
 	}
-	if ownership.VID != ground.VID || ownership.OwnerName != owner.Name {
-		t.Fatalf("unexpected combined last-hit reward ownership: %+v", ownership)
+	wantOwner := killRewardPartyOwnerName([]string{owner.Name, watcher.Name}, ground.Vnum, 0)
+	if ownership.VID != ground.VID || ownership.OwnerName != wantOwner {
+		t.Fatalf("unexpected combined last-hit reward ownership: %+v want owner %q", ownership, wantOwner)
 	}
 	next := assertOwnerFloorDeathSequence(t, remainingDeath[4:], 0, owner.VID, bootstrapPracticeMobRetaliationPointDelta, "combined last-hit reward owner-floor")
 	if next != 4 {
