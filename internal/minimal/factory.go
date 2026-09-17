@@ -686,8 +686,8 @@ func cloneMallCells(cells map[uint8]inventory.ItemInstance) map[uint8]inventory.
 }
 
 // SeedMallCellsForTest installs same-account mall cells for lab /open_mall
-// rematerialize. This bootstrap slice does not invent cash-shop purchase,
-// durable mall FileStore, or mall money.
+// rematerialize and accepted MALL_CHECKOUT. This bootstrap slice does not
+// invent cash-shop purchase, durable mall FileStore, or mall money.
 func (r *gameRuntime) SeedMallCellsForTest(login string, characterID uint32, cells map[uint8]inventory.ItemInstance) {
 	if r == nil {
 		return
@@ -4910,6 +4910,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			activeMallItems = runtime.mallCellsForCharacter(sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
 		}
+		cloneActiveMallItems := func() map[uint8]inventory.ItemInstance {
+			return cloneMallCells(activeMallItems)
+		}
+		persistActiveMallCells := func(selected *player.Runtime) {
+			if runtime == nil || !hasTicket || selected == nil {
+				return
+			}
+			runtime.SeedMallCellsForTest(sessionTicket.Login, selected.LiveCharacter().ID, activeMallItems)
+		}
 		encodeActiveMallSetFrames := func() [][]byte {
 			if len(activeMallItems) == 0 {
 				return nil
@@ -8688,13 +8697,66 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 					return gameflow.SafeboxItemMoveResult{Accepted: true, Frames: frames}
 				},
-				HandleMallCheckout: func(_ itemproto.ClientMallCheckoutPacket) gameflow.MallCheckoutResult {
+				HandleMallCheckout: func(packet itemproto.ClientMallCheckoutPacket) gameflow.MallCheckoutResult {
 					stateMu.Lock()
 					defer stateMu.Unlock()
-					// Accepted mall checkout stays deferred: even an open lab mall
-					// presentation must keep CG::MALL_CHECKOUT fail-closed with no
-					// frames and no mall/inventory mutation.
-					return gameflow.MallCheckoutResult{Accepted: false}
+
+					selectedPlayer, ok := currentSelectedPlayer()
+					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMallOpen || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					if hasActiveMyShopOpen {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					capacity := bootstrapMallCapacity(activeMallSize)
+					if capacity == 0 || packet.MallSlot >= capacity {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					mallItem, occupied := activeMallItems[packet.MallSlot]
+					if !occupied {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					template, ok := runtime.itemTemplates[mallItem.Vnum]
+					if !ok || !itemcatalog.ValidTemplate(template) || mallItem.Vnum != template.Vnum || mallItem.Count == 0 || mallItem.Count > template.MaxCount {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					destination := inventory.SlotIndex(packet.Position.Cell)
+					if exchangeDisplaysCarriedSlot(destination) {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					previousSelected := selectedPlayer.LiveCharacter()
+					checkout, ok := selectedPlayer.SafeboxCheckoutItem(destination, mallItem, template)
+					if !ok {
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					frames := [][]byte{itemproto.EncodeMallDel(itemproto.DelPacket{Position: itemproto.Position{WindowType: itemproto.WindowMall, Cell: uint16(packet.MallSlot)}})}
+					if checkout.Merged {
+						updateFrame, err := encodeInventoryItemUpdateFrameWithTemplates(checkout.Item, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.MallCheckoutResult{Accepted: false}
+						}
+						frames = append(frames, updateFrame)
+					} else {
+						setFrame, err := encodeBootstrapItemFrameWithTemplates(itemproto.InventoryPosition(uint16(checkout.Item.Slot)), checkout.Item, runtime.itemTemplates)
+						if err != nil {
+							selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+							refreshLiveCharacterRegistration()
+							return gameflow.MallCheckoutResult{Accepted: false}
+						}
+						frames = append(frames, setFrame)
+					}
+					previousMallItems := cloneActiveMallItems()
+					delete(activeMallItems, packet.MallSlot)
+					persistActiveMallCells(selectedPlayer)
+					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
+					if !ok {
+						activeMallItems = previousMallItems
+						persistActiveMallCells(selectedPlayer)
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
+					return gameflow.MallCheckoutResult{Accepted: true, Frames: frames}
 				},
 				HandleItemDrop: func(packet itemproto.ClientDropPacket) gameflow.ItemDropResult {
 					stateMu.Lock()

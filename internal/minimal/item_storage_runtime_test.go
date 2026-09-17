@@ -2973,7 +2973,7 @@ func TestGameRuntimeOpenMallRejectsActiveCubeWithoutMutation(t *testing.T) {
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "cube-busy open-mall owner")
 }
 
-func TestGameRuntimeMallCheckoutStaysFailClosedWhileMallOpen(t *testing.T) {
+func TestGameRuntimeMallCheckoutWhileOpenMovesItemToCarriedInventory(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("OpenMallCheckout", 0x010309c5, 0x020409c5, 1100, 2100, 0, 101, 201)
@@ -2996,11 +2996,15 @@ func TestGameRuntimeMallCheckoutStaysFailClosedWhileMallOpen(t *testing.T) {
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c5)
 	defer closeSessionFlow(t, flow)
 
-	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
 		Message: "/open_mall",
-	}))); err != nil {
+	})))
+	if err != nil {
 		t.Fatalf("unexpected /open_mall before mall checkout: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_mall before mall checkout to emit MALL_OPEN plus one MALL_SET, got %d", len(openOut))
 	}
 
 	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{
@@ -3008,15 +3012,114 @@ func TestGameRuntimeMallCheckoutStaysFailClosedWhileMallOpen(t *testing.T) {
 		Position: itemproto.InventoryPosition(9),
 	})))
 	if err != nil {
-		t.Fatalf("unexpected mall checkout while mall open error: %v", err)
+		t.Fatalf("unexpected accepted mall checkout error: %v", err)
 	}
-	if len(out) != 0 {
-		t.Fatalf("expected mall checkout while mall open to stay fail-closed with no frames, got %d", len(out))
+	if len(out) != 2 {
+		t.Fatalf("expected accepted mall checkout to emit MALL_DEL and ITEM_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeMallDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode mall checkout MALL_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowMall, Cell: 0}) {
+		t.Fatalf("unexpected mall checkout MALL_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode mall checkout ITEM_SET: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(9) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected mall checkout ITEM_SET: %+v", set)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
-		t.Fatalf("expected mall checkout while mall open to queue no peer frames, got %d", len(queued))
+		t.Fatalf("expected accepted mall checkout to queue no peer frames, got %d", len(queued))
 	}
-	assertExchangeAccountUnchanged(t, accounts, login, owner, "mall checkout while mall open")
+
+	wantPersisted := owner
+	wantPersisted.Inventory = []inventory.ItemInstance{
+		{ID: 1805, Vnum: 27001, Count: 2, Slot: 5},
+		{ID: 1904, Vnum: 27001, Count: 2, Slot: 9},
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, wantPersisted, "accepted mall checkout owner")
+	assertExchangeLiveStateUnchanged(t, runtime, wantPersisted, "accepted mall checkout live owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall reopen after mall checkout error: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected /open_mall reopen after mall checkout to emit only MALL_OPEN, got %d", len(reopenOut))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode /open_mall reopen after mall checkout: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected /open_mall reopen after mall checkout: %+v", open)
+	}
+}
+
+func TestGameRuntimeMallCheckoutMergesCompatibleDestination(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallCheckoutMerge", 0x010309c7, 0x020409c7, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4343
+	owner.Inventory = []inventory.ItemInstance{{ID: 1807, Vnum: 27001, Count: 3, Slot: 7}}
+	login := "open-mall-checkout-merge"
+	issuePeerTicket(t, ticketStore, login, 0x707079c7, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed mall checkout merge owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected mall checkout merge runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		1: {ID: 1906, Vnum: 27001, Count: 2, Slot: 1},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c7)
+	defer closeSessionFlow(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_mall before merge mall checkout: %v", err)
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{
+		MallSlot: 1,
+		Position: itemproto.InventoryPosition(7),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected merge mall checkout error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected merge mall checkout to emit MALL_DEL and ITEM_UPDATE, got %d", len(out))
+	}
+	del, err := itemproto.DecodeMallDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode merge mall checkout MALL_DEL: %v", err)
+	}
+	if del.Position != (itemproto.Position{WindowType: itemproto.WindowMall, Cell: 1}) {
+		t.Fatalf("unexpected merge mall checkout MALL_DEL: %+v", del.Position)
+	}
+	update, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode merge mall checkout ITEM_UPDATE: %v", err)
+	}
+	if update.Position != itemproto.InventoryPosition(7) || update.Count != 5 {
+		t.Fatalf("unexpected merge mall checkout ITEM_UPDATE: %+v", update)
+	}
+
+	wantPersisted := owner
+	wantPersisted.Inventory = []inventory.ItemInstance{{ID: 1807, Vnum: 27001, Count: 5, Slot: 7}}
+	assertExchangeAccountUnchanged(t, accounts, login, wantPersisted, "merge mall checkout owner")
 }
 
 func TestGameRuntimeCloseMallClearsOpenPresentationWithoutFrames(t *testing.T) {
