@@ -2,6 +2,7 @@ package minimal
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sort"
 	"strings"
 	"sync"
@@ -86,6 +87,7 @@ type sharedWorldRegistry struct {
 	exchangeAccepted                map[uint64]bool
 	nextStaticActorCombatSnapshotID uint64
 	lastKnownCharacters             map[uint64]loginticket.Character
+	sessionLogins                   map[uint64]string
 	groundItemsByVID                map[uint32]sharedGroundItem
 	itemTemplates                   map[uint32]itemcatalog.Template
 	suppressStaticActorFanout       bool
@@ -443,6 +445,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		exchangeAccepted:                   make(map[uint64]bool),
 		exchangeGold:                       make(map[uint64]uint32),
 		lastKnownCharacters:                make(map[uint64]loginticket.Character),
+		sessionLogins:                      make(map[uint64]string),
 		groundItemsByVID:                   make(map[uint32]sharedGroundItem),
 		now:                                time.Now,
 	}
@@ -508,6 +511,30 @@ func (r *sharedWorldRegistry) HasLiveSession(entityID uint64) bool {
 	}
 	_, ok := r.playerCharacter(entityID)
 	return ok
+}
+
+func (r *sharedWorldRegistry) BindSessionLogin(entityID uint64, login string) {
+	if r == nil || entityID == 0 || !validRewardOwnerMetadata(login) {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.playerCharacter(entityID); !ok {
+		return
+	}
+	if r.sessionLogins == nil {
+		r.sessionLogins = make(map[uint64]string)
+	}
+	r.sessionLogins[entityID] = login
+}
+
+func (r *sharedWorldRegistry) sessionLoginLocked(entityID uint64) (string, bool) {
+	if r == nil || r.sessionLogins == nil || entityID == 0 {
+		return "", false
+	}
+	login, ok := r.sessionLogins[entityID]
+	return login, ok && validRewardOwnerMetadata(login)
 }
 
 func (r *sharedWorldRegistry) HasVisiblePlayerTarget(originID uint64, targetVID uint32) bool {
@@ -4155,6 +4182,7 @@ func (r *sharedWorldRegistry) removeStaleOwnershipLocked(entityIDs []uint64) boo
 		r.detachProximityAggroSuppressSubjectLocked(entityID, currentCharacter.VID)
 		_, _ = r.entities.Remove(entityID)
 		delete(r.lastKnownCharacters, entityID)
+		delete(r.sessionLogins, entityID)
 		if !ok {
 			continue
 		}
@@ -4203,6 +4231,7 @@ func (r *sharedWorldRegistry) Join(character loginticket.Character, pending *pen
 	r.lastKnownCharacters[id] = character
 	if !registerSharedWorldSessionEntry(r.sessionDirectory, id, pending, relocate) {
 		delete(r.lastKnownCharacters, id)
+		delete(r.sessionLogins, id)
 		_, _ = r.entities.Remove(id)
 		return 0, nil
 	}
@@ -4266,6 +4295,7 @@ func (r *sharedWorldRegistry) Leave(id uint64) {
 	r.detachProximityAggroSuppressSubjectLocked(id, currentCharacter.VID)
 	_, _ = r.entities.Remove(id)
 	delete(r.lastKnownCharacters, id)
+	delete(r.sessionLogins, id)
 	if ok {
 		visibilityDiff := r.scopesLocked().LeaveVisibilityDiff(currentCharacter)
 		removeRaw := encodeCharacterDeleteFrame(currentCharacter)
@@ -4410,6 +4440,14 @@ func (r *sharedWorldRegistry) RegisterGroundItemWithPickupRange(ownerID uint64, 
 	return r.registerGroundItem(ownerID, ownerLogin, character, vid, item, 0, pickupRange)
 }
 
+func (r *sharedWorldRegistry) RegisterGroundItemWithPickupRangeAt(ownerID uint64, ownerLogin string, owner loginticket.Character, location loginticket.Character, vid uint32, item inventory.ItemInstance, pickupRange int64) bool {
+	const maxItemGetCountCarrier = uint16(^uint8(0))
+	if item.ID == 0 || item.Vnum == 0 || item.Count == 0 || item.Count > maxItemGetCountCarrier || item.Locked || item.Equipped || item.EquipSlot != inventory.EquipmentSlotNone || pickupRange < 0 {
+		return false
+	}
+	return r.registerGroundItemAt(ownerID, ownerLogin, owner, location, vid, item, 0, pickupRange)
+}
+
 func (r *sharedWorldRegistry) CanRegisterGroundGold(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, amount uint32) bool {
 	return r.CanRegisterGroundGoldWithPickupRange(ownerID, ownerLogin, character, vid, amount, bootstrapGroundItemPickupRange)
 }
@@ -4441,12 +4479,15 @@ func (r *sharedWorldRegistry) canRegisterGroundItem(ownerID uint64, ownerLogin s
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.canRegisterGroundItemLocked(ownerID, character, vid)
+	return r.canRegisterGroundItemLocked(ownerID, character, character, vid)
 }
 
-func (r *sharedWorldRegistry) canRegisterGroundItemLocked(ownerID uint64, character loginticket.Character, vid uint32) bool {
+func (r *sharedWorldRegistry) canRegisterGroundItemLocked(ownerID uint64, owner loginticket.Character, location loginticket.Character, vid uint32) bool {
 	registeredOwner, ok := r.playerCharacter(ownerID)
-	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(character) || !sameGroundRewardOwnerSnapshot(registeredOwner, character) {
+	if !ok || characterAtBootstrapHPFloor(registeredOwner) || characterAtBootstrapHPFloor(owner) || !sameGroundRewardOwnerIdentityAndHP(registeredOwner, owner) {
+		return false
+	}
+	if sameGroundRewardCharacterIdentity(owner, location) && !sameGroundRewardOwnerLocation(registeredOwner, location) {
 		return false
 	}
 	if _, exists := r.groundItemsByVID[vid]; exists {
@@ -4456,12 +4497,16 @@ func (r *sharedWorldRegistry) canRegisterGroundItemLocked(ownerID uint64, charac
 }
 
 func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin string, character loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32, pickupRange int64) bool {
-	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(character.Name) || vid == 0 || item.Vnum == 0 {
+	return r.registerGroundItemAt(ownerID, ownerLogin, character, character, vid, item, goldAmount, pickupRange)
+}
+
+func (r *sharedWorldRegistry) registerGroundItemAt(ownerID uint64, ownerLogin string, owner loginticket.Character, location loginticket.Character, vid uint32, item inventory.ItemInstance, goldAmount uint32, pickupRange int64) bool {
+	if r == nil || ownerID == 0 || !validRewardOwnerMetadata(ownerLogin) || !validRewardOwnerMetadata(owner.Name) || vid == 0 || item.Vnum == 0 {
 		return false
 	}
 
 	r.mu.Lock()
-	if !r.canRegisterGroundItemLocked(ownerID, character, vid) {
+	if !r.canRegisterGroundItemLocked(ownerID, owner, location, vid) {
 		r.mu.Unlock()
 		return false
 	}
@@ -4473,17 +4518,17 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		VID:                vid,
 		OwnerID:            ownerID,
 		OwnerLogin:         ownerLogin,
-		OwnerCharacterID:   character.ID,
-		OwnerVID:           character.VID,
-		OwnerName:          character.Name,
-		OwnerHPPoint:       character.Points[bootstrapPlayerPointValueIndex],
+		OwnerCharacterID:   owner.ID,
+		OwnerVID:           owner.VID,
+		OwnerName:          owner.Name,
+		OwnerHPPoint:       owner.Points[bootstrapPlayerPointValueIndex],
 		Item:               item,
 		GoldAmount:         goldAmount,
 		PickupRange:        pickupRange,
-		MapIndex:           r.topology.EffectiveMapIndex(character),
-		X:                  character.X,
-		Y:                  character.Y,
-		Z:                  character.Z,
+		MapIndex:           r.topology.EffectiveMapIndex(location),
+		X:                  location.X,
+		Y:                  location.Y,
+		Z:                  location.Z,
 		OwnershipExclusive: true,
 		OwnershipExpiresAt: now.Add(bootstrapGroundItemOwnershipDuration),
 		DespawnAt:          now.Add(bootstrapGroundItemDespawnDuration),
@@ -4494,7 +4539,13 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 	}
 	r.groundItemsByVID[vid] = ground
 	frames := encodeGroundItemVisibleFrames(ground)
-	for _, target := range r.scopesLocked().VisibleTargets(ownerID, character) {
+	fanoutOriginID := ownerID
+	if location.VID != 0 {
+		if locationEntity, ok := r.entities.PlayerByVID(location.VID); ok && locationEntity.Entity.ID != 0 {
+			fanoutOriginID = locationEntity.Entity.ID
+		}
+	}
+	for _, target := range r.scopesLocked().VisibleTargets(fanoutOriginID, location) {
 		if characterAtBootstrapHPFloor(target.Character) {
 			continue
 		}
@@ -4506,6 +4557,79 @@ func (r *sharedWorldRegistry) registerGroundItem(ownerID uint64, ownerLogin stri
 		hook()
 	}
 	return true
+}
+
+const killRewardPartyOwnerSeedPrefix = "kill_reward_party_owner"
+
+type killRewardPartyOwnerPick struct {
+	EntityID  uint64
+	Login     string
+	Character loginticket.Character
+}
+
+func killRewardPartyOwnerSlot(vnum uint32, index int, memberCount int) int {
+	if memberCount <= 0 {
+		return 0
+	}
+	digest := fnv.New64a()
+	_, _ = digest.Write([]byte(fmt.Sprintf("%s:%d:%d", killRewardPartyOwnerSeedPrefix, vnum, index)))
+	return int(digest.Sum64() % uint64(memberCount))
+}
+
+func killRewardPartyOwnerName(names []string, vnum uint32, index int) string {
+	members := append([]string(nil), names...)
+	sort.Strings(members)
+	if len(members) == 0 {
+		return ""
+	}
+	return members[killRewardPartyOwnerSlot(vnum, index, len(members))]
+}
+
+func (r *sharedWorldRegistry) PickKillRewardPartyOwner(vnum uint32, index int, fallbackID uint64, fallbackLogin string, fallback loginticket.Character) (killRewardPartyOwnerPick, bool) {
+	fallbackPick := killRewardPartyOwnerPick{EntityID: fallbackID, Login: fallbackLogin, Character: fallback}
+	if r == nil {
+		return fallbackPick, fallbackID != 0 && validRewardOwnerMetadata(fallbackLogin) && validRewardDropOwnerNameMetadata(fallback.Name)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if picked, ok := r.pickKillRewardPartyOwnerLocked(vnum, index); ok {
+		return picked, true
+	}
+	return fallbackPick, fallbackID != 0 && validRewardOwnerMetadata(fallbackLogin) && validRewardDropOwnerNameMetadata(fallback.Name)
+}
+
+func (r *sharedWorldRegistry) pickKillRewardPartyOwnerLocked(vnum uint32, index int) (killRewardPartyOwnerPick, bool) {
+	if r == nil || r.sessionDirectory == nil {
+		return killRewardPartyOwnerPick{}, false
+	}
+	type member struct {
+		id        uint64
+		login     string
+		character loginticket.Character
+	}
+	members := make([]member, 0)
+	for _, entityID := range r.sessionDirectory.EntityIDs() {
+		character, ok := r.playerCharacter(entityID)
+		if !ok || characterAtBootstrapHPFloor(character) || !validRewardDropOwnerNameMetadata(character.Name) {
+			continue
+		}
+		login, ok := r.sessionLoginLocked(entityID)
+		if !ok {
+			continue
+		}
+		members = append(members, member{id: entityID, login: login, character: character})
+	}
+	if len(members) == 0 {
+		return killRewardPartyOwnerPick{}, false
+	}
+	sort.Slice(members, func(i int, j int) bool {
+		if members[i].character.Name == members[j].character.Name {
+			return members[i].character.VID < members[j].character.VID
+		}
+		return members[i].character.Name < members[j].character.Name
+	})
+	picked := members[killRewardPartyOwnerSlot(vnum, index, len(members))]
+	return killRewardPartyOwnerPick{EntityID: picked.id, Login: picked.login, Character: picked.character}, true
 }
 
 func validRewardOwnerMetadata(value string) bool {
@@ -4531,6 +4655,10 @@ func sameGroundRewardOwnerLocation(registered loginticket.Character, supplied lo
 	return sameGroundRewardCharacterLocation(registered, supplied)
 }
 
+func sameGroundRewardOwnerIdentityAndHP(registered loginticket.Character, supplied loginticket.Character) bool {
+	return sameGroundRewardCharacterIdentity(registered, supplied) && registered.Points[bootstrapPlayerPointValueIndex] == supplied.Points[bootstrapPlayerPointValueIndex]
+}
+
 func sameGroundRewardOwnerSnapshot(registered loginticket.Character, supplied loginticket.Character) bool {
 	return sameGroundRewardOwnerLocation(registered, supplied) && registered.Points[bootstrapPlayerPointValueIndex] == supplied.Points[bootstrapPlayerPointValueIndex]
 }
@@ -4544,7 +4672,11 @@ func sameGroundRewardCollectorSnapshot(registered loginticket.Character, supplie
 }
 
 func sameGroundRewardCharacterLocation(registered loginticket.Character, supplied loginticket.Character) bool {
-	return registered.ID == supplied.ID && registered.VID == supplied.VID && registered.Name == supplied.Name && registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
+	return sameGroundRewardCharacterIdentity(registered, supplied) && registered.MapIndex == supplied.MapIndex && registered.X == supplied.X && registered.Y == supplied.Y && registered.Z == supplied.Z
+}
+
+func sameGroundRewardCharacterIdentity(registered loginticket.Character, supplied loginticket.Character) bool {
+	return registered.ID == supplied.ID && registered.VID == supplied.VID && registered.Name == supplied.Name
 }
 
 func (r *sharedWorldRegistry) groundItemVisibleToCharacterLocked(ground sharedGroundItem, character loginticket.Character) bool {

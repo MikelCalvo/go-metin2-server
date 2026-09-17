@@ -25,7 +25,7 @@ The current reward descriptor is intentionally tiny:
 
 It does **not** yet claim:
 - level-up choreography or stat recalculation
-- party reward sharing or contribution splits
+- party invite/leave membership, contribution splits, last-hitter vs random tables, or drop-at-owner-feet
 - randomized loot tables or probabilities
 - corpse interaction beyond the shared bootstrap ground-item ownership / public-release / destroy-deadline path already owned by `item-drop-pickup-bootstrap.md`
 - quest credit, achievements, or scripted on-death hooks beyond the narrow spawn-group kill-quest credit fields documented in `quest-state-bootstrap.md`
@@ -158,8 +158,8 @@ This keeps death/restart cleanup and concurrent movement from leaking new pickup
 Current rules:
 - each configured drop spawns at the killer's current position
 - each drop has count `1`
-- each drop is owned by the killer's character name
-- reward ground handles reuse the same bootstrap exclusive-ownership timer (`30` seconds), blank public `GC::ITEM_OWNERSHIP` release, and destroy deadline (`300` seconds from registration) already owned by player drops in `item-drop-pickup-bootstrap.md`; pending kill-reward handles rematerialize across `gamed` process restart from the dedicated ground-item FileStore with absolute `ownership_expires_at` / `despawn_at` timers, identity-keyed exclusive ownership while `OwnerID = 0`, and process-local exclusive `OwnerID` rebind when the matching killer rejoins
+- a **single** kill-reward drop is owned by one implicit-party member chosen with deterministic FNV-1a-64: connected live `GAME` sessions, skip `0`-HP, sort by character name then `VID`, seed `kill_reward_party_owner:{vnum}:{index}` (`index` is `0` for that single drop), slot `hash % member_count`; `ITEM_OWNERSHIP.owner_name` and exclusive `OwnerID` / `owner_login` are that picked member, not a relabeled solo killer. Multi-drop kills in this slice keep killer ownership. Party invite/leave membership, contribution splits, last-hitter vs random tables, and drop-at-owner-feet stay deferred
+- reward ground handles reuse the same bootstrap exclusive-ownership timer (`30` seconds), blank public `GC::ITEM_OWNERSHIP` release, and destroy deadline (`300` seconds from registration) already owned by player drops in `item-drop-pickup-bootstrap.md`; pending kill-reward handles rematerialize across `gamed` process restart from the dedicated ground-item FileStore with absolute `ownership_expires_at` / `despawn_at` timers, identity-keyed exclusive ownership while `OwnerID = 0`, and process-local exclusive `OwnerID` rebind when the matching owner rejoins
 - while exclusive ownership is active, a non-owner visible collector's `ITEM_PICKUP` fails closed with no frames and leaves the reward handle pending; after public ownership release, the same collector uses ordinary collector-side pickup
 - item drops are runtime ground items first; they do not mutate persisted inventory until an explicit pickup succeeds
 - item-shaped reward drops backed by loaded authored item-template metadata inherit that template's non-zero `pickup_range`; omitted or zero `pickup_range` keeps the deterministic 300-unit bootstrap reach already used by ordinary ground handles

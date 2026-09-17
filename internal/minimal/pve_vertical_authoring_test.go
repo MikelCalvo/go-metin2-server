@@ -2327,8 +2327,9 @@ func decodePveVerticalAuthoredKillDrop(t *testing.T, frames [][]byte, killer log
 		if ground.VID == 0 || ground.Vnum != 27001 || ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
 			t.Fatalf("unexpected %s kill ground add: %+v", context, ground)
 		}
-		if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: killer.Name}) {
-			t.Fatalf("unexpected %s kill ownership: %+v", context, ownership)
+		wantOwner := killRewardPartyOwnerName([]string{killer.Name}, ground.Vnum, 0)
+		if ownership != (itemproto.OwnershipPacket{VID: ground.VID, OwnerName: wantOwner}) {
+			t.Fatalf("unexpected %s kill ownership: %+v want owner %q", context, ownership, wantOwner)
 		}
 		return ground
 	}

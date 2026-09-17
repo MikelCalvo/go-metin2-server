@@ -6917,6 +6917,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !joinedSharedWorld {
 							return worldentry.EnterGameResult{Rejected: true}
 						}
+						sharedWorld.BindSessionLogin(sharedWorldID, sessionTicket.Login)
 						// EnterGame reclaim / Join can drop stale practice-mob engagement
 						// without running the live session leave helper, so re-sync chase
 						// prune + within_radius homeward before encoding visibility.
@@ -9936,15 +9937,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 						}
 						if len(rewardDrops) != 0 {
+							partyRoll := len(rewardDrops) == 1
 							for _, drop := range rewardDrops {
+								ownerID := sharedWorldID
+								ownerLogin := sessionTicket.Login
+								owner := previousSelected
+								if partyRoll && ownsLiveSharedWorldSession() {
+									if picked, ok := sharedWorld.PickKillRewardPartyOwner(drop.item.Vnum, 0, sharedWorldID, sessionTicket.Login, previousSelected); ok {
+										ownerID = picked.EntityID
+										ownerLogin = picked.Login
+										owner = picked.Character
+									}
+								}
 								frames = append(frames,
 									itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: drop.vid, Vnum: drop.item.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
-									itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: drop.vid, OwnerName: previousSelected.Name}),
+									itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: drop.vid, OwnerName: owner.Name}),
 								)
-							}
-							if ownsLiveSharedWorldSession() {
-								for _, drop := range rewardDrops {
-									sharedWorld.RegisterGroundItemWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item, templatePickupRange(runtime, drop.item.Vnum))
+								if ownsLiveSharedWorldSession() {
+									sharedWorld.RegisterGroundItemWithPickupRangeAt(ownerID, ownerLogin, owner, previousSelected, drop.vid, drop.item, templatePickupRange(runtime, drop.item.Vnum))
 								}
 							}
 						}
