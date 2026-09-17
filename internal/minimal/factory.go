@@ -8997,6 +8997,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !ownsLiveSharedWorldSession() {
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
+						// Requester-local merchant/safebox/refine/MYSHOP busy
+						// windows reuse the same self-only START info-chat. Partner
+						// open MYSHOP is observed by StartExchange via the
+						// peer-visible busy bit with the partner string already
+						// owned by merchant/safebox/refine
+						// (spec/protocol/npc-shop-transaction-bootstrap.md).
+						// Partner-side open cube START/ACCEPT busy-window text is
+						// already owned beside that same gate.
 						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
@@ -9047,9 +9055,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.ItemExchangeResult{Accepted: false}
 						}
 						// Same-socket busy presentations are already published into the
-						// shared-world busy bits; AcceptExchange owns requester/partner
-						// busy + gold-carrier reject chat and Cancel-on-failure END
-						// teardown (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
+						// shared-world busy bits, including partner open MYSHOP.
+						// AcceptExchange owns requester/partner busy + gold-carrier
+						// reject chat and Cancel-on-failure END teardown
+						// (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
+						// Partner-side open cube START/ACCEPT busy-window text is
+						// already owned beside that same gate.
 						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
