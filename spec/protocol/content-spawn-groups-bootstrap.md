@@ -203,16 +203,16 @@ The first bootstrap spawn-group contract freezes these fields:
   - table expansion is a no-random-roll authoring convenience only; the live runtime still sees the existing fixed reward descriptor and kill-quest credit on the materialized spawn-backed actor
 - `regen_spawns[]`
   - authoring-only bootstrap ingestion shape for candidate bundles that are easier to write in regen-like terms before the runtime owns real pack semantics
-  - each entry has the same placement, visual, combat-profile, and reward descriptor fields as one `spawn_groups[]` row plus `count`, optional `pack_spacing`, and optional one-count rectangle extents `sx` / `sy`
+  - each entry has the same placement, visual, combat-profile, and reward descriptor fields as one `spawn_groups[]` row plus `count`, optional `pack_spacing`, optional multi-count `sync_respawn`, and optional one-count rectangle extents `sx` / `sy`
   - **current owned behavior:** `count` may be `1` or an integer in `2..8`
-    - `count == 1` keeps the authored `ref` / `name` and requires `pack_spacing` omitted or `0`
+    - `count == 1` keeps the authored `ref` / `name` and requires `pack_spacing` omitted or `0` and `sync_respawn` omitted/false
     - omitted / zero `sx` and `sy` keep the authored point `(x,y)`
     - one-count rows may instead author positive `sx` and `sy` (`1..10000`); canonicalization samples one deterministic FNV-1a 64 cell inside `[x, x+sx) × [y, y+sy)` (seed `regen_rectangle:{ref}:{map_index}:{x}:{y}:{sx}:{sy}:1`) and writes that cell as the expanded `spawn_groups` home; the same row always yields the same cell, with no live RNG and no per-death re-roll
-    - `count` in `2..8` requires `pack_spacing > 0`, forbids `sx` / `sy`, and expands into exactly `count` ordinary independent `spawn_groups[]` rows
+    - `count` in `2..8` requires `pack_spacing > 0`, forbids `sx` / `sy`, and expands into exactly `count` ordinary independent `spawn_groups[]` rows; optional `sync_respawn` is a process-local overlay on that authored prefix (not a public `spawn_groups` field)
     - member `ref` = `{authored_ref}.m{NN}` (`m01`..`m08`), member `name` = `{trimmed authored name} {i}`
     - deterministic grid offsets from the authored origin: `cols = ceil(sqrt(count))`, member 1 stays at `(x,y)`, later members step by `pack_spacing` along columns then rows
     - shared combat profile / reward / kill-quest fields copy onto every member; synthesized refs must stay unique and canonical against other expanded members, directly authored `spawn_groups[]`, and other regen rows
-  - fail closed before runtime mutation when `count` is omitted/`0`/`> 8`, when `count >= 2` lacks positive `pack_spacing`, when `count == 1` carries `pack_spacing > 0`, when a rectangle row is partial / negative / over-max / combined with multi-count or `pack_spacing`, or when any synthesized member ref is non-canonical or collides
+  - fail closed before runtime mutation when `count` is omitted/`0`/`> 8`, when `count >= 2` lacks positive `pack_spacing`, when `count == 1` carries `pack_spacing > 0` or `sync_respawn`, when a rectangle row is partial / negative / over-max / combined with multi-count or `pack_spacing`, or when any synthesized member ref is non-canonical or collides
   - checked-in negative fixtures:
     - `docs/examples/bootstrap-invalid-regen-count-bundle.json` (`count = 2` without `pack_spacing`)
     - `docs/examples/bootstrap-invalid-regen-over-max-count-bundle.json` (`count = 9` with `pack_spacing`)
@@ -225,8 +225,9 @@ The first bootstrap spawn-group contract freezes these fields:
   - omitted `combat_profile` canonicalizes through the ordinary spawn-group default (`practice_mob`)
   - `reward_drop_table_ref` can reference the same fixed authoring-only `drop_tables[]` entries as direct spawn groups, and is expanded before validation/import
   - canonicalization appends each valid expanded regen member to the canonical `spawn_groups[]` collection, then strips `regen_spawns`, `drop_tables`, and `reward_drop_table_ref`
-  - runtime import/export and live respawn still see only independent one-actor `spawn_groups[]` descriptors; one-count rectangle rows bake a deterministic sampled home at canonicalize time. This shape does not add a pack object, synchronized respawn, shared HP, live RNG, per-respawn rectangle re-rolls, direction, or legacy regen timers
+  - runtime import/export and live respawn still see only independent one-actor `spawn_groups[]` descriptors; one-count rectangle rows bake a deterministic sampled home at canonicalize time. This shape does not add a pack object, shared HP, live RNG, per-respawn rectangle re-rolls, direction, or legacy regen timers
   - the first owned pack-member assist seam now copies `engaged_by` from one accepted live hit onto other live same-prefix `{ref}.mNN` siblings without MOVE, chase arming, or rewriting independent-member respawn; one-count refs without `.mNN` stay unlinked (`TestGameRuntimePackMemberAssistCopiesOwnerLockWithoutMove`)
+  - the first opt-in pack-wide synchronized respawn companion now lives on multi-count `regen_spawns[].sync_respawn`; one-count refs and live siblings stay independent, and when two or more already-dead same-prefix members share that overlay they take one later respawn instant. Canonical JSON still strips `regen_spawns` / `sync_respawn` (process-local overlay, like weighted `entries`). Default packs and the composed PvE independent-member proof stay unchanged (`TestGameRuntimeOptInPackSyncRespawnSharesReadyAtForAlreadyDeadMembers`, `TestGameRuntimeOptInPackSyncRespawnKeepsLiveSiblingIndependent`, `TestGameRuntimeDefaultPackRespawnStaysIndependentPerMember`). Shared HP, pack AI assist, MOVE, and a pack object stay out of this companion
   - the composed QA fixture `docs/examples/bootstrap-pve-vertical-authoring-bundle.json` authors one-count kill-quest `regen_spawns` plus one denser multi-count practice pack (`count = 2`, `pack_spacing = 100` → `practice.qa_pve_vertical_pack.m01` / `.m02`) with gated kill-quest `drop_tables` and the NPC quest loop so operators can validate/import the authoring form end-to-end; the composed gameplay proof `TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn` kills `.m02` at the same-map warp tile (`470000,964200`) so `loot.qa_pve_vertical_pack_reward` EXP `40` / gold `20` is client-visible without drop vnums or kill-quest credit, then proves the independently-owned `.m02` respawn after its authored `2s` delay (self delete/add/info/update, restored full HP at the authored tile, stale attack fail-closed until a fresh target); `.m01` stays live throughout. This remains independent-member lifecycle coverage, not synchronized pack respawn (`docs/plans/2026-09-07-pve-vertical-authored-pack-kill-reward.md`); its checked-in expanded twin `docs/examples/bootstrap-pve-vertical-canonical-bundle.json` is the byte-canonical runtime form of that same authoring fixture after regen/drop expansion; `docs/examples/bootstrap-npc-service-bundle.json` remains the byte-canonical runtime form of the narrower owned quest loop without the denser pack and is bound by a focused runtime-import twin (`TestGameRuntimeImportsNpcServiceExample`); the narrow ungated kill-quest credit fixture `docs/examples/bootstrap-kill-quest-credit-bundle.json` is likewise bound by `TestGameRuntimeImportsKillQuestCreditExample`
 - operator/runtime edits that preserve the same `spawn_group_ref` must preserve the authored `combat_profile`, reward descriptor, and spawn-home position while changing mutable actor presentation/current-placement fields; delete/recreate or bundle replacement remains the explicit way to replace reward metadata or authored home ownership
 - when a spawn-backed actor is updated through the generic static-actor edit path without specifying a new combat profile, the runtime keeps the existing spawn-group combat profile instead of downgrading the actor to non-combat static content
@@ -308,7 +309,6 @@ The first spawn-group contract keeps respawn deliberately narrow:
 What is **not** yet frozen here:
 - per-group custom respawn delays
 - conditional spawn windows
-- pack-wide synchronized respawn
 - scripted on-death / on-respawn hooks
 
 ## Validation rules
@@ -339,7 +339,7 @@ The bootstrap content-bundle surface uses the same top-level `spawn_groups` coll
 Current runtime rules:
 - spawn-backed live actors export as `spawn_groups`, not as ordinary `static_actors`
 - candidate bundles may include a narrow authoring-only `drop_tables` collection for fixed reward descriptors plus optional kill-quest credit; canonicalization expands `spawn_groups[].reward_drop_table_ref` into direct `reward_experience`, `reward_gold`, deterministic sorted `reward_drop_vnums`, and optional kill-quest credit fields, strips `drop_tables` and `reward_drop_table_ref` from the canonical bundle, and leaves runtime/import/export behavior on the existing fixed reward / kill-quest seams instead of adding randomized loot-table execution
-- candidate bundles may include a narrow authoring-only `regen_spawns` collection for one-count, one-count rectangle, or multi-count regen-style authoring; canonicalization expands valid entries into ordinary independent `spawn_groups` (one-count keeps the authored ref and either the authored point or one FNV-sampled rectangle cell; `count` in `2..8` synthesizes `{ref}.m{NN}` members on a deterministic `pack_spacing` grid), rejects omitted/`0`/`>8` counts, invalid `pack_spacing`, and partial/over-max/multi-count rectangle extents, strips `regen_spawns` before runtime import/export, and leaves live behavior on the existing spawn-group lifecycle instead of adding pack AI / synchronized respawn / live RNG / per-respawn re-rolls
+- candidate bundles may include a narrow authoring-only `regen_spawns` collection for one-count, one-count rectangle, or multi-count regen-style authoring; canonicalization expands valid entries into ordinary independent `spawn_groups` (one-count keeps the authored ref and either the authored point or one FNV-sampled rectangle cell; `count` in `2..8` synthesizes `{ref}.m{NN}` members on a deterministic `pack_spacing` grid), rejects omitted/`0`/`>8` counts, invalid `pack_spacing`, one-count `sync_respawn`, and partial/over-max/multi-count rectangle extents, strips `regen_spawns` before runtime import/export, and leaves live behavior on the existing spawn-group lifecycle plus the opt-in same-prefix dead-member ReadyAt overlay instead of adding pack AI / shared HP / live RNG / per-respawn re-rolls
 - exported spawn-group `map_index`, `x`, and `y` come from the preserved authored spawn home when present, not from a displaced materialized current position; older snapshots without `spawn_home` fall back to their current actor position for compatibility
 - importing a bundle with `spawn_groups` materializes one runtime static actor per group with the authored `spawn_group_ref`
 - the imported actor uses the authored placement, `race_num`, and normalized `combat_profile`
@@ -633,12 +633,11 @@ Explicit non-goals for this daemon-restart proximity-suppress freeze alone:
 - remapping engagement, selected-target, chase, or return schedules across restart
 - inventing a second permanent suppress store keyed by name beyond the already-owned VID park/claim handoff
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
-- pack AI / synchronized respawn / pathfinding
+- pack AI / pathfinding
 - non-spawn `training_dummy` suppress durability
 
 Explicit non-goals for this anti-leak freeze alone:
 - inventing cross-map return MOVE / `GC WARP` choreography (frozen as delete/readd / direct-home rebuild in `spawn-leash-bootstrap.md`)
-- multi-member spawn packs or pack-wide synchronized respawn
 - inventing a second spawn scheduler beyond the existing pending-frame flush path
 - remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above)
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
@@ -646,7 +645,6 @@ Explicit non-goals for this anti-leak freeze alone:
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- multi-member spawn packs
 - patrol routes or idle roaming
 - broader hostile retaliation beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, one profile-resolved sustained delayed self-only server-origin retaliation cadence at a time, and the frozen proximity aggro-radius acquisition seam below
 - random spawn selection from a pool

@@ -20,7 +20,8 @@ dotted `ref` grammar, or smuggle RNG / legacy rectangle spawn into content
 canonicalization.
 
 This plan freezes the narrow authoring expansion only. It does **not** claim pack
-AI, synchronized respawn, assist calls, or legacy regen timers.
+AI, shared HP, MOVE, or a pack object. Opt-in `sync_respawn` on multi-count rows
+is a later companion, not part of this placement freeze.
 
 ## Contract to freeze (before RED)
 
@@ -120,7 +121,7 @@ AI, synchronized respawn, assist calls, or legacy regen timers.
 
 ### Explicit non-goals for this freeze / first GREEN
 
-- pack-wide synchronized respawn or shared HP
+- pack-wide synchronized respawn unless a multi-count regen row opts in with `sync_respawn` (default packs and live siblings stay independent)
 - pack aggro / assist / multi-mob linkage
 - direction, or legacy regen timers
 - roaming, pathing, or group formations beyond the deterministic grid offsets
@@ -156,8 +157,14 @@ Docs/spec freeze landed first; the authoring GREEN that widens
 `regen_spawns.count` with required `pack_spacing` is now owned on `lane/content`.
 Live runtime remains independent one-actor `spawn_groups` with no pack object.
 The first pack-member assist GREEN now copies `engaged_by` onto live `{ref}.mNN`
-siblings after an accepted hit, without MOVE/chase or pack-wide synchronized
+siblings after an accepted hit, without MOVE/chase or rewriting independent-member
 respawn.
+The first opt-in pack-wide synchronized respawn companion now lives on multi-count
+`regen_spawns[].sync_respawn`: one-count refs and live siblings stay independent,
+and when two or more already-dead same-prefix members share that overlay they take
+one later respawn instant. Canonical JSON still strips `regen_spawns`. Default
+packs and the composed PvE independent-member proof stay unchanged. Shared HP,
+pack AI assist, MOVE, and a pack object stay deferred.
 The first one-count random-rectangle GREEN now samples a deterministic FNV cell
 inside authored `sx` × `sy` at canonicalize time and writes that cell onto the
 expanded `spawn_groups` home. Direction, legacy regen timers, live RNG, and

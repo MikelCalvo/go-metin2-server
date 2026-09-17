@@ -52,6 +52,7 @@ type sharedWorldRegistry struct {
 	sessionDirectory                  *worldruntime.SessionDirectory
 	staticActorCombatHP               map[uint64]uint8
 	staticActorCombatRespawnAt        map[uint64]time.Time
+	syncRespawnPrefixes               map[string]struct{}
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
@@ -430,6 +431,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		sessionDirectory:                   worldruntime.NewSessionDirectory(),
 		staticActorCombatHP:                make(map[uint64]uint8),
 		staticActorCombatRespawnAt:         make(map[uint64]time.Time),
+		syncRespawnPrefixes:                make(map[string]struct{}),
 		staticActorCombatSnapshot:          make(map[uint64]uint64),
 		staticActorCombatEngagedBy:         make(map[uint64]uint64),
 		staticActorProximityAggroSuppress:  make(map[uint64]map[uint64]struct{}),
@@ -2136,6 +2138,17 @@ func cloneUint64TimeMap(in map[uint64]time.Time) map[uint64]time.Time {
 	return out
 }
 
+func cloneStringSet(in map[string]struct{}) map[string]struct{} {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]struct{}, len(in))
+	for key := range in {
+		out[key] = struct{}{}
+	}
+	return out
+}
+
 func cloneStaticActorDeathRewardMap(in map[uint64]worldruntime.StaticActorDeathReward) map[uint64]worldruntime.StaticActorDeathReward {
 	if len(in) == 0 {
 		return nil
@@ -2424,6 +2437,79 @@ func (r *sharedWorldRegistry) scheduleStaticActorCombatRespawnLocked(actor world
 		r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
 	}
 	r.staticActorCombatRespawnAt[actor.Entity.ID] = now.Add(delay)
+	r.alignOptInPackSyncRespawnLocked(actor)
+}
+
+func (r *sharedWorldRegistry) replaceSyncRespawnPrefixes(prefixes map[string]struct{}) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.syncRespawnPrefixes = cloneStringSet(prefixes)
+}
+
+func (r *sharedWorldRegistry) syncRespawnPrefixesSnapshot() map[string]struct{} {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneStringSet(r.syncRespawnPrefixes)
+}
+
+// alignOptInPackSyncRespawnLocked keeps one-count refs and live siblings on
+// their own clocks. When two or more already-dead same-prefix members opted
+// into sync_respawn, they share the latest pending ReadyAt. No pack object,
+// shared HP, assist, or MOVE is invented here.
+func (r *sharedWorldRegistry) alignOptInPackSyncRespawnLocked(actor worldruntime.StaticEntity) {
+	if r == nil || actor.Entity.ID == 0 || len(r.syncRespawnPrefixes) == 0 || r.entities == nil {
+		return
+	}
+	prefix, ok := spawnGroupPackMemberPrefix(actor.SpawnGroupRef)
+	if !ok {
+		return
+	}
+	if _, opted := r.syncRespawnPrefixes[prefix]; !opted {
+		return
+	}
+	type deadMember struct {
+		id      uint64
+		readyAt time.Time
+	}
+	dead := make([]deadMember, 0, 8)
+	for _, sibling := range r.entities.AllStaticActors() {
+		if sibling.Entity.ID == 0 {
+			continue
+		}
+		siblingPrefix, ok := spawnGroupPackMemberPrefix(sibling.SpawnGroupRef)
+		if !ok || siblingPrefix != prefix {
+			continue
+		}
+		if sibling.Position.MapIndex != actor.Position.MapIndex {
+			continue
+		}
+		readyAt, waiting := r.staticActorCombatRespawnAt[sibling.Entity.ID]
+		if !waiting || readyAt.IsZero() {
+			continue
+		}
+		if currentHP, hpOK := r.staticActorCombatHP[sibling.Entity.ID]; hpOK && currentHP > 0 {
+			continue
+		}
+		dead = append(dead, deadMember{id: sibling.Entity.ID, readyAt: readyAt})
+	}
+	if len(dead) < 2 {
+		return
+	}
+	shared := dead[0].readyAt
+	for _, member := range dead[1:] {
+		if member.readyAt.After(shared) {
+			shared = member.readyAt
+		}
+	}
+	for _, member := range dead {
+		r.staticActorCombatRespawnAt[member.id] = shared
+	}
 }
 
 func (r *sharedWorldRegistry) assignStaticActorCombatSnapshotLocked(entityID uint64) uint64 {

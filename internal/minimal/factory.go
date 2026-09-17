@@ -14395,6 +14395,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
 		r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
+		r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 		r.pruneSpawnGroupReturnStepSchedules()
 		r.pruneSpawnGroupChaseStepSchedules()
 		r.pruneSpawnGroupHomewardStepSchedules()
@@ -14402,6 +14403,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	previousActors := r.StaticActors()
 	previousWeightedDropEntries := r.weightedDropEntriesSnapshot()
+	previousSyncRespawnPrefixes := r.syncRespawnPrefixesSnapshot()
 	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
 	previousSpawnChaseStepDueAt := r.spawnGroupChaseStepDueAtSnapshot()
 	previousSpawnHomewardStepDueAt := r.spawnGroupHomewardStepDueAtSnapshot()
@@ -14447,6 +14449,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		r.replaceQuestFlagGraphs(previousBundle.QuestFlagGraphs)
 		r.replaceWeightedDropEntries(previousWeightedDropEntries)
+		r.replaceSyncRespawnPrefixes(previousSyncRespawnPrefixes)
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
@@ -14485,6 +14488,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		r.sharedWorld.flushStaticActorImportFanout()
 	}
 	r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
+	r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 	if !r.persistStaticActorSnapshot(r.StaticActors()) {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
@@ -15128,6 +15132,20 @@ func (r *gameRuntime) replaceWeightedDropEntries(entries map[string][]contentbun
 	r.weightedDropMu.Lock()
 	r.weightedDropEntries = cloneWeightedDropEntries(entries)
 	r.weightedDropMu.Unlock()
+}
+
+func (r *gameRuntime) replaceSyncRespawnPrefixes(prefixes map[string]struct{}) {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.sharedWorld.replaceSyncRespawnPrefixes(prefixes)
+}
+
+func (r *gameRuntime) syncRespawnPrefixesSnapshot() map[string]struct{} {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.syncRespawnPrefixesSnapshot()
 }
 
 func cloneWeightedDropEntries(entries map[string][]contentbundle.DropTableEntry) map[string][]contentbundle.DropTableEntry {
