@@ -13,7 +13,8 @@ import (
 // SQLStore is the first live DB-backed safebox repository. It implements Store
 // Load/Save (and CharacterSafeboxStateExporter) against already-owned
 // tip-0015 + additive 0025/0028 tables through a caller-supplied
-// database/sql executor.
+// database/sql executor. Export identity is tip-0028; schema preflight still
+// requires distinct ledger 15+25+28 so 0015 money is not dropped.
 //
 // The package does not select a driver, load a DSN, embed secrets, or
 // register a production engine. Stock gamed rematerialize stays on FileStore.
@@ -51,7 +52,7 @@ func (s *SQLStore) Load() (Snapshot, error) {
 	return snapshot, nil
 }
 
-// Save replaces the entire tip-0015 warehouse with the canonicalized snapshot
+// Save replaces the entire tip-0028 warehouse with the canonicalized snapshot
 // inside one transaction (delete all child rows, then insert). This matches
 // FileStore Save of a whole JSON snapshot; it is not insert-only import and
 // not scoped replace. Parent character rows must already exist.
@@ -87,7 +88,7 @@ func (s *SQLStore) Save(snapshot Snapshot) error {
 }
 
 // ExportCharacterSafeboxState projects the committed SQL warehouse onto the
-// 0015 migration tip. Empty tables yield an empty export.
+// 0028 migration tip. Empty tables yield an empty export.
 func (s *SQLStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, error) {
 	snapshot, err := s.Load()
 	if err != nil {

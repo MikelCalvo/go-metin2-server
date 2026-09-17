@@ -17,7 +17,9 @@ var ErrCharacterSafeboxStateImportExecutorRequired = errors.New("character safeb
 // ErrCharacterSafeboxStateImportSchemaRequired reports that the target database
 // has not applied the 0015_character_safebox_money tip plus additive
 // 0025_character_safebox_item_instance_sockets and
-// 0028_character_safebox_item_instance_attributes boundaries yet.
+// 0028_character_safebox_item_instance_attributes boundaries yet. Export
+// identity is tip-0028; schema preflight still requires those three distinct
+// ledger entries so 0015 money is not dropped.
 var ErrCharacterSafeboxStateImportSchemaRequired = errors.New("character safebox-state schema is not applied")
 
 // ErrCharacterSafeboxStateImportRowCount reports that an INSERT affected an
@@ -25,7 +27,7 @@ var ErrCharacterSafeboxStateImportSchemaRequired = errors.New("character safebox
 var ErrCharacterSafeboxStateImportRowCount = errors.New("character safebox-state import row count mismatch")
 
 // CharacterSafeboxStateImportResult is the metadata-only outcome of importing a
-// quarantined 0015 safebox-state export. It never includes password/item
+// quarantined 0028 safebox-state export. It never includes password/item
 // payloads, SQL text, DSNs, or safebox snapshot bytes.
 type CharacterSafeboxStateImportResult struct {
 	MigrationVersion int      `json:"migration_version"`
@@ -44,14 +46,14 @@ type CharacterSafeboxStateImportResult struct {
 // ImportCharacterSafeboxStateOptions controls opt-in mutation policy for
 // ImportCharacterSafeboxState. The zero value keeps today's insert-only behavior.
 type ImportCharacterSafeboxStateOptions struct {
-	// Replace, when true, deletes existing tip-0015 child rows for every
+	// Replace, when true, deletes existing tip-0028 child rows for every
 	// character id in the quarantined export summary before inserting the
 	// canonicalized export rows, all inside one transaction. Characters not
 	// listed in the export remain untouched.
 	Replace bool
 }
 
-// ImportCharacterSafeboxState validates a retained 0015 safebox-state export
+// ImportCharacterSafeboxState validates a retained 0028 safebox-state export
 // through the existing quarantine contract and inserts the canonicalized rows
 // into character_safebox_passwords / character_safebox_items inside one
 // transaction.
@@ -62,7 +64,7 @@ type ImportCharacterSafeboxStateOptions struct {
 // schema_migrations. Without options (or with Replace=false) it does not invent
 // upsert / merge policy: duplicate primary keys fail closed and roll the
 // transaction back. Pass ImportCharacterSafeboxStateOptions{Replace: true} for
-// the opt-in scoped replace path frozen by the tip-0015 replace contract.
+// the opt-in scoped replace path frozen by the tip-0028 replace contract.
 func ImportCharacterSafeboxState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterSafeboxStateExport, opts ...ImportCharacterSafeboxStateOptions) (CharacterSafeboxStateImportResult, error) {
 	if safeboxStateImportExecutorIsNil(executor) {
 		return CharacterSafeboxStateImportResult{}, ErrCharacterSafeboxStateImportExecutorRequired
@@ -140,7 +142,7 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 		if entry.Version > latest {
 			latest = entry.Version
 		}
-		if entry.Version == CharacterSafeboxStateMigrationVersion && entry.Name == CharacterSafeboxStateMigrationName {
+		if entry.Version == CharacterSafeboxMoneyMigrationVersion && entry.Name == CharacterSafeboxMoneyMigrationName {
 			hasSafeboxMoney = true
 		}
 		if entry.Version == CharacterSafeboxItemInstanceSocketsMigrationVersion && entry.Name == CharacterSafeboxItemInstanceSocketsMigrationName {
@@ -154,7 +156,7 @@ func requireCharacterSafeboxStateSchema(ctx context.Context, querier dbmigration
 		return nil
 	}
 	if !hasSafeboxMoney {
-		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxStateMigrationVersion, CharacterSafeboxStateMigrationName)
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxMoneyMigrationVersion, CharacterSafeboxMoneyMigrationName)
 	}
 	if !hasInstanceSockets {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrCharacterSafeboxStateImportSchemaRequired, latest, CharacterSafeboxItemInstanceSocketsMigrationVersion, CharacterSafeboxItemInstanceSocketsMigrationName)

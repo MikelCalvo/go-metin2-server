@@ -8,21 +8,26 @@ import (
 )
 
 const (
-	CharacterSafeboxStateMigrationVersion = 15
-	CharacterSafeboxStateMigrationName    = "character_safebox_money"
+	CharacterSafeboxMoneyMigrationVersion = 15
+	CharacterSafeboxMoneyMigrationName    = "character_safebox_money"
 
 	CharacterSafeboxItemInstanceSocketsMigrationVersion = 25
 	CharacterSafeboxItemInstanceSocketsMigrationName    = "character_safebox_item_instance_sockets"
 
 	CharacterSafeboxItemInstanceAttributesMigrationVersion = 28
 	CharacterSafeboxItemInstanceAttributesMigrationName    = "character_safebox_item_instance_attributes"
+
+	CharacterSafeboxStateMigrationVersion = CharacterSafeboxItemInstanceAttributesMigrationVersion
+	CharacterSafeboxStateMigrationName    = CharacterSafeboxItemInstanceAttributesMigrationName
 )
 
 // CharacterSafeboxStateExport is a deterministic, schema-shaped projection of
-// the durable safebox FileStore onto the 0015_character_safebox_money migration
-// tip (password + warehouse money + cells). It is intentionally an
-// export/backfill contract only: it does not open a database, emit SQL, apply
-// migrations, or mutate the safebox store.
+// the durable safebox FileStore onto the
+// 0028_character_safebox_item_instance_attributes migration tip (password +
+// warehouse money + cells + additive sockets/attributes). It is intentionally
+// an export/backfill contract only: it does not open a database, emit SQL,
+// apply migrations, or mutate the safebox store. Schema preflight still
+// requires distinct ledger 15+25+28 so 0015 money is not dropped.
 type CharacterSafeboxStateExport struct {
 	MigrationVersion int    `json:"migration_version"`
 	MigrationName    string `json:"migration_name"`
@@ -55,7 +60,7 @@ type CharacterSafeboxPasswordRow struct {
 // fallback); HasSockets=true including all-zero is authoritative.
 // HasAttributes=false / omitted means nil instance attributes (template
 // fallback); HasAttributes=true including all-zero / type-zero is
-// authoritative. Export identity stays tip-0015.
+// authoritative. Export identity is tip-0028.
 type CharacterSafeboxItemRow struct {
 	ID            uint64 `json:"id"`
 	CharacterID   uint32 `json:"character_id"`
@@ -86,7 +91,7 @@ type CharacterSafeboxItemRow struct {
 }
 
 // ExportCharacterSafeboxState validates a safebox snapshot and projects every
-// character row onto the 0015 migration tip. Rows are returned in the same
+// character row onto the 0028 migration tip. Rows are returned in the same
 // deterministic order as NormalizeSnapshot (login, character_id, then cell).
 func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport, error) {
 	normalized := normalizeSnapshot(snapshot)
@@ -143,7 +148,7 @@ func ExportCharacterSafeboxState(snapshot Snapshot) (CharacterSafeboxStateExport
 }
 
 // ExportCharacterSafeboxState validates and projects the committed file-store
-// snapshot onto the 0015 character safebox-money migration tip. Missing
+// snapshot onto the 0028 character safebox-state migration tip. Missing
 // safebox snapshots are treated as an empty export, matching Validate().
 func (s *FileStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, error) {
 	snapshot, err := s.Load()
@@ -157,7 +162,7 @@ func (s *FileStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, 
 }
 
 // ExportCharacterSafeboxState projects the committed hermetic snapshot onto the
-// 0015 migration tip. Missing snapshots yield an empty export.
+// 0028 migration tip. Missing snapshots yield an empty export.
 func (s *MemoryStore) ExportCharacterSafeboxState() (CharacterSafeboxStateExport, error) {
 	snapshot, err := s.Load()
 	if err != nil {

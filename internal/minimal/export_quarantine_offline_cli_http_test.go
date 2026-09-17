@@ -113,8 +113,8 @@ func TestExportQuarantineOfflineCLIHTTPAcceptsRetainedLoopbackExports(t *testing
 		`"password_count": 1`,
 		`"item_count": 2`,
 		`"login": "export-owner"`,
-		`"migration_version": 15`,
-		`"migration_name": "character_safebox_money"`,
+		`"migration_version": 28`,
+		`"migration_name": "character_safebox_item_instance_attributes"`,
 		`"money": 1750`,
 	})
 

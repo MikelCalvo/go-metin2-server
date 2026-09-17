@@ -49,10 +49,10 @@ Rules frozen by tests:
   - `has_attributes = 0` means nil instance attributes (template fallback) and requires zero attr types/values; `has_attributes = 1` is authoritative including all-zero / type-zero,
   - tip-`0003` / `character_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `3` plus additive `24` plus additive `27`,
   - upsert / stock production driver / live DB inventory repositories / tip-`0010` attribute companion remain out of scope.
-- the embedded catalog now also includes `0028_character_safebox_item_instance_attributes`, an additive schema-only companion for tip-`0015` after FileStore owned safebox cell instance attributes:
+- the embedded catalog now also includes `0028_character_safebox_item_instance_attributes`, an additive schema-only companion after FileStore owned safebox cell instance attributes:
   - it adds `has_attributes` + `attr0_type`/`attr0_value` … `attr6_type`/`attr6_value` to `character_safebox_items`,
   - `has_attributes = 0` means nil instance attributes (template fallback) and requires zero attr types/values; `has_attributes = 1` is authoritative including all-zero / type-zero,
-  - tip-`0015` / `character_safebox_money` remains the export / quarantine / import-result identity; SQL INSERT requires tip `15` plus additive `25` plus additive `28`,
+  - tip-`0028` / `character_safebox_item_instance_attributes` is now the export / quarantine / import-result identity; SQL INSERT still requires distinct ledger `15` plus additive `25` plus additive `28` so `0015` money is not dropped,
   - upsert / stock production driver / live DB safebox repositories remain out of scope,
   - seeded hermetic tip-`0015`+`0025`+`0028` safebox cell instance-attribute tip sync is owned by [seeded safebox cell instance-attributes tip sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md),
   - tip-`0010` ground attribute companion + seeded hermetic tip sync are owned by [bootstrap ground-item instance-attributes SQL additive](2026-08-31-bootstrap-ground-item-instance-attributes-sql-additive.md) and [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).

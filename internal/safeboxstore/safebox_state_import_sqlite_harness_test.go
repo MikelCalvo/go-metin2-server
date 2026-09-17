@@ -243,8 +243,8 @@ func TestSQLiteHarnessSafeboxStateImportRejectsTipFifteenOnlyLedger(t *testing.T
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxStateMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxStateMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterSafeboxMoneyMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterSafeboxMoneyMigrationVersion, err)
 	}
 
 	export := CharacterSafeboxStateExport{

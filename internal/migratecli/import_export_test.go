@@ -212,8 +212,8 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 		},
 		{
 			kind:    "character-safebox-state",
-			payload: `{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`,
-			version: 15,
+			payload: `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","passwords":[],"items":[]}`,
+			version: 28,
 			want:    `"password_count": 0`,
 		},
 		{
@@ -253,8 +253,8 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			// additive 0021 keep_on_fail and 0022 fail_result_vnum before INSERT.
 			// Character item-state SQL import keeps tip-0003 export identity but
 			// requires additive 0024 instance sockets and 0027 instance attributes before INSERT.
-			// Character safebox-state SQL import keeps tip-0015 export identity but
-			// requires additive 0025 instance sockets and 0028 instance attributes before INSERT.
+			// Character safebox-state SQL import keeps tip-0028 export identity but
+			// requires additive 0015 money plus 0025 instance sockets and 0028 instance attributes before INSERT.
 			// Bootstrap ground-item-state SQL import keeps tip-0010 export identity but
 			// requires additive 0026 instance sockets and 0029 instance attributes before INSERT.
 			ledger := []dbmigrations.LedgerEntry{ledgerEntry(tc.version)}
@@ -284,7 +284,7 @@ func TestRunImportExportImportsEmptyExportsAgainstRegisteredDriver(t *testing.T)
 			}
 			if tc.kind == "character-safebox-state" {
 				ledger = []dbmigrations.LedgerEntry{
-					ledgerEntry(safeboxstore.CharacterSafeboxStateMigrationVersion),
+					ledgerEntry(safeboxstore.CharacterSafeboxMoneyMigrationVersion),
 					ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceSocketsMigrationVersion),
 					ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceAttributesMigrationVersion),
 				}
@@ -586,7 +586,7 @@ func TestRunImportExportCharacterSafeboxStateScopedReplaceSetsReplaced(t *testin
 		return dbmigrations.LedgerEntry{}
 	}
 	currentMigrateCLITestDriver(t).setLedger([]dbmigrations.LedgerEntry{
-		ledgerEntry(safeboxstore.CharacterSafeboxStateMigrationVersion),
+		ledgerEntry(safeboxstore.CharacterSafeboxMoneyMigrationVersion),
 		ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceSocketsMigrationVersion),
 		ledgerEntry(safeboxstore.CharacterSafeboxItemInstanceAttributesMigrationVersion),
 	})
@@ -603,7 +603,7 @@ func TestRunImportExportCharacterSafeboxStateScopedReplaceSetsReplaced(t *testin
 			"--i-confirm-sql-import",
 			"--i-confirm-scoped-replace",
 		},
-		strings.NewReader(`{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[],"passwords":[],"items":[]}`),
+		strings.NewReader(`{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_ids":[],"passwords":[],"items":[]}`),
 		&stdout,
 		&stderr,
 	)
@@ -617,7 +617,7 @@ func TestRunImportExportCharacterSafeboxStateScopedReplaceSetsReplaced(t *testin
 	if !result.Replaced {
 		t.Fatalf("expected replaced=true, got %#v", result)
 	}
-	if result.MigrationVersion != 15 || result.MigrationName != "character_safebox_money" {
+	if result.MigrationVersion != 28 || result.MigrationName != "character_safebox_item_instance_attributes" {
 		t.Fatalf("unexpected migration identity: %#v", result)
 	}
 	if !strings.Contains(stdout.String(), `"replaced": true`) {

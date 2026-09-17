@@ -5,7 +5,7 @@
 Close the migration/export/import gap after items-lane owned FileStore
 presence-aware safebox cell instance attributes: add additive catalog migration
 `0028_character_safebox_item_instance_attributes`, project those attributes
-through tip-`0015` export/quarantine/import, and fail closed before SQL INSERT
+through export/quarantine/import, and fail closed before SQL INSERT
 when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 
 ## Why now
@@ -24,8 +24,10 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 - Track E prefers explicit additive schema + import preflight over opaque
   driver `no such column` errors (same pattern as tip-`0015` + `0025` sockets
   and tip-`0003` + `0027` attributes).
-- Safer than inventing a new tip identity: attributes extend existing
-  `character_safebox_items` rows while export identity stays tip `15`.
+- Safer than inventing a new tip identity at the time of the additive
+  companion: attributes extend existing `character_safebox_items` rows. The
+  later retip to export identity `28` / `character_safebox_item_instance_attributes`
+  is owned by this follow-on.
 
 ## Contract frozen by this slice
 
@@ -37,8 +39,10 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
    - each attr type in `[0, 255]` and value in signed int16 range
    - when `has_attributes = 0`, all attr types/values must be `0`
 3. `down` drops those columns (dependent `attr6_*` first).
-4. Keep tip-`0015` / `character_safebox_money` as the export / quarantine /
-   import-result migration identity (do **not** retip to `28`).
+4. Export / quarantine / import-result identity is now tip-`0028` /
+   `character_safebox_item_instance_attributes` (the 0014→0015 retip pattern).
+   Schema preflight still requires distinct ledger `15` + `25` + `28` so
+   `0015` money is not dropped.
 5. `CharacterSafeboxItemRow` carries optional `has_attributes` +
    `attr0_type`/`attr0_value` … `attr6_type`/`attr6_value`; export maps:
    - FileStore `HasAttributes == false` / omitted / nil attributes →
@@ -56,7 +60,6 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 
 ## What this is not yet
 
-- retipping safebox-state exports to `migration_version=28`
 - mounting `SQLStore` as the stock `gamed` rematerialize path / silent FileStore-to-SQL cutover
 - remote admin / daemon mutation route / secrets in git
 - mall open/checkout / GD/DB myshop
@@ -121,15 +124,21 @@ Proof: `go test ./internal/safeboxstore -run 'SQLStore' -count=1` plus
 ## Status
 
 GREEN on `lane/items`: additive catalog tip `0028` projects presence-aware
-tip-`0015` instance attributes through export/quarantine/import with ledger
+instance attributes through export/quarantine/import with ledger
 preflight requiring tip-`0015` + `0025` + `0028`
 (`feat(db): add tip-0015 safebox cell instance attributes SQL companion`).
+
+GREEN follow-on export identity: safebox-state export / quarantine /
+import-result now pin `migration_version=28` /
+`character_safebox_item_instance_attributes` following the 0014→0015 retip
+pattern. Additive `0025`/`0028` columns stay; schema preflight still
+requires distinct ledger `15`+`25`+`28` so `0015` money is not dropped.
 
 Follow-on tip sync: seeded hermetic tip-`0015`+`0028` safebox cell attributes in
 the shared `import-export-drill` is owned by
 [seeded safebox cell instance-attributes tip sync](2026-08-31-seeded-safebox-cell-instance-attributes-import-export-drill.md).
 
 GREEN follow-on live repository: opt-in `safeboxstore.SQLStore` Load/Save against
-the same tip-`0015`+`0025`+`0028` tables, beside FileStore and tip-`0015` SQL
+the same tip-`0015`+`0025`+`0028` tables, beside FileStore and tip-`0028` SQL
 import (`feat(db): add live SQL safebox repository seam`). Stock `gamed` stays
 on FileStore; no stock production driver, remote admin, or secrets in git.

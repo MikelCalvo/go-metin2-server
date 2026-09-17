@@ -44,7 +44,7 @@ func TestRunQuarantineExportAcceptsEmptyValidExports(t *testing.T) {
 		},
 		{
 			kind:    "character-safebox-state",
-			payload: `{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`,
+			payload: `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","passwords":[],"items":[]}`,
 			want:    `"password_count": 0`,
 		},
 		{

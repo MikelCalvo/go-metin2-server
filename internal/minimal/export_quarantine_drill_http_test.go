@@ -248,8 +248,8 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 		`"password_count": 1`,
 		`"item_count": 2`,
 		`"login": "export-drill-owner"`,
-		`"migration_version": 15`,
-		`"migration_name": "character_safebox_money"`,
+		`"migration_version": 28`,
+		`"migration_name": "character_safebox_item_instance_attributes"`,
 		`"money": 1850`,
 	} {
 		assertContainsLooseJSON(t, safeboxQuarantine, want)

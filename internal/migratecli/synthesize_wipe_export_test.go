@@ -265,8 +265,8 @@ func TestRunSynthesizeWipeExportEmitsRemainingCharacterFKKinds(t *testing.T) {
 		{
 			kind: "character-safebox-state",
 			raw: `{
-  "migration_version": 15,
-  "migration_name": "character_safebox_money",
+  "migration_version": 28,
+  "migration_name": "character_safebox_item_instance_attributes",
   "passwords": [{"character_id": 11, "login": "Alpha", "password": "000000", "money": 0}],
   "items": []
 }`,

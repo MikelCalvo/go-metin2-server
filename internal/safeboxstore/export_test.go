@@ -32,8 +32,8 @@ func TestExportCharacterSafeboxStateBuildsDeterministicRowsMatchingMigrationShap
 	if export.MigrationVersion != CharacterSafeboxStateMigrationVersion || export.MigrationName != CharacterSafeboxStateMigrationName {
 		t.Fatalf("unexpected migration boundary: %#v", export)
 	}
-	if export.MigrationVersion != 15 || export.MigrationName != "character_safebox_money" {
-		t.Fatalf("expected 0015 money tip, got %#v", export)
+	if export.MigrationVersion != 28 || export.MigrationName != "character_safebox_item_instance_attributes" {
+		t.Fatalf("expected 0028 attributes tip, got %#v", export)
 	}
 	if len(export.Passwords) != 2 {
 		t.Fatalf("unexpected password rows: %#v", export.Passwords)
@@ -179,13 +179,13 @@ func TestQuarantineCharacterSafeboxStateExportCanonicalizesAndRejectsDrift(t *te
 	}
 
 	badVersion := export
-	badVersion.MigrationVersion = 14
+	badVersion.MigrationVersion = 15
 	if _, _, err := QuarantineCharacterSafeboxStateExport(badVersion); err == nil {
 		t.Fatal("expected migration tip mismatch to fail closed")
 	}
 
 	badName := export
-	badName.MigrationName = "character_safebox_state"
+	badName.MigrationName = "character_safebox_money"
 	if _, _, err := QuarantineCharacterSafeboxStateExport(badName); err == nil {
 		t.Fatal("expected migration name tip mismatch to fail closed")
 	}

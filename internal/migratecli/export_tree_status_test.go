@@ -109,7 +109,7 @@ func TestRunExportTreeStatusReportsCompleteQuarantineAndTwoPhaseArtifacts(t *tes
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_ids":[11],"points":[]}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[11],"unit_prices":[]}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_ids":[11],"flags":[]}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[11],"passwords":[],"items":[]}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_ids":[11],"passwords":[],"items":[]}`,
 		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","vids":[117440556],"ground_items":[]}`,
 	}
 	for kind, payload := range wipePayloads {
@@ -175,7 +175,7 @@ func TestRunExportTreeStatusReportsImportAndWipeImportArtifactCompleteness(t *te
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_ids":[11],"points":[]}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[11],"unit_prices":[]}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_ids":[11],"flags":[]}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[11],"passwords":[],"items":[]}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_ids":[11],"passwords":[],"items":[]}`,
 		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","vids":[117440556],"ground_items":[]}`,
 	}
 	for kind, payload := range wipePayloads {
@@ -240,7 +240,7 @@ func TestRunExportTreeStatusRequireFlagsSucceedOnCompleteTree(t *testing.T) {
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_ids":[11],"points":[]}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_ids":[11],"unit_prices":[]}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_ids":[11],"flags":[]}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_ids":[11],"passwords":[],"items":[]}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_ids":[11],"passwords":[],"items":[]}`,
 		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","vids":[117440556],"ground_items":[]}`,
 	}
 	for kind, payload := range wipePayloads {
@@ -537,7 +537,7 @@ func TestRunExportTreeStatusReportsMixedAndAllReplacedImportResultOutcomes(t *te
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
 		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":8,"active_ticket_count":1,"login_keys":[16909060],"replaced":true}`,
 		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":9,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[19],"replaced":true}`,
 		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":10,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[101],"interaction_kinds":[],"combat_profiles":[],"replaced":true}`,
@@ -725,7 +725,7 @@ func TestRunExportTreeStatusReportsMixedAndAllReplacedWipeImportResultOutcomes(t
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
 		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
 	}
 	wantRows := map[string]int{
@@ -953,7 +953,7 @@ func TestRunExportTreeStatusOutcomeRequireFlagsGateInsertOnlyAndAllReplaced(t *t
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
 		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":8,"active_ticket_count":1,"login_keys":[16909060],"replaced":true}`,
 		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":9,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[19],"replaced":true}`,
 		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":10,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[101],"interaction_kinds":[],"combat_profiles":[],"replaced":true}`,
@@ -1047,7 +1047,7 @@ func TestRunExportTreeStatusWipeImportOutcomeRequireFlagsGateInsertOnlyAndAllRep
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":1,"point_row_count":4,"character_ids":[11],"replaced":true}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":1,"price_row_count":5,"character_ids":[11],"replaced":true}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":1,"flag_count":6,"character_ids":[11],"replaced":true}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_count":1,"password_count":1,"item_count":7,"character_ids":[11],"replaced":true}`,
 		"bootstrap-ground-item-state":  `{"migration_version":10,"migration_name":"bootstrap_ground_item_state","ground_item_count":11,"item_shaped_count":11,"gold_shaped_count":0,"vids":[117440556],"replaced":true}`,
 	}
 	for kind, payload := range replacedPayloads {
@@ -1088,7 +1088,7 @@ func mustMaterializeEmptyExportTreeStatusFixtures(t *testing.T, exportTree strin
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","points":[]}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","unit_prices":[]}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","flags":[]}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","passwords":[],"items":[]}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","passwords":[],"items":[]}`,
 		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","tickets":[]}`,
 		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","templates":[],"sockets":[],"attributes":[],"use_effects":[],"equip_effects":[],"refine_infos":[],"refine_materials":[]}`,
 		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definitions":[],"merchant_catalog_entries":[],"quest_flag_reward_items":[],"quest_flag_consume_items":[],"static_actors":[],"reward_drops":[],"combat_profiles":[],"combat_profile_death_reward_drops":[]}`,
@@ -1113,7 +1113,7 @@ func mustMaterializeEmptyExportTreeImportResultFixtures(t *testing.T, exportTree
 		"character-point-state":        `{"migration_version":11,"migration_name":"character_point_state","character_count":0,"point_row_count":0,"character_ids":[]}`,
 		"character-myshop-unit-prices": `{"migration_version":23,"migration_name":"character_myshop_unit_prices","character_count":0,"price_row_count":0,"character_ids":[]}`,
 		"character-quest-state":        `{"migration_version":4,"migration_name":"character_quest_state","character_count":0,"flag_count":0,"character_ids":[]}`,
-		"character-safebox-state":      `{"migration_version":15,"migration_name":"character_safebox_money","character_count":0,"password_count":0,"item_count":0,"character_ids":[]}`,
+		"character-safebox-state":      `{"migration_version":28,"migration_name":"character_safebox_item_instance_attributes","character_count":0,"password_count":0,"item_count":0,"character_ids":[]}`,
 		"auth-login-ticket-handoff":    `{"migration_version":7,"migration_name":"auth_login_ticket_handoff","ticket_count":0,"active_ticket_count":0,"login_keys":[]}`,
 		"item-template-state":          `{"migration_version":9,"migration_name":"item_template_refine_info","template_count":0,"socket_count":0,"attribute_count":0,"use_effect_count":0,"equip_effect_count":0,"refine_info_count":0,"refine_material_count":0,"vnums":[]}`,
 		"static-actor-content-state":   `{"migration_version":13,"migration_name":"static_actor_combat_profile_state","interaction_definition_count":0,"merchant_catalog_entry_count":0,"quest_flag_reward_item_count":0,"quest_flag_consume_item_count":0,"static_actor_count":0,"reward_drop_count":0,"combat_profile_count":0,"combat_profile_death_reward_drop_count":0,"entity_ids":[],"interaction_kinds":[],"combat_profiles":[]}`,

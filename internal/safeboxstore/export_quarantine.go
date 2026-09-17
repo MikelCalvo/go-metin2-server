@@ -8,7 +8,7 @@ import (
 )
 
 // ErrInvalidCharacterSafeboxStateExport reports that a retained safebox-state
-// export failed the 0015 migration-shaped quarantine contract.
+// export failed the 0028 migration-shaped quarantine contract.
 var ErrInvalidCharacterSafeboxStateExport = errors.New("invalid character safebox-state export")
 
 // CharacterSafeboxStateQuarantineSummary is the metadata-only result of
@@ -31,8 +31,8 @@ type CharacterSafeboxStateQuarantineResult struct {
 }
 
 // ValidateCharacterSafeboxStateExport fails closed when a retained export does
-// not match the 0015_character_safebox_money tip. It does not open a database,
-// write safebox snapshots, or mutate the supplied export.
+// not match the 0028_character_safebox_item_instance_attributes tip. It does
+// not open a database, write safebox snapshots, or mutate the supplied export.
 func ValidateCharacterSafeboxStateExport(export CharacterSafeboxStateExport) (CharacterSafeboxStateQuarantineSummary, error) {
 	canonical, summary, err := canonicalizeCharacterSafeboxStateExport(export)
 	if err != nil {
