@@ -8752,7 +8752,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						// peer-visible busy bit with the partner string already
 						// owned by merchant/safebox/refine
 						// (spec/protocol/npc-shop-transaction-bootstrap.md).
-						// Partner-side open cube busy-window text stays deferred.
+						// Partner-side open cube START/ACCEPT busy-window text is
+						// already owned beside that same gate.
 						if hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen {
 							return gameflow.ItemExchangeResult{
 								Accepted: true,
@@ -8807,7 +8808,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						// AcceptExchange owns requester/partner busy + gold-carrier
 						// reject chat and Cancel-on-failure END teardown
 						// (docs/plans/2026-08-28-exchange-busy-gold-carrier-reject-auto-cancel.md).
-						// Partner-side open cube busy-window text stays deferred.
+						// Partner-side open cube START/ACCEPT busy-window text is
+						// already owned beside that same gate.
 						frames, finalizePlan, ok := sharedWorld.AcceptExchange(sharedWorldID, selectedPlayer.LiveGold(), selectedPlayer.LiveCharacter())
 						if !ok {
 							return gameflow.ItemExchangeResult{Accepted: false}
