@@ -30,7 +30,7 @@ This contract currently applies only to:
 
 This contract does **not** yet claim:
 - the deterministic bootstrap EXP/gold/drop reward contract, which is documented separately in `non-player-reward-bootstrap.md`
-- quest credit, party ownership rolls, randomized loot tables, level-up choreography, or broader reward distribution
+- quest credit, party invite/leave membership, contribution splits, last-hitter vs random tables, drop-at-owner-feet, randomized loot tables, level-up choreography, or broader reward distribution beyond the first implicit-party FNV-1a owner pick for a single kill-reward drop frozen in `non-player-reward-bootstrap.md`
 - corpse interaction, corpse timers, revive menus, or corpse-specific UI
 - hostile retaliation, aggro, patrol, pathing, or spawn-group AI beyond the later authored seam frozen in `content-spawn-groups-bootstrap.md`
 - player death / respawn semantics

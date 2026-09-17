@@ -5476,7 +5476,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			if !hasTicket || !hasSelected {
 				return false
 			}
-			account, ok := loadOrCreateAccount(accounts, sessionTicket.Login)
+			account, ok := loadOrCreateAccountFromTicket(accounts, sessionTicket)
 			if !ok {
 				selectedPlayer = nil
 				clearLiveCharacterRegistration()
@@ -6738,7 +6738,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return loginflow.Result{Accepted: false, FailureStatus: "NOID"}
 					}
 					if accounts != nil {
-						account, ok := loadOrCreateAccount(accounts, packet.Login)
+						account, ok := loadOrCreateAccountFromTicket(accounts, ticket)
 						if !ok {
 							return loginflow.Result{Accepted: false, FailureStatus: "FAILED"}
 						}
@@ -6908,6 +6908,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						if !joinedSharedWorld {
 							return worldentry.EnterGameResult{Rejected: true}
 						}
+						sharedWorld.BindSessionLogin(sharedWorldID, sessionTicket.Login)
 						// EnterGame reclaim / Join can drop stale practice-mob engagement
 						// without running the live session leave helper, so re-sync chase
 						// prune + within_radius homeward before encoding visibility.
@@ -9874,15 +9875,24 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 						}
 						if len(rewardDrops) != 0 {
+							partyRoll := len(rewardDrops) == 1
 							for _, drop := range rewardDrops {
+								ownerID := sharedWorldID
+								ownerLogin := sessionTicket.Login
+								owner := previousSelected
+								if partyRoll && ownsLiveSharedWorldSession() {
+									if picked, ok := sharedWorld.PickKillRewardPartyOwner(drop.item.Vnum, 0, sharedWorldID, sessionTicket.Login, previousSelected); ok {
+										ownerID = picked.EntityID
+										ownerLogin = picked.Login
+										owner = picked.Character
+									}
+								}
 								frames = append(frames,
 									itemproto.EncodeGroundAdd(itemproto.GroundAddPacket{VID: drop.vid, Vnum: drop.item.Vnum, X: previousSelected.X, Y: previousSelected.Y, Z: previousSelected.Z}),
-									itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: drop.vid, OwnerName: previousSelected.Name}),
+									itemproto.EncodeOwnership(itemproto.OwnershipPacket{VID: drop.vid, OwnerName: owner.Name}),
 								)
-							}
-							if ownsLiveSharedWorldSession() {
-								for _, drop := range rewardDrops {
-									sharedWorld.RegisterGroundItemWithPickupRange(sharedWorldID, sessionTicket.Login, previousSelected, drop.vid, drop.item, templatePickupRange(runtime, drop.item.Vnum))
+								if ownsLiveSharedWorldSession() {
+									sharedWorld.RegisterGroundItemWithPickupRangeAt(ownerID, ownerLogin, owner, previousSelected, drop.vid, drop.item, templatePickupRange(runtime, drop.item.Vnum))
 								}
 							}
 						}
@@ -10401,9 +10411,13 @@ func issueLoginTicket(store loginticket.Store, login string, empire uint8, chara
 }
 
 func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.Account, bool) {
+	return loadOrCreateAccountFromTicket(store, loginticket.Ticket{Login: login})
+}
+
+func loadOrCreateAccountFromTicket(store accountstore.Store, ticket loginticket.Ticket) (accountstore.Account, bool) {
+	login := ticket.Login
 	if store == nil {
-		characters := cloneCharacters(stubCharacters())
-		return accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}, true
+		return seededAccountFromTicketOrStub(ticket), true
 	}
 	account, err := store.Load(login)
 	if err == nil {
@@ -10419,13 +10433,31 @@ func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.A
 	if !errors.Is(err, accountstore.ErrAccountNotFound) {
 		return accountstore.Account{}, false
 	}
-	characters := cloneCharacters(stubCharacters())
-	account = accountstore.Account{Login: login, Empire: ticketEmpire(loginticket.Ticket{Characters: characters}), Characters: characters}
+	account = seededAccountFromTicketOrStub(ticket)
+	if account.Login == "" || len(account.Characters) == 0 {
+		return accountstore.Account{}, false
+	}
 	if err := store.Save(account); err != nil {
 		return accountstore.Account{}, false
 	}
 	account.Characters = cloneCharacters(account.Characters)
 	return account, true
+}
+
+func seededAccountFromTicketOrStub(ticket loginticket.Ticket) accountstore.Account {
+	if hasAnyCharacters(ticket.Characters) && !strings.EqualFold(ticket.Login, StubLogin) {
+		return accountstore.Account{
+			Login:      ticket.Login,
+			Empire:     ticketEmpire(ticket),
+			Characters: cloneCharacters(ticket.Characters),
+		}
+	}
+	characters := cloneCharacters(stubCharacters())
+	return accountstore.Account{
+		Login:      ticket.Login,
+		Empire:     ticketEmpire(loginticket.Ticket{Empire: ticket.Empire, Characters: characters}),
+		Characters: characters,
+	}
 }
 
 func normalizeBootstrapStubAccount(account accountstore.Account) (accountstore.Account, bool) {

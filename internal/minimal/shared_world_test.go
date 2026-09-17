@@ -24688,8 +24688,9 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode watcher reward ownership: %v", err)
 	}
-	if peerOwnership.VID != killerGround.VID || peerOwnership.OwnerName != killer.Name {
-		t.Fatalf("unexpected watcher reward ownership: %+v", peerOwnership)
+	wantOwner := killRewardPartyOwnerName([]string{killer.Name, watcher.Name}, killerGround.Vnum, 0)
+	if peerOwnership.VID != killerGround.VID || peerOwnership.OwnerName != wantOwner {
+		t.Fatalf("unexpected watcher reward ownership: %+v want owner %q", peerOwnership, wantOwner)
 	}
 }
 
@@ -25433,27 +25434,28 @@ func TestGameRuntimeRewardDropPublicReleaseAllowsLivingCollectorPickup(t *testin
 	if err != nil {
 		t.Fatalf("decode public reward ownership: %v", err)
 	}
-	if ownership.VID != ground.VID || ownership.OwnerName != killer.Name {
-		t.Fatalf("unexpected public reward ownership: %+v", ownership)
+	wantOwner := killRewardPartyOwnerName([]string{killer.Name, collector.Name}, ground.Vnum, 0)
+	if wantOwner != collector.Name {
+		t.Fatalf("expected implicit-party FNV-1a to pick collector %q ahead of killer %q, got %q", collector.Name, killer.Name, wantOwner)
+	}
+	if ownership.VID != ground.VID || ownership.OwnerName != wantOwner {
+		t.Fatalf("unexpected public reward ownership: %+v want owner %q", ownership, wantOwner)
+	}
+	if ground.X != killer.X || ground.Y != killer.Y || ground.Z != killer.Z {
+		t.Fatalf("expected public reward drop to stay at killer feet, got %+v", ground)
 	}
 	queuedAdd := flushServerFrames(t, collectorFlow)
 	if len(queuedAdd) < 2 {
 		t.Fatalf("expected collector to receive reward ground-add/ownership fanout, got %d", len(queuedAdd))
 	}
 
-	if pickupOut := pickupGroundItem(t, collectorFlow, ground.VID); len(pickupOut) != 0 {
-		t.Fatalf("expected exclusive ownership to reject living collector reward pickup before release, got %d", len(pickupOut))
+	if pickupOut := pickupGroundItem(t, killerFlow, ground.VID); len(pickupOut) != 0 {
+		t.Fatalf("expected exclusive FNV-1a collector ownership to reject killer pickup, got %d", len(pickupOut))
 	}
-
-	currentTime = currentTime.Add(bootstrapGroundItemOwnershipDuration)
-	collectorRelease := flushServerFrames(t, collectorFlow)
-	assertBlankOwnershipReleasePresent(t, collectorRelease, ground.VID, "collector")
-	killerRelease := flushServerFrames(t, killerFlow)
-	assertBlankOwnershipReleasePresent(t, killerRelease, ground.VID, "killer")
 
 	pickupOut := pickupGroundItem(t, collectorFlow, ground.VID)
 	if len(pickupOut) != 3 {
-		t.Fatalf("expected public collector reward pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
+		t.Fatalf("expected FNV-1a collector exclusive reward pickup to emit GROUND_DEL, ITEM_SET, and ITEM_GET, got %d frames", len(pickupOut))
 	}
 	if del, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, pickupOut[0])); err != nil || del.VID != ground.VID {
 		t.Fatalf("unexpected public reward ground delete: del=%+v err=%v", del, err)
