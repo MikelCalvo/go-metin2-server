@@ -1288,13 +1288,57 @@ func (r *Runtime) EquipmentEligibilitySubject() equipment.Subject {
 // (`unique1`) in the legacy combined inventory/equipment namespace.
 const Unique1ItemUseWearIndex uint16 = 7
 
+// Unique2ItemUseWearIndex is the second owned worn-cell ITEM_USE wear index
+// (`unique2`) in the legacy combined inventory/equipment namespace.
+const Unique2ItemUseWearIndex uint16 = 8
+
 // Unique1ItemUseWireCell is the first owned worn-cell ITEM_USE address:
 // window INVENTORY, cell = 90 + Unique1ItemUseWearIndex.
 const Unique1ItemUseWireCell inventory.SlotIndex = inventory.CarriedInventorySlotCount + inventory.SlotIndex(Unique1ItemUseWearIndex)
 
+// Unique2ItemUseWireCell is the second owned worn-cell ITEM_USE address:
+// window INVENTORY, cell = 90 + Unique2ItemUseWearIndex.
+const Unique2ItemUseWireCell inventory.SlotIndex = inventory.CarriedInventorySlotCount + inventory.SlotIndex(Unique2ItemUseWearIndex)
+
+func ownedWornItemUseEquipSlot(slot inventory.SlotIndex) (inventory.EquipmentSlot, bool) {
+	switch slot {
+	case Unique1ItemUseWireCell:
+		return inventory.EquipmentSlotUnique1, true
+	case Unique2ItemUseWireCell:
+		return inventory.EquipmentSlotUnique2, true
+	default:
+		return inventory.EquipmentSlotNone, false
+	}
+}
+
+// OwnedWornItemUseEquipSlot reports the named equipment slot for an owned
+// worn-cell ITEM_USE address. Unsupported wear cells stay fail-closed.
+func OwnedWornItemUseEquipSlot(slot inventory.SlotIndex) (inventory.EquipmentSlot, bool) {
+	return ownedWornItemUseEquipSlot(slot)
+}
+
+// OwnedWornItemUseWearIndex reports the legacy wear index for an owned
+// worn-cell ITEM_USE address. Unsupported wear cells stay fail-closed.
+func OwnedWornItemUseWearIndex(slot inventory.SlotIndex) (uint16, bool) {
+	switch slot {
+	case Unique1ItemUseWireCell:
+		return Unique1ItemUseWearIndex, true
+	case Unique2ItemUseWireCell:
+		return Unique2ItemUseWearIndex, true
+	default:
+		return 0, false
+	}
+}
+
+// IsOwnedWornItemUseCell reports whether slot is unique1 or unique2.
+func IsOwnedWornItemUseCell(slot inventory.SlotIndex) bool {
+	_, ok := ownedWornItemUseEquipSlot(slot)
+	return ok
+}
+
 func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Template) (ItemUseResult, bool) {
-	if slot == Unique1ItemUseWireCell {
-		return r.useUnique1Item(template)
+	if equipSlot, ok := ownedWornItemUseEquipSlot(slot); ok {
+		return r.useWornCellItem(slot, equipSlot, template)
 	}
 	if r == nil || slot >= inventory.CarriedInventorySlotCount || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.QuestUse || template.QuestUseMultiple || template.Applicable || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return ItemUseResult{}, false
@@ -1359,11 +1403,10 @@ func (r *Runtime) UseItem(slot inventory.SlotIndex, template itemcatalog.Templat
 	return result, true
 }
 
-func (r *Runtime) useUnique1Item(template itemcatalog.Template) (ItemUseResult, bool) {
+func (r *Runtime) useWornCellItem(slot inventory.SlotIndex, equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (ItemUseResult, bool) {
 	if r == nil || !r.CanUseTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil || template.QuestUse || template.QuestUseMultiple || template.Applicable || template.AntiStack || template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell {
 		return ItemUseResult{}, false
 	}
-	equipSlot := inventory.EquipmentSlotUnique1
 	if countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
 		return ItemUseResult{}, false
 	}
@@ -1390,7 +1433,7 @@ func (r *Runtime) useUnique1Item(template itemcatalog.Template) (ItemUseResult, 
 	}
 	updatedPointValue := int32(nextPointValue)
 	result := ItemUseResult{
-		Slot:              Unique1ItemUseWireCell,
+		Slot:              slot,
 		Vnum:              item.Vnum,
 		PointType:         effect.PointType,
 		PointAmount:       effect.PointDelta,
@@ -1425,8 +1468,8 @@ func (r *Runtime) useUnique1Item(template itemcatalog.Template) (ItemUseResult, 
 }
 
 func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatalog.Template) (string, bool) {
-	if slot == Unique1ItemUseWireCell {
-		return r.unique1UseItemRejectText(template)
+	if equipSlot, ok := ownedWornItemUseEquipSlot(slot); ok {
+		return r.wornCellUseItemRejectText(equipSlot, template)
 	}
 	if r == nil || template.UseRejectText == "" || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil {
 		return "", false
@@ -1459,11 +1502,10 @@ func (r *Runtime) UseItemRejectText(slot inventory.SlotIndex, template itemcatal
 	return template.UseRejectText, true
 }
 
-func (r *Runtime) unique1UseItemRejectText(template itemcatalog.Template) (string, bool) {
+func (r *Runtime) wornCellUseItemRejectText(equipSlot inventory.EquipmentSlot, template itemcatalog.Template) (string, bool) {
 	if r == nil || template.UseRejectText == "" || !itemcatalog.ValidTemplate(template) || template.EquipSlot != "" || template.UseEffect == nil {
 		return "", false
 	}
-	equipSlot := inventory.EquipmentSlotUnique1
 	if countEquipmentSlotOccupancy(r.liveEquipment, equipSlot) != 1 {
 		return "", false
 	}

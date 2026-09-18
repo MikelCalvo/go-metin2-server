@@ -6263,12 +6263,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			if position.Cell >= itemproto.InventoryMaxCell {
 				wearIndex := position.Cell - itemproto.InventoryMaxCell
-				if wearIndex != player.Unique1ItemUseWearIndex {
+				if wearIndex != player.Unique1ItemUseWearIndex && wearIndex != player.Unique2ItemUseWearIndex {
 					return gameflow.ItemUseResult{Accepted: false}
 				}
 			}
 			slot := inventory.SlotIndex(position.Cell)
-			if slot != player.Unique1ItemUseWireCell {
+			if !player.IsOwnedWornItemUseCell(slot) {
 				if result, handled := tryExecuteMyShopBagUse(slot); handled {
 					return result
 				}
@@ -6301,7 +6301,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				refreshLiveCharacterRegistration()
 				return gameflow.ItemUseResult{Accepted: false}
 			}
-			if useResult.ItemRemoved && useResult.Slot != player.Unique1ItemUseWireCell {
+			if useResult.ItemRemoved && !player.IsOwnedWornItemUseCell(useResult.Slot) {
 				quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, useResult.Slot)
 				if !ok {
 					selectedPlayer.ApplyPersistedSnapshot(previousSelected)
@@ -12415,7 +12415,7 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 	}))
 	if result.ItemRemoved {
 		frames = append(frames, itemproto.EncodeDel(itemproto.DelPacket{Position: position}))
-	} else if result.Slot == player.Unique1ItemUseWireCell {
+	} else if player.IsOwnedWornItemUseCell(result.Slot) {
 		updateFrame, err := encodeBootstrapItemUpdateFrameWithTemplates(position, result.Item, templates)
 		if err != nil {
 			return nil, err
@@ -12436,8 +12436,8 @@ func itemUseResultFrames(character loginticket.Character, result player.ItemUseR
 }
 
 func itemUseResultPosition(slot inventory.SlotIndex) (itemproto.Position, error) {
-	if slot == player.Unique1ItemUseWireCell {
-		return itemproto.EquipmentPosition(player.Unique1ItemUseWearIndex)
+	if wearIndex, ok := player.OwnedWornItemUseWearIndex(slot); ok {
+		return itemproto.EquipmentPosition(wearIndex)
 	}
 	return itemproto.CarriedInventoryPosition(uint16(slot))
 }
@@ -14300,8 +14300,8 @@ func defaultBootstrapItemTemplateSnapshot() itemcatalog.Snapshot {
 }
 
 func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
-	if slot == player.Unique1ItemUseWireCell {
-		return r.resolveRuntimeUnique1UseTemplate(selectedPlayer)
+	if player.IsOwnedWornItemUseCell(slot) {
+		return r.resolveRuntimeWornCellUseTemplate(selectedPlayer, slot)
 	}
 	template, ok := r.resolveRuntimeItemTemplate(selectedPlayer, slot)
 	if !ok || template.UseEffect == nil {
@@ -14310,12 +14310,16 @@ func (r *gameRuntime) resolveRuntimeUseTemplate(selectedPlayer *player.Runtime, 
 	return template, true
 }
 
-func (r *gameRuntime) resolveRuntimeUnique1UseTemplate(selectedPlayer *player.Runtime) (itemcatalog.Template, bool) {
+func (r *gameRuntime) resolveRuntimeWornCellUseTemplate(selectedPlayer *player.Runtime, slot inventory.SlotIndex) (itemcatalog.Template, bool) {
 	if r == nil || selectedPlayer == nil {
 		return itemcatalog.Template{}, false
 	}
+	equipSlot, ok := player.OwnedWornItemUseEquipSlot(slot)
+	if !ok {
+		return itemcatalog.Template{}, false
+	}
 	for _, item := range selectedPlayer.LiveEquipment() {
-		if !item.Equipped || item.EquipSlot != inventory.EquipmentSlotUnique1 {
+		if !item.Equipped || item.EquipSlot != equipSlot {
 			continue
 		}
 		template, ok := r.itemTemplates[item.Vnum]
