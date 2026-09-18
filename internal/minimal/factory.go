@@ -629,12 +629,14 @@ type liveCharacterStateSnapshot struct {
 }
 
 type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
+type liveCharacterCloner func() (loginticket.Character, bool)
 type liveCharacterPersistedSnapshotApplier func(loginticket.Character) bool
 
 type liveCharacterRegistration struct {
 	id                     uint64
 	login                  string
 	snapshotter            liveCharacterStateSnapshotter
+	cloneLiveCharacter     liveCharacterCloner
 	applyPersistedSnapshot liveCharacterPersistedSnapshotApplier
 }
 
@@ -3607,8 +3609,8 @@ func (r *gameRuntime) PointsSnapshot(name string) (CharacterPointsSnapshot, bool
 	return CharacterPointsSnapshot{Name: state.Name, Points: state.Points}, true
 }
 
-func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
-	if r == nil || snapshotter == nil {
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, cloneLiveCharacter liveCharacterCloner, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
+	if r == nil || snapshotter == nil || cloneLiveCharacter == nil {
 		return 0
 	}
 	name = normalizeLiveCharacterName(name)
@@ -3626,6 +3628,7 @@ func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string
 		id:                     registrationID,
 		login:                  strings.TrimSpace(login),
 		snapshotter:            snapshotter,
+		cloneLiveCharacter:     cloneLiveCharacter,
 		applyPersistedSnapshot: applyPersistedSnapshot,
 	}
 	return registrationID
@@ -3709,6 +3712,23 @@ func (r *gameRuntime) liveCharacterLogin(name string) (string, bool) {
 		return "", false
 	}
 	return registration.login, true
+}
+
+func (r *gameRuntime) liveCharacterClone(name string) (loginticket.Character, bool) {
+	if r == nil {
+		return loginticket.Character{}, false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return loginticket.Character{}, false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || registration.cloneLiveCharacter == nil {
+		return loginticket.Character{}, false
+	}
+	return registration.cloneLiveCharacter()
 }
 
 func normalizeLiveCharacterName(name string) string {
@@ -5192,6 +5212,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					return liveCharacterStateSnapshot{}, false
 				}
 				return buildLiveCharacterStateSnapshot(current), true
+			}, func() (loginticket.Character, bool) {
+				stateMu.Lock()
+				defer stateMu.Unlock()
+				if !hasSelected || selectedPlayer == nil {
+					return loginticket.Character{}, false
+				}
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 || normalizeLiveCharacterName(current.Name) != name {
+					return loginticket.Character{}, false
+				}
+				return current, true
 			}, func(updated loginticket.Character) bool {
 				stateMu.Lock()
 				defer stateMu.Unlock()
@@ -10413,54 +10444,6 @@ func sharedWorldPlayerByVID(sharedWorld *sharedWorldRegistry, vid uint32) (world
 	return sharedWorld.entities.PlayerByVID(vid)
 }
 
-func overlayLiveCharacterState(character loginticket.Character, state liveCharacterStateSnapshot) (loginticket.Character, bool) {
-	if character.ID == 0 || strings.TrimSpace(state.Name) == "" {
-		return loginticket.Character{}, false
-	}
-	if normalizeLiveCharacterName(character.Name) != normalizeLiveCharacterName(state.Name) {
-		return loginticket.Character{}, false
-	}
-	character.Level = state.Level
-	character.Job = state.Job
-	character.RaceNum = state.RaceNum
-	character.Empire = state.Empire
-	character.Gold = state.Gold
-	character.Points = state.Points
-	inventoryItems := make([]inventory.ItemInstance, 0, len(state.Inventory))
-	for _, item := range state.Inventory {
-		inventoryItems = append(inventoryItems, inventory.ItemInstance{
-			ID:     item.ID,
-			Vnum:   item.Vnum,
-			Count:  item.Count,
-			Slot:   inventory.SlotIndex(item.Slot),
-			Locked: item.Locked,
-		})
-	}
-	character.Inventory = inventoryItems
-	equipmentItems := make([]inventory.ItemInstance, 0, len(state.Equipment))
-	for _, item := range state.Equipment {
-		equipSlot, ok := inventory.ParseEquipmentSlot(item.EquipSlot)
-		if !ok {
-			return loginticket.Character{}, false
-		}
-		equipmentItems = append(equipmentItems, inventory.ItemInstance{
-			ID:        item.ID,
-			Vnum:      item.Vnum,
-			Count:     item.Count,
-			Equipped:  true,
-			EquipSlot: equipSlot,
-			Locked:    item.Locked,
-		})
-	}
-	character.Equipment = equipmentItems
-	quickslots := make([]loginticket.Quickslot, 0, len(state.Quickslots))
-	for _, slot := range state.Quickslots {
-		quickslots = append(quickslots, loginticket.Quickslot{Position: slot.Position, Type: slot.Type, Slot: slot.Slot})
-	}
-	character.Quickslots = quickslots
-	return character, true
-}
-
 func applyVisiblePlayerItemGive(
 	runtime *gameRuntime,
 	accounts accountstore.Store,
@@ -10513,12 +10496,11 @@ func applyVisiblePlayerItemGive(
 	if !ok {
 		return nil, false
 	}
-	livePeer, ok := runtime.liveCharacterState(target.Character.Name)
-	if !ok {
+	peerCharacter, ok := runtime.liveCharacterClone(target.Character.Name)
+	if !ok || peerCharacter.ID == 0 || peerCharacter.ID != target.Character.ID || characterAtBootstrapHPFloor(peerCharacter) {
 		return nil, false
 	}
-	peerCharacter, ok := overlayLiveCharacterState(target.Character, livePeer)
-	if !ok || characterAtBootstrapHPFloor(peerCharacter) {
+	if normalizeLiveCharacterName(peerCharacter.Name) != normalizeLiveCharacterName(target.Character.Name) {
 		return nil, false
 	}
 	transferred, ok := droppedInventoryItem(previousGiver, slot, count)
