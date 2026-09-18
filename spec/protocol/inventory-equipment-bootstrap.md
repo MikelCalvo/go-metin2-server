@@ -119,13 +119,13 @@ The exact wire layout is now frozen by `internal/proto/item` golden tests.
 
 After the bootstrap burst, the owned mutation surface remains intentionally bootstrap-scoped:
 - ingress now includes the first carried-slot client-originated `ITEM_MOVE` packet for inventory moves and split/merge behavior; compatible occupied-destination `count = 0` packet moves now merge as much of the source stack as the destination can accept, incompatible occupied-destination no-count swaps exchange the two carried cells, and the older `/inventory_move <from> <to>` slash-command seam remains as operator/test bootstrap compatibility for carried-cell moves while sharing the same item quickslot retarget/delete synchronization when it clears the source cell and, for incompatible occupied-destination swaps, the same authored-template source/target metadata guard boundary
-- the first carried-slot client-originated `ITEM_USE` ingress lives separately in `item-use-bootstrap.md`, which now also owns one unique1 worn-cell companion (`cell = 97`)
+- the first carried-slot client-originated `ITEM_USE` ingress lives separately in `item-use-bootstrap.md`, which now also owns unique1 (`cell = 97`) and unique2 (`cell = 98`) worn-cell companions
 - the current supported seams are:
   - `ITEM_MOVE` (`0x0504`) for carried-slot moves and counted split/merge behavior
   - `/inventory_move <from> <to>` for carried-slot empty-destination move compatibility
   - `/equip_item <from> <equip_slot>` for carried -> worn transitions
   - `/unequip_item <equip_slot> <to>` for worn -> carried transitions
-  - `ITEM_USE` / `/use_item <slot>` for carried consumables plus unique1 cell `97`
+  - `ITEM_USE` / `/use_item <slot>` for carried consumables plus unique1 cell `97` and unique2 cell `98`
 - carried inventory keeps using `window_type = INVENTORY (1)` with `0 <= cell < 90`
 - worn equipment still refreshes through the legacy combined inventory namespace `window_type = INVENTORY (1), cell = 90 + wear_index`
 - successful mutations by the authoritative selected-character session must persist the updated selected-character inventory/equipment snapshot before the runtime commits the new live state

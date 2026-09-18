@@ -139,7 +139,8 @@ func TestRuntimeUseItemRejectsOtherWornCellsWithoutMutation(t *testing.T) {
 		Points: [255]int32{1: 700},
 		Equipment: []inventory.ItemInstance{
 			{ID: 21, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
-			{ID: 22, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
+			{ID: 22, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+			{ID: 23, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
 		},
 	}
 	runtime := NewRuntime(persisted, SessionLink{Login: "other-worn-use", CharacterIndex: 1})
@@ -148,8 +149,8 @@ func TestRuntimeUseItemRejectsOtherWornCellsWithoutMutation(t *testing.T) {
 
 	for _, slot := range []inventory.SlotIndex{
 		inventory.CarriedInventorySlotCount,
+		inventory.CarriedInventorySlotCount + 1,
 		inventory.CarriedInventorySlotCount + 4,
-		inventory.CarriedInventorySlotCount + 8,
 	} {
 		if result, ok := runtime.UseItem(slot, template); ok {
 			t.Fatalf("expected worn cell %d use to fail closed, got %+v", slot, result)

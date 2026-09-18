@@ -3919,3 +3919,306 @@ func TestGameSessionFlowItemUseToItemPartialMergeSaveFailureRollsBackLiveMutatio
 		t.Fatalf("expected save-failed partial ITEM_USE_TO_ITEM to leave persisted quickslots unchanged, got %#v", persisted.Characters[0].Quickslots)
 	}
 }
+
+func TestGameSessionFlowItemUseConsumesUnique2WornCellAndPreservesUnique1(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseUniqueTwo", 0x010305a7, 0x020405a7, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{
+		{ID: 221, Vnum: 27001, Count: 3, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+		{ID: 231, Vnum: 27001, Count: 3, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-unique2-partial", 0x505050a7, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-unique2-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed unique2 item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "template consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected unique2 item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-unique2-partial", 0x505050a7)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(98)})))
+	if err != nil {
+		t.Fatalf("unexpected unique2 item-use packet error: %v", err)
+	}
+	if len(out) != 4 {
+		t.Fatalf("expected unique2 ITEM_USE to emit use echo, point change, item update, and info chat, got %d", len(out))
+	}
+	useEcho, err := itemproto.DecodeUse(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode unique2 item-use echo frame: %v", err)
+	}
+	if useEcho.Position != itemproto.InventoryPosition(98) || useEcho.CharacterVID != owner.VID || useEcho.VictimVID != owner.VID || useEcho.Vnum != 27001 {
+		t.Fatalf("unexpected unique2 item-use echo packet: %+v", useEcho)
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode unique2 item-use point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
+		t.Fatalf("unexpected unique2 item-use point change: %+v", pointChange)
+	}
+	itemUpdate, err := itemproto.DecodeUpdate(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode unique2 item-use item update: %v", err)
+	}
+	if itemUpdate.Position != itemproto.InventoryPosition(98) || itemUpdate.Count != 2 {
+		t.Fatalf("unexpected unique2 item-use item update: %+v", itemUpdate)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[3]))
+	if err != nil {
+		t.Fatalf("decode unique2 item-use info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != "template consume" {
+		t.Fatalf("unexpected unique2 item-use info chat: %+v", infoChat)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after unique2 ITEM_USE, got %d", len(queued))
+	}
+
+	equipmentSnapshot, ok := runtime.EquipmentSnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected equipment snapshot after unique2 ITEM_USE")
+	}
+	wantLiveEquipment := []EquipmentItemSnapshot{
+		{ID: 221, Vnum: 27001, Count: 3, EquipSlot: "unique1"},
+		{ID: 231, Vnum: 27001, Count: 2, EquipSlot: "unique2"},
+	}
+	if !reflect.DeepEqual(equipmentSnapshot.Equipment, wantLiveEquipment) {
+		t.Fatalf("unique2 ITEM_USE live equipment: got %+v want %+v", equipmentSnapshot.Equipment, wantLiveEquipment)
+	}
+	inventorySnapshot, ok := runtime.InventorySnapshot(owner.Name)
+	if !ok {
+		t.Fatal("expected inventory snapshot after unique2 ITEM_USE")
+	}
+	if !reflect.DeepEqual(inventorySnapshot.Inventory, []InventoryItemSnapshot{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}) {
+		t.Fatalf("unique2 ITEM_USE mutated live inventory: %+v", inventorySnapshot.Inventory)
+	}
+
+	persisted, err := accounts.Load("item-use-unique2-partial")
+	if err != nil {
+		t.Fatalf("load persisted unique2 item-use account: %v", err)
+	}
+	wantEquipment := []inventory.ItemInstance{
+		{ID: 221, Vnum: 27001, Count: 3, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+		{ID: 231, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("unique2 ITEM_USE equipment: got %+v want %+v", persisted.Characters[0].Equipment, wantEquipment)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("unique2 ITEM_USE mutated carried inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("unique2 ITEM_USE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 75 {
+		t.Fatalf("unique2 ITEM_USE point value: got %d want 75", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowSlashUseItemConsumesLastUnique2StackWithoutCarriedQuickslotCleanup(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SlashUniqueTwo", 0x010305a8, 0x020405a8, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{
+		{ID: 221, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+		{ID: 231, Vnum: 27001, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
+	}
+	owner.Quickslots = []loginticket.Quickslot{
+		{Position: 2, Type: quickslotproto.TypeItem, Slot: 5},
+		{Position: 3, Type: quickslotproto.TypeSkill, Slot: 5},
+	}
+	issuePeerTicket(t, ticketStore, "slash-item-use-unique2-last", 0x505050a8, owner)
+	if err := accounts.Save(accountstore.Account{Login: "slash-item-use-unique2-last", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed unique2 last-stack slash item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "template consume"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected unique2 last-stack slash runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "slash-item-use-unique2-last", 0x505050a8)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/use_item 98"})))
+	if err != nil {
+		t.Fatalf("unexpected unique2 last-stack slash error: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected unique2 last-stack slash to emit point change, item delete, and info chat, got %d", len(out))
+	}
+	pointChange, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode unique2 last-stack slash point change: %v", err)
+	}
+	if pointChange.VID != owner.VID || pointChange.Type != bootstrapPlayerPointType || pointChange.Amount != 50 || pointChange.Value != 75 {
+		t.Fatalf("unexpected unique2 last-stack slash point change: %+v", pointChange)
+	}
+	itemDel, err := itemproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode unique2 last-stack slash item delete: %v", err)
+	}
+	if itemDel.Position != itemproto.InventoryPosition(98) {
+		t.Fatalf("unexpected unique2 last-stack slash item delete: %+v", itemDel)
+	}
+	infoChat, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[2]))
+	if err != nil {
+		t.Fatalf("decode unique2 last-stack slash info chat: %v", err)
+	}
+	if infoChat.Type != chatproto.ChatTypeInfo || infoChat.VID != 0 || infoChat.Message != "template consume" {
+		t.Fatalf("unexpected unique2 last-stack slash info chat: %+v", infoChat)
+	}
+
+	persisted, err := accounts.Load("slash-item-use-unique2-last")
+	if err != nil {
+		t.Fatalf("load persisted unique2 last-stack slash account: %v", err)
+	}
+	wantEquipment := []inventory.ItemInstance{
+		{ID: 221, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Equipment, wantEquipment) {
+		t.Fatalf("unique2 last-stack slash equipment: got %+v want %+v", persisted.Characters[0].Equipment, wantEquipment)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("unique2 last-stack slash mutated carried inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("unique2 last-stack slash must not delete carried item quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != 75 {
+		t.Fatalf("unique2 last-stack slash point value: got %d want 75", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseRejectsWeaponAndHeadWornCellsWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseOtherWorn", 0x010305a9, 0x020405a9, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{
+		{ID: 251, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon},
+		{ID: 241, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotHead},
+		{ID: 221, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+		{ID: 231, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique2},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-use-other-worn", 0x505050a9, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-other-worn", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed other worn-cell item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume worn weapon"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected other worn-cell item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-other-worn", 0x505050a9)
+	defer closeSessionFlow(t, flow)
+
+	for _, cell := range []uint16{90, 91, 94} {
+		out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(cell)})))
+		if err != nil {
+			t.Fatalf("unexpected worn cell %d ITEM_USE packet error: %v", cell, err)
+		}
+		if len(out) != 0 {
+			t.Fatalf("expected worn cell %d ITEM_USE to emit no frames, got %d", cell, len(out))
+		}
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after other worn-cell ITEM_USE rejection, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("item-use-other-worn")
+	if err != nil {
+		t.Fatalf("load persisted other worn-cell item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Equipment, owner.Equipment) {
+		t.Fatalf("other worn-cell ITEM_USE mutated equipment: got %+v want %+v", persisted.Characters[0].Equipment, owner.Equipment)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Inventory, owner.Inventory) {
+		t.Fatalf("other worn-cell ITEM_USE mutated inventory: got %+v want %+v", persisted.Characters[0].Inventory, owner.Inventory)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Quickslots, owner.Quickslots) {
+		t.Fatalf("other worn-cell ITEM_USE mutated quickslots: got %+v want %+v", persisted.Characters[0].Quickslots, owner.Quickslots)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("other worn-cell ITEM_USE mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
+
+func TestGameSessionFlowItemUseRejectsEmptyUnique2WithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("UseEmptyUniqueTwo", 0x010305aa, 0x020405aa, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 25
+	owner.Inventory = []inventory.ItemInstance{{ID: 108, Vnum: 27001, Count: 4, Slot: 5}}
+	owner.Equipment = []inventory.ItemInstance{
+		{ID: 221, Vnum: 27001, Count: 2, Equipped: true, EquipSlot: inventory.EquipmentSlotUnique1},
+	}
+	issuePeerTicket(t, ticketStore, "item-use-empty-unique2", 0x505050aa, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-use-empty-unique2", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed empty unique2 item-use account: %v", err)
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{{
+		Vnum:      27001,
+		Name:      "Template Potion",
+		Stackable: true,
+		MaxCount:  200,
+		UseEffect: &itemcatalog.UseEffect{PointType: bootstrapPlayerPointType, PointIndex: bootstrapPlayerPointValueIndex, PointDelta: 50, Message: "must not consume empty unique2"},
+	}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected empty unique2 item-use runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-use-empty-unique2", 0x505050aa)
+	defer closeSessionFlow(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{Position: itemproto.InventoryPosition(98)})))
+	if err != nil {
+		t.Fatalf("unexpected empty unique2 ITEM_USE packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected empty unique2 ITEM_USE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after empty unique2 ITEM_USE rejection, got %d", len(queued))
+	}
+
+	persisted, err := accounts.Load("item-use-empty-unique2")
+	if err != nil {
+		t.Fatalf("load persisted empty unique2 item-use account: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.Characters[0].Equipment, owner.Equipment) {
+		t.Fatalf("empty unique2 ITEM_USE mutated equipment: got %+v want %+v", persisted.Characters[0].Equipment, owner.Equipment)
+	}
+	if persisted.Characters[0].Points[bootstrapPlayerPointValueIndex] != owner.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("empty unique2 ITEM_USE mutated point value: got %d want %d", persisted.Characters[0].Points[bootstrapPlayerPointValueIndex], owner.Points[bootstrapPlayerPointValueIndex])
+	}
+}
