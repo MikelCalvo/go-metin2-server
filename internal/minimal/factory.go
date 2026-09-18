@@ -630,12 +630,14 @@ type liveCharacterStateSnapshot struct {
 }
 
 type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
+type liveCharacterCloner func() (loginticket.Character, bool)
 type liveCharacterPersistedSnapshotApplier func(loginticket.Character) bool
 
 type liveCharacterRegistration struct {
 	id                     uint64
 	login                  string
 	snapshotter            liveCharacterStateSnapshotter
+	cloneLiveCharacter     liveCharacterCloner
 	applyPersistedSnapshot liveCharacterPersistedSnapshotApplier
 }
 
@@ -3874,8 +3876,8 @@ func (r *gameRuntime) PointsSnapshot(name string) (CharacterPointsSnapshot, bool
 	return CharacterPointsSnapshot{Name: state.Name, Points: state.Points}, true
 }
 
-func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
-	if r == nil || snapshotter == nil {
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, cloneLiveCharacter liveCharacterCloner, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
+	if r == nil || snapshotter == nil || cloneLiveCharacter == nil {
 		return 0
 	}
 	name = normalizeLiveCharacterName(name)
@@ -3893,6 +3895,7 @@ func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string
 		id:                     registrationID,
 		login:                  strings.TrimSpace(login),
 		snapshotter:            snapshotter,
+		cloneLiveCharacter:     cloneLiveCharacter,
 		applyPersistedSnapshot: applyPersistedSnapshot,
 	}
 	return registrationID
@@ -3976,6 +3979,23 @@ func (r *gameRuntime) liveCharacterLogin(name string) (string, bool) {
 		return "", false
 	}
 	return registration.login, true
+}
+
+func (r *gameRuntime) liveCharacterClone(name string) (loginticket.Character, bool) {
+	if r == nil {
+		return loginticket.Character{}, false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return loginticket.Character{}, false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || registration.cloneLiveCharacter == nil {
+		return loginticket.Character{}, false
+	}
+	return registration.cloneLiveCharacter()
 }
 
 func normalizeLiveCharacterName(name string) string {
@@ -5459,6 +5479,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					return liveCharacterStateSnapshot{}, false
 				}
 				return buildLiveCharacterStateSnapshot(current), true
+			}, func() (loginticket.Character, bool) {
+				stateMu.Lock()
+				defer stateMu.Unlock()
+				if !hasSelected || selectedPlayer == nil {
+					return loginticket.Character{}, false
+				}
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 || normalizeLiveCharacterName(current.Name) != name {
+					return loginticket.Character{}, false
+				}
+				return current, true
 			}, func(updated loginticket.Character) bool {
 				stateMu.Lock()
 				defer stateMu.Unlock()
@@ -9050,7 +9081,13 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
 					}
-					return gameflow.ItemGiveResult{Accepted: false}
+					frames, ok := applyVisiblePlayerItemGive(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, packet, template)
+					if !ok {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
+					refreshLiveCharacterRegistration()
+					frames = prependExchangeCloseFrame(frames)
+					return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
 				},
 				HandleItemExchange: func(packet itemproto.ClientExchangePacket) gameflow.ItemExchangeResult {
 					stateMu.Lock()
@@ -10662,6 +10699,177 @@ func selectedCharacterSnapshotByIDUpdate(characters []loginticket.Character, cha
 
 func cloneCharacters(characters []loginticket.Character) []loginticket.Character {
 	return loginticket.CloneCharacters(characters)
+}
+
+func sharedWorldPlayerByVID(sharedWorld *sharedWorldRegistry, vid uint32) (worldruntime.PlayerEntity, bool) {
+	if sharedWorld == nil || sharedWorld.entities == nil || vid == 0 {
+		return worldruntime.PlayerEntity{}, false
+	}
+	return sharedWorld.entities.PlayerByVID(vid)
+}
+
+func applyVisiblePlayerItemGive(
+	runtime *gameRuntime,
+	accounts accountstore.Store,
+	sharedWorld *sharedWorldRegistry,
+	selectedPlayer *player.Runtime,
+	sessionTicket *loginticket.Ticket,
+	originID uint64,
+	packet itemproto.ClientGivePacket,
+	template itemcatalog.Template,
+) ([][]byte, bool) {
+	if runtime == nil || accounts == nil || sharedWorld == nil || sharedWorld.entities == nil || selectedPlayer == nil || sessionTicket == nil || originID == 0 {
+		return nil, false
+	}
+	if packet.TargetVID == 0 || packet.Count == 0 || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+		return nil, false
+	}
+	if !itemcatalog.ValidTemplate(template) || template.Vnum == 0 {
+		return nil, false
+	}
+	if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || template.EquipSlot != "" {
+		return nil, false
+	}
+	slot := inventory.SlotIndex(packet.Position.Cell)
+	count := uint16(packet.Count)
+	previousGiver := selectedPlayer.LiveCharacter()
+	if previousGiver.ID == 0 || characterAtBootstrapHPFloor(previousGiver) || previousGiver.VID == packet.TargetVID {
+		return nil, false
+	}
+	source, ok := carriedInventoryItemForSlot(previousGiver, slot)
+	if !ok || source.ID == 0 || source.Vnum != template.Vnum || source.Count != count || source.Count == 0 || source.Count > template.MaxCount {
+		return nil, false
+	}
+	if !selectedPlayer.CanUseTemplate(template) {
+		return nil, false
+	}
+	if !sharedWorld.HasVisiblePlayerTarget(originID, packet.TargetVID) {
+		return nil, false
+	}
+	if sharedWorld.hasActiveExchange(originID) {
+		return nil, false
+	}
+	target, ok := sharedWorldPlayerByVID(sharedWorld, packet.TargetVID)
+	if !ok || target.Entity.ID == 0 || target.Entity.ID == originID || target.Character.ID == 0 || characterAtBootstrapHPFloor(target.Character) {
+		return nil, false
+	}
+	if !sharedWorld.HasLiveSession(target.Entity.ID) {
+		return nil, false
+	}
+	peerLogin, ok := runtime.liveCharacterLogin(target.Character.Name)
+	if !ok {
+		return nil, false
+	}
+	peerCharacter, ok := runtime.liveCharacterClone(target.Character.Name)
+	if !ok || peerCharacter.ID == 0 || peerCharacter.ID != target.Character.ID || characterAtBootstrapHPFloor(peerCharacter) {
+		return nil, false
+	}
+	if normalizeLiveCharacterName(peerCharacter.Name) != normalizeLiveCharacterName(target.Character.Name) {
+		return nil, false
+	}
+	transferred, ok := droppedInventoryItem(previousGiver, slot, count)
+	if !ok {
+		return nil, false
+	}
+	dropResult, ok := selectedPlayer.DropInventoryItemWithTemplate(slot, count, template)
+	if !ok || !dropResult.Changed || dropResult.FromOccupied {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	pickupMaxCount := uint16(0)
+	if template.Stackable {
+		pickupMaxCount = template.MaxCount
+	}
+	peerRuntime := player.NewRuntime(peerCharacter, player.SessionLink{Login: peerLogin})
+	if !peerRuntime.CanUseTemplate(template) {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	pickupResult, ok := peerRuntime.PickupGroundItem(transferred, transferred.Slot, pickupMaxCount)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	giverFrames, err := itemDropInventoryResultFramesWithTemplates(dropResult, runtime.itemTemplates)
+	if err != nil || len(giverFrames) == 0 {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if len(quickslotFrames) != 0 {
+		giverFrames = append(giverFrames, quickslotFrames...)
+	}
+	peerItemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult, runtime.itemTemplates)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	getFrame, err := encodeBootstrapItemGetFrame(pickupResult.Item)
+	if err != nil {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	peerFrames := append(append([][]byte(nil), peerItemFrames...), getFrame)
+	updatedGiver := selectedPlayer.LiveCharacter()
+	updatedPeer := peerRuntime.LiveCharacter()
+	if updatedGiver.ID == 0 || updatedPeer.ID == 0 || updatedPeer.ID != target.Character.ID {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	persistedGiver := selectedPlayer.PersistedSnapshot()
+	if persistedGiver.ID == 0 || persistedGiver.ID != updatedGiver.ID {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	persistedGiver.Gold = updatedGiver.Gold
+	persistedGiver.Inventory = updatedGiver.Inventory
+	persistedGiver.Equipment = updatedGiver.Equipment
+	persistedGiver.Quickslots = updatedGiver.Quickslots
+	giverAccount, err := accounts.Load(sessionTicket.Login)
+	if err != nil {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	peerAccount, err := accounts.Load(peerLogin)
+	if err != nil {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	updatedGiverCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedGiver)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	updatedPeerCharacters, ok := selectedCharacterSnapshotByIDUpdate(peerAccount.Characters, target.Character.ID, updatedPeer)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, giverAccount.Login, giverAccount.Empire, updatedGiverCharacters) {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, peerAccount.Login, peerAccount.Empire, updatedPeerCharacters) {
+		_ = saveAccountSnapshot(accounts, giverAccount.Login, giverAccount.Empire, giverAccount.Characters)
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if !runtime.applyLiveCharacterPersistedSnapshot(target.Character.Name, updatedPeer) {
+		_ = saveAccountSnapshot(accounts, giverAccount.Login, giverAccount.Empire, giverAccount.Characters)
+		_ = saveAccountSnapshot(accounts, peerAccount.Login, peerAccount.Empire, peerAccount.Characters)
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	sharedWorld.UpdateCharacterWithVisibilityTransition(target.Entity.ID, target.Character, updatedPeer, nil)
+	_ = sharedWorld.EnqueueToEntity(target.Entity.ID, peerFrames)
+	sessionTicket.Characters = updatedGiverCharacters
+	selectedPlayer.SetPersistedSnapshot(persistedGiver)
+	sharedWorld.UpdateCharacterWithVisibilityTransition(originID, previousGiver, updatedGiver, nil)
+	return giverFrames, true
 }
 
 func applyMyShopGuestBuy(

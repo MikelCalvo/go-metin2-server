@@ -16,6 +16,343 @@ import (
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 )
 
+func TestGameRuntimeItemGivePlacesWholeStackOnVisiblePeer(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveRuntimeOwner", 0x01030d80, 0x02040d80, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1808, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("GiveRuntimePeer", 0x01030d81, 0x02040d81, 1120, 2120, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 1809, Vnum: 27002, Count: 1, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-give-runtime-owner", 0x70707d80, owner)
+	issuePeerTicket(t, ticketStore, "item-give-runtime-peer", 0x70707d81, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-runtime-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-give runtime owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-runtime-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed item-give runtime peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-give runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-runtime-owner", 0x70707d80)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-runtime-peer", 0x70707d81)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: peer.VID, Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected accepted item-give packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected accepted ITEM_GIVE to emit ITEM_DEL plus QUICKSLOT_DEL, got %d", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode giver ITEM_DEL: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected giver ITEM_DEL: %+v", del.Position)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode giver QUICKSLOT_DEL: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("unexpected giver QUICKSLOT_DEL: %+v", quickslotDel)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected giver to queue no extra frames after accepted ITEM_GIVE, got %d", len(queued))
+	}
+	queued := flushServerFrames(t, peerFlow)
+	if len(queued) != 2 {
+		t.Fatalf("expected recipient to receive ITEM_SET plus ITEM_GET, got %d", len(queued))
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("decode recipient ITEM_SET: %v", err)
+	}
+	if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27001 || set.Count != 3 {
+		t.Fatalf("unexpected recipient ITEM_SET: %+v", set)
+	}
+	got, err := itemproto.DecodeGet(decodeSingleFrame(t, queued[1]))
+	if err != nil {
+		t.Fatalf("decode recipient ITEM_GET: %v", err)
+	}
+	if got.Vnum != 27001 || got.Count != 3 || got.Arg != itemproto.GetArgNormal || got.FromName != "" {
+		t.Fatalf("unexpected recipient ITEM_GET: %+v", got)
+	}
+
+	wantOwner := owner
+	wantOwner.Inventory = nil
+	wantOwner.Quickslots = nil
+	wantPeer := peer
+	wantPeer.Inventory = []inventory.ItemInstance{
+		{ID: 1808, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1809, Vnum: 27002, Count: 1, Slot: 6},
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-runtime-owner", wantOwner, "accepted ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-give-runtime-peer", wantPeer, "accepted ITEM_GIVE peer")
+	assertExchangeLiveStateUnchanged(t, runtime, wantOwner, "accepted ITEM_GIVE live owner")
+	assertExchangeLiveStateUnchanged(t, runtime, wantPeer, "accepted ITEM_GIVE live peer")
+}
+
+func TestGameRuntimeItemGivePlacesWholeStackPreservesInstanceSocketsAndAttributes(t *testing.T) {
+	giverSockets := inventory.SocketValues{11, 0, -3}
+	giverAttributes := inventory.AttributeValues{{Type: 4, Value: 55}, {Type: 9, Value: -7}}
+	peerBagSockets := inventory.SocketValues{21, 22, 0}
+	peerBagAttributes := inventory.AttributeValues{{Type: 2, Value: 8}}
+	peerEquipSockets := inventory.SocketValues{7, 0, 9}
+	peerEquipAttributes := inventory.AttributeValues{{Type: 1, Value: 25}, {Type: 7, Value: -3}}
+	zeroSockets := inventory.SocketValues{}
+	zeroAttributes := inventory.AttributeValues{}
+
+	cases := []struct {
+		name              string
+		giverSockets      *inventory.SocketValues
+		giverAttributes   *inventory.AttributeValues
+		peerBagSockets    *inventory.SocketValues
+		peerBagAttributes *inventory.AttributeValues
+		wantWireSockets   [itemproto.ItemSocketCount]int32
+		wantWireAttr0     itemproto.Attribute
+		wantWireAttr1     itemproto.Attribute
+	}{
+		{
+			name:              "active sockets and attributes",
+			giverSockets:      &giverSockets,
+			giverAttributes:   &giverAttributes,
+			peerBagSockets:    &peerBagSockets,
+			peerBagAttributes: &peerBagAttributes,
+			wantWireSockets:   [itemproto.ItemSocketCount]int32{11, 0, -3},
+			wantWireAttr0:     itemproto.Attribute{Type: 4, Value: 55},
+			wantWireAttr1:     itemproto.Attribute{Type: 9, Value: -7},
+		},
+		{
+			name:            "explicit zero sockets and attributes",
+			giverSockets:    &zeroSockets,
+			giverAttributes: &zeroAttributes,
+			peerBagSockets:  &zeroSockets,
+			wantWireSockets: [itemproto.ItemSocketCount]int32{},
+		},
+		{
+			name:            "omitted presence keeps template fallback on the transferred stack",
+			wantWireSockets: [itemproto.ItemSocketCount]int32{-11, 202, -303},
+			wantWireAttr0:   itemproto.Attribute{Type: 12, Value: 34},
+			wantWireAttr1:   itemproto.Attribute{Type: 15, Value: -9},
+		},
+	}
+
+	for i, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("GivePreserveOwner", 0x01030d90+uint32(i), 0x02040d90+uint32(i), 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{
+				ID: 1820, Vnum: 27001, Count: 3, Slot: 5,
+				Sockets: tc.giverSockets, Attributes: tc.giverAttributes,
+			}}
+			peer := peerVisibilityCharacter("GivePreservePeer", 0x01030d94+uint32(i), 0x02040d94+uint32(i), 1120, 2120, 0, 101, 201)
+			peer.Inventory = []inventory.ItemInstance{{
+				ID: 1821, Vnum: 27002, Count: 1, Slot: 6,
+				Sockets: tc.peerBagSockets, Attributes: tc.peerBagAttributes,
+			}}
+			peer.Equipment = []inventory.ItemInstance{{
+				ID: 1822, Vnum: 12200, Count: 1, Equipped: true, EquipSlot: inventory.EquipmentSlotWeapon,
+				Sockets: &peerEquipSockets, Attributes: &peerEquipAttributes,
+			}}
+			ownerLogin := "item-give-preserve-owner-" + string(rune('a'+i))
+			peerLogin := "item-give-preserve-peer-" + string(rune('a'+i))
+			ownerKey := uint32(0x70707d90 + i)
+			peerKey := uint32(0x70707d94 + i)
+			issuePeerTicket(t, ticketStore, ownerLogin, ownerKey, owner)
+			issuePeerTicket(t, ticketStore, peerLogin, peerKey, peer)
+			if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed preserve item-give owner account: %v", err)
+			}
+			if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+				t.Fatalf("seed preserve item-give peer account: %v", err)
+			}
+			itemStore := newItemTemplateStore(t, []itemcatalog.Template{
+				{Vnum: 11200, Name: "Wooden Sword", Stackable: false, MaxCount: 1, EquipSlot: inventory.EquipmentSlotWeapon.String()},
+				{
+					Vnum:      12200,
+					Name:      "Practice Blade",
+					Stackable: false,
+					MaxCount:  1,
+					EquipSlot: inventory.EquipmentSlotWeapon.String(),
+					Sockets:   itemcatalog.SocketValues{1, 2, 3},
+					Attributes: itemcatalog.AttributeValues{
+						{Type: 3, Value: 30},
+					},
+				},
+				{
+					Vnum:       27001,
+					Name:       "Small Red Potion",
+					Stackable:  true,
+					MaxCount:   200,
+					Sockets:    itemcatalog.SocketValues{-11, 202, -303},
+					Attributes: itemcatalog.AttributeValues{{Type: 12, Value: 34}, {Type: 15, Value: -9}},
+				},
+				{
+					Vnum:       27002,
+					Name:       "Peer Potion",
+					Stackable:  true,
+					MaxCount:   200,
+					Sockets:    itemcatalog.SocketValues{41, 42, 43},
+					Attributes: itemcatalog.AttributeValues{{Type: 8, Value: 44}},
+				},
+			})
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+			if err != nil {
+				t.Fatalf("unexpected preserve item-give runtime error: %v", err)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, ownerKey)
+			defer closeSessionFlow(t, flow)
+			peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, peerKey)
+			defer closeSessionFlow(t, peerFlow)
+			_ = flushServerFrames(t, flow)
+			_ = flushServerFrames(t, peerFlow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: peer.VID, Position: itemproto.InventoryPosition(5), Count: 3})))
+			if err != nil {
+				t.Fatalf("unexpected preserve item-give packet error: %v", err)
+			}
+			if len(out) != 1 {
+				t.Fatalf("expected preserve ITEM_GIVE to emit ITEM_DEL, got %d", len(out))
+			}
+			queued := flushServerFrames(t, peerFlow)
+			if len(queued) != 2 {
+				t.Fatalf("expected preserve recipient to receive ITEM_SET plus ITEM_GET, got %d", len(queued))
+			}
+			set, err := itemproto.DecodeSet(decodeSingleFrame(t, queued[0]))
+			if err != nil {
+				t.Fatalf("decode preserve recipient ITEM_SET: %v", err)
+			}
+			if set.Position != itemproto.InventoryPosition(5) || set.Vnum != 27001 || set.Count != 3 {
+				t.Fatalf("unexpected preserve recipient ITEM_SET: %+v", set)
+			}
+			if set.Sockets != tc.wantWireSockets {
+				t.Fatalf("expected preserve recipient ITEM_SET sockets %+v, got %+v", tc.wantWireSockets, set.Sockets)
+			}
+			if set.Attributes[0] != tc.wantWireAttr0 || set.Attributes[1] != tc.wantWireAttr1 {
+				t.Fatalf("expected preserve recipient ITEM_SET attributes %+v %+v, got %+v", tc.wantWireAttr0, tc.wantWireAttr1, set.Attributes)
+			}
+
+			ownerAccount, err := accounts.Load(ownerLogin)
+			if err != nil {
+				t.Fatalf("load preserve owner account: %v", err)
+			}
+			persistedOwner := findPersistedCharacter(t, ownerAccount, owner.Name)
+			if len(persistedOwner.Inventory) != 0 {
+				t.Fatalf("expected preserve owner inventory empty after give, got %+v", persistedOwner.Inventory)
+			}
+
+			peerAccount, err := accounts.Load(peerLogin)
+			if err != nil {
+				t.Fatalf("load preserve peer account: %v", err)
+			}
+			persistedPeer := findPersistedCharacter(t, peerAccount, peer.Name)
+			if len(persistedPeer.Inventory) != 2 {
+				t.Fatalf("unexpected preserve peer inventory after give: %+v", persistedPeer.Inventory)
+			}
+			var gotGiven, gotKept inventory.ItemInstance
+			for _, item := range persistedPeer.Inventory {
+				switch item.ID {
+				case 1820:
+					gotGiven = item
+				case 1821:
+					gotKept = item
+				}
+			}
+			if gotGiven.ID != 1820 || gotGiven.Vnum != 27001 || gotGiven.Count != 3 || gotGiven.Slot != 5 {
+				t.Fatalf("unexpected preserve transferred stack: %+v", gotGiven)
+			}
+			assertGiveInstancePresence(t, gotGiven, tc.giverSockets, tc.giverAttributes, "transferred stack")
+			if gotKept.ID != 1821 || gotKept.Vnum != 27002 || gotKept.Count != 1 || gotKept.Slot != 6 {
+				t.Fatalf("unexpected preserve peer remaining stack: %+v", gotKept)
+			}
+			assertGiveInstancePresence(t, gotKept, tc.peerBagSockets, tc.peerBagAttributes, "recipient remaining stack")
+			if len(persistedPeer.Equipment) != 1 || persistedPeer.Equipment[0].ID != 1822 || persistedPeer.Equipment[0].Vnum != 12200 || persistedPeer.Equipment[0].EquipSlot != inventory.EquipmentSlotWeapon {
+				t.Fatalf("unexpected preserve peer equipment after give: %+v", persistedPeer.Equipment)
+			}
+			assertGiveInstancePresence(t, persistedPeer.Equipment[0], &peerEquipSockets, &peerEquipAttributes, "recipient equipment")
+		})
+	}
+}
+
+func assertGiveInstancePresence(t *testing.T, got inventory.ItemInstance, wantSockets *inventory.SocketValues, wantAttributes *inventory.AttributeValues, context string) {
+	t.Helper()
+	if (wantSockets != nil) != got.HasSockets() {
+		t.Fatalf("%s HasSockets=%v want %v", context, got.HasSockets(), wantSockets != nil)
+	}
+	if wantSockets != nil {
+		if got.Sockets == nil || *got.Sockets != *wantSockets {
+			t.Fatalf("expected %s sockets %+v, got %#v", context, *wantSockets, got.Sockets)
+		}
+	} else if got.Sockets != nil {
+		t.Fatalf("expected omitted %s sockets, got %#v", context, got.Sockets)
+	}
+	if (wantAttributes != nil) != got.HasAttributes() {
+		t.Fatalf("%s HasAttributes=%v want %v", context, got.HasAttributes(), wantAttributes != nil)
+	}
+	if wantAttributes != nil {
+		if got.Attributes == nil || *got.Attributes != *wantAttributes {
+			t.Fatalf("expected %s attributes %+v, got %#v", context, *wantAttributes, got.Attributes)
+		}
+	} else if got.Attributes != nil {
+		t.Fatalf("expected omitted %s attributes, got %#v", context, got.Attributes)
+	}
+}
+
+func TestGameRuntimeItemGiveFailsClosedWhenPeerInventoryIsFull(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveFullOwner", 0x01030d82, 0x02040d82, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1810, Vnum: 27001, Count: 3, Slot: 5}}
+	peer := peerVisibilityCharacter("GiveFullPeer", 0x01030d83, 0x02040d83, 1120, 2120, 0, 101, 201)
+	peer.Inventory = make([]inventory.ItemInstance, 0, int(inventory.CarriedInventorySlotCount))
+	for slot := inventory.SlotIndex(0); slot < inventory.CarriedInventorySlotCount; slot++ {
+		peer.Inventory = append(peer.Inventory, inventory.ItemInstance{ID: 2000 + uint64(slot), Vnum: 40000 + uint32(slot), Count: 1, Slot: slot})
+	}
+	issuePeerTicket(t, ticketStore, "item-give-full-owner", 0x70707d82, owner)
+	issuePeerTicket(t, ticketStore, "item-give-full-peer", 0x70707d83, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-full-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed full-inventory item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-full-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed full-inventory item-give peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected full-inventory item-give runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-full-owner", 0x70707d82)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-full-peer", 0x70707d83)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: peer.VID, Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected full-inventory item-give packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected full-inventory ITEM_GIVE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued giver frames after full-inventory ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected no queued peer frames after full-inventory ITEM_GIVE, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-full-owner", owner, "full-inventory ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-give-full-peer", peer, "full-inventory ITEM_GIVE peer")
+}
+
 func TestGameRuntimeItemGiveFailsClosedWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())
