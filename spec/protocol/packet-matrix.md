@@ -112,7 +112,8 @@ There is **no** dedicated `HEADER_CG/GC_CUBE` in the TMP4-compatible client. Lab
 - owned: `/cube make all` loops the one-attempt make path while each attempt succeeds and stops on the first fail-roll / always-fail `percent = 0` or pre-mutation reject (`docs/plans/2026-08-26-cube-make-all-loop.md`)
 - owned: store-accepted `percent = 0` always-fail consume without drawing a roll (`docs/plans/2026-08-26-cube-make-percent-0-always-fail.md`)
 - owned: `/cube list` bound-slot INFO dump + `/cube cancel` / `/cube close` aliases of `/close_cube` (`docs/plans/2026-08-26-cube-list-cancel.md`)
-- deferred: complicated OR-materials / binary cube headers
+- owned: one authored OR-material companion (`material_options`) beside already-owned `r_info` / `m_info` / `add` / `make` — `cube m_info` joins AND-groups with `|`; `/cube make` consumes the first covering alternative (`spec/protocol/item-cube-bootstrap.md`)
+- deferred: binary cube headers / name-level merge of alternate recipes / full `cube.txt` complicated-material parity
 
 ## Items, inventory, and equipment
 

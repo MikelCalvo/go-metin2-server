@@ -5044,6 +5044,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		cubeInfoCommandFrames := func(selected *player.Runtime) [][]byte {
 			recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
 			gold := uint64(0)
+			// MatchSimpleRecipeGold covers a simple AND-list or the first
+			// covering authored OR-material group for this NPC.
 			if matchedGold, ok := cubestore.MatchSimpleRecipeGold(recipes, boundCubeMaterials(selected)); ok {
 				gold = matchedGold
 			}
@@ -7684,6 +7686,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							attemptCubeMake := func() (frames [][]byte, continueLoop bool) {
 								recipes := cubestore.RecipesForNPC(runtime.cubeRecipes, activeCubeNPCVnum)
+								// MatchSimpleRecipe copies the covering simple AND-list or
+								// first covering OR-material group into recipe.Materials so
+								// consumeBoundCubeMaterials spends only that alternative.
 								recipe, matched := cubestore.MatchSimpleRecipe(recipes, boundCubeMaterials(selectedPlayer))
 								if !matched {
 									return [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
