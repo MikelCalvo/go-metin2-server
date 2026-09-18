@@ -4878,6 +4878,134 @@ func TestCanonicalizeExpandsAuthoringRegenSpawnsIntoSpawnGroups(t *testing.T) {
 	}
 }
 
+func TestRegenRespawnDelayMsStayAuthoringOnlyOnOneCountRef(t *testing.T) {
+	authored := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:            "practice.legacy_regen_timer",
+		Name:           "LegacyRegenTimer",
+		MapIndex:       42,
+		X:              1700,
+		Y:              2800,
+		RaceNum:        20350,
+		Count:          1,
+		RespawnDelayMs: 4000,
+	}}}
+	overlay := RegenRespawnDelayMsBySpawnGroupRef(authored)
+	if overlay["practice.legacy_regen_timer"] != 4000 || len(overlay) != 1 {
+		t.Fatalf("expected authored overlay on practice.legacy_regen_timer, got %#v", overlay)
+	}
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize opt-in one-count regen timer: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to stay authoring-only after canonicalize, got %+v", canonical.RegenSpawns)
+	}
+	if got := RegenRespawnDelayMsBySpawnGroupRef(canonical); len(got) != 0 {
+		t.Fatalf("expected canonical bundle to drop regen timer overlay, got %#v", got)
+	}
+	if len(canonical.SpawnGroups) != 1 || canonical.SpawnGroups[0].Ref != "practice.legacy_regen_timer" {
+		t.Fatalf("expected one-count overlay to keep authored ref, got %+v", canonical.SpawnGroups)
+	}
+}
+
+func TestRegenRespawnDelayMsCopiesOntoEveryMultiCountMember(t *testing.T) {
+	authored := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:         "practice.legacy_regen_timer_pack",
+		Name:        "LegacyRegenTimerPack",
+		MapIndex:    42,
+		X:           1700,
+		Y:           2800,
+		RaceNum:     20350,
+		Count:       2,
+		PackSpacing: 100,
+		RegenTimeMs: 4000,
+	}}}
+	overlay := RegenRespawnDelayMsBySpawnGroupRef(authored)
+	if overlay["practice.legacy_regen_timer_pack.m01"] != 4000 || overlay["practice.legacy_regen_timer_pack.m02"] != 4000 || len(overlay) != 2 {
+		t.Fatalf("expected overlay copied onto every {ref}.mNN member, got %#v", overlay)
+	}
+	if _, ok := overlay["practice.legacy_regen_timer_pack"]; ok {
+		t.Fatalf("expected multi-count overlay not to keep the unsuffixed pack prefix, got %#v", overlay)
+	}
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize opt-in multi-count regen timer: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to stay authoring-only after canonicalize, got %+v", canonical.RegenSpawns)
+	}
+	if got := RegenRespawnDelayMsBySpawnGroupRef(canonical); len(got) != 0 {
+		t.Fatalf("expected canonical bundle to drop regen timer overlay, got %#v", got)
+	}
+}
+
+func TestRegenRespawnDelayMsAcceptsAgreeingTimeAliasesAndOmitsZero(t *testing.T) {
+	agreeing := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:            "practice.legacy_regen_timer_alias",
+		Name:           "LegacyRegenTimerAlias",
+		MapIndex:       42,
+		X:              1700,
+		Y:              2800,
+		RaceNum:        20350,
+		Count:          1,
+		Time:           4000,
+		RegenTimeMs:    4000,
+		RespawnDelayMs: 4000,
+	}}}
+	overlay := RegenRespawnDelayMsBySpawnGroupRef(agreeing)
+	if overlay["practice.legacy_regen_timer_alias"] != 4000 || len(overlay) != 1 {
+		t.Fatalf("expected agreeing time aliases to share one overlay delay, got %#v", overlay)
+	}
+	if _, err := Canonicalize(agreeing); err != nil {
+		t.Fatalf("canonicalize agreeing regen timer aliases: %v", err)
+	}
+	omitted := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:      "practice.legacy_regen_timer_zero",
+		Name:     "LegacyRegenTimerZero",
+		MapIndex: 42,
+		X:        1700,
+		Y:        2800,
+		RaceNum:  20350,
+		Count:    1,
+	}}}
+	if got := RegenRespawnDelayMsBySpawnGroupRef(omitted); len(got) != 0 {
+		t.Fatalf("expected omitted/zero overlay to keep the profile clock, got %#v", got)
+	}
+}
+
+func TestCanonicalizeRejectsConflictingRegenTimerAliases(t *testing.T) {
+	_, err := Canonicalize(Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:         "practice.legacy_regen_timer_conflict",
+		Name:        "LegacyRegenTimerConflict",
+		MapIndex:    42,
+		X:           1700,
+		Y:           2800,
+		RaceNum:     20350,
+		Count:       1,
+		Time:        4000,
+		RegenTimeMs: 5000,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting regen timer aliases, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsInvalidRegenRespawnDelayMs(t *testing.T) {
+	_, err := Canonicalize(Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:            "practice.legacy_regen_timer_invalid",
+		Name:           "LegacyRegenTimerInvalid",
+		MapIndex:       42,
+		X:              1700,
+		Y:              2800,
+		RaceNum:        20350,
+		Count:          1,
+		RespawnDelayMs: -1,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for invalid regen respawn_delay_ms, got %v", err)
+	}
+}
+
 func TestCanonicalizeExpandsOneCountRegenRectangleIntoSpawnGroup(t *testing.T) {
 	bundle, err := Canonicalize(Bundle{
 		RegenSpawns: []RegenSpawn{{

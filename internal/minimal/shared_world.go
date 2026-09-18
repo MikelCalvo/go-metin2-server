@@ -55,6 +55,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatRespawnAt        map[uint64]time.Time
 	syncRespawnPrefixes               map[string]struct{}
 	sharedHPPrefixes                  map[string]struct{}
+	regenRespawnDelayMs               map[string]int64
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
@@ -436,6 +437,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatRespawnAt:         make(map[uint64]time.Time),
 		syncRespawnPrefixes:                make(map[string]struct{}),
 		sharedHPPrefixes:                   make(map[string]struct{}),
+		regenRespawnDelayMs:                make(map[string]int64),
 		staticActorCombatSnapshot:          make(map[uint64]uint64),
 		staticActorCombatEngagedBy:         make(map[uint64]uint64),
 		staticActorProximityAggroSuppress:  make(map[uint64]map[uint64]struct{}),
@@ -2178,6 +2180,17 @@ func cloneStringSet(in map[string]struct{}) map[string]struct{} {
 	return out
 }
 
+func cloneInt64Map(in map[string]int64) map[string]int64 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func cloneStaticActorDeathRewardMap(in map[uint64]worldruntime.StaticActorDeathReward) map[uint64]worldruntime.StaticActorDeathReward {
 	if len(in) == 0 {
 		return nil
@@ -2452,6 +2465,10 @@ func (r *sharedWorldRegistry) scheduleStaticActorCombatRespawnLocked(actor world
 		return
 	}
 	delay, ok := worldruntime.BootstrapStaticActorRespawnDelay(actor.CombatKind)
+	if overlayDelay, overlayOK := r.optInRegenRespawnDelayLocked(actor.SpawnGroupRef); overlayOK {
+		delay = overlayDelay
+		ok = true
+	}
 	if !ok || delay <= 0 {
 		if r.staticActorCombatRespawnAt != nil {
 			delete(r.staticActorCombatRespawnAt, actor.Entity.ID)
@@ -2503,6 +2520,35 @@ func (r *sharedWorldRegistry) sharedHPPrefixesSnapshot() map[string]struct{} {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneStringSet(r.sharedHPPrefixes)
+}
+
+func (r *sharedWorldRegistry) replaceRegenRespawnDelayMs(delays map[string]int64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.regenRespawnDelayMs = cloneInt64Map(delays)
+}
+
+func (r *sharedWorldRegistry) regenRespawnDelayMsSnapshot() map[string]int64 {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneInt64Map(r.regenRespawnDelayMs)
+}
+
+func (r *sharedWorldRegistry) optInRegenRespawnDelayLocked(spawnGroupRef string) (time.Duration, bool) {
+	if r == nil || spawnGroupRef == "" || len(r.regenRespawnDelayMs) == 0 {
+		return 0, false
+	}
+	delayMs, ok := r.regenRespawnDelayMs[spawnGroupRef]
+	if !ok {
+		return 0, false
+	}
+	return worldruntime.StaticActorCombatProfileRespawnDelay(delayMs)
 }
 
 // alignOptInPackSyncRespawnLocked keeps one-count refs and live siblings on
