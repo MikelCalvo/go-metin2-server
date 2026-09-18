@@ -353,6 +353,10 @@ func InventoryPosition(cell uint16) Position {
 	return Position{WindowType: WindowInventory, Cell: cell}
 }
 
+func MallPosition(cell uint16) Position {
+	return Position{WindowType: WindowMall, Cell: cell}
+}
+
 func CarriedInventoryPosition(cell uint16) (Position, error) {
 	if cell >= InventoryMaxCell {
 		return Position{}, ErrInventoryCellRange

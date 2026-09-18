@@ -3194,3 +3194,268 @@ func TestGameRuntimeCloseMallClearsOpenPresentationWithoutFrames(t *testing.T) {
 	}
 	assertExchangeAccountUnchanged(t, accounts, login, owner, "open-mall after close")
 }
+
+func TestGameRuntimeMallItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallMove", 0x010309c8, 0x020409c8, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1808, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-mall-move"
+	issuePeerTicket(t, ticketStore, login, 0x707079c8, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-mall item-move owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-mall item-move runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1907, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c8)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before mall item-move: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_mall before mall item-move to emit MALL_OPEN plus one MALL_SET, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.MallPosition(0),
+		Destination: itemproto.MallPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted mall item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected accepted mall item-move to emit MALL_DEL and MALL_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeMallDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode mall item-move MALL_DEL: %v", err)
+	}
+	if del.Position != itemproto.MallPosition(0) {
+		t.Fatalf("unexpected mall item-move MALL_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeMallSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode mall item-move MALL_SET: %v", err)
+	}
+	if set.Position != itemproto.MallPosition(3) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected mall item-move MALL_SET: %+v", set)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected accepted mall item-move to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "accepted mall item-move owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "accepted mall item-move live owner")
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall reopen after mall item-move error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_mall reopen after mall item-move to emit MALL_OPEN plus remembered MALL_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeMallSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen MALL_SET after mall item-move: %v", err)
+	}
+	if reopenSet != set {
+		t.Fatalf("unexpected reopen MALL_SET after mall item-move: %+v want %+v", reopenSet, set)
+	}
+}
+
+func TestGameRuntimeMallItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ClosedMallMove", 0x010309c9, 0x020409c9, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4343
+	owner.Inventory = []inventory.ItemInstance{{ID: 1809, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "closed-mall-move"
+	issuePeerTicket(t, ticketStore, login, 0x707079c9, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed closed mall item-move owner account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected closed mall item-move runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1908, Vnum: 27001, Count: 2, Slot: 0},
+		1: {ID: 1909, Vnum: 27002, Count: 1, Slot: 1},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079c9)
+	defer closeSessionFlow(t, flow)
+
+	closedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.MallPosition(0),
+		Destination: itemproto.MallPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed mall item-move error: %v", err)
+	}
+	if len(closedOut) != 0 {
+		t.Fatalf("expected closed mall item-move to emit no frames, got %d", len(closedOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "closed mall item-move")
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before bad mall item-move error: %v", err)
+	}
+	if len(openOut) != 3 {
+		t.Fatalf("expected /open_mall before bad mall item-move to emit MALL_OPEN plus two MALL_SET rows, got %d", len(openOut))
+	}
+
+	cases := []struct {
+		name   string
+		packet itemproto.ClientMovePacket
+	}{
+		{
+			name: "inventory windows",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.MallPosition(3),
+				Count:       0,
+			},
+		},
+		{
+			name: "mixed mall and inventory windows",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.MallPosition(0),
+				Destination: itemproto.InventoryPosition(9),
+				Count:       0,
+			},
+		},
+		{
+			name: "same cell",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.MallPosition(0),
+				Destination: itemproto.MallPosition(0),
+				Count:       0,
+			},
+		},
+		{
+			name: "out of range",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.MallPosition(0),
+				Destination: itemproto.MallPosition(5),
+				Count:       0,
+			},
+		},
+		{
+			name: "oversize count",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.MallPosition(0),
+				Destination: itemproto.MallPosition(3),
+				Count:       3,
+			},
+		},
+		{
+			name: "occupied destination",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.MallPosition(0),
+				Destination: itemproto.MallPosition(1),
+				Count:       0,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(tc.packet)))
+			if err != nil {
+				t.Fatalf("unexpected %s mall item-move error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s mall item-move to emit no frames, got %d", tc.name, len(out))
+			}
+			assertExchangeAccountUnchanged(t, accounts, login, owner, tc.name+" mall item-move")
+		})
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall reopen after bad mall item-move error: %v", err)
+	}
+	if len(reopenOut) != 3 {
+		t.Fatalf("expected /open_mall reopen after bad mall item-move to emit MALL_OPEN plus two MALL_SET rows, got %d", len(reopenOut))
+	}
+}
+
+func TestGameRuntimeMallItemMoveFailsClosedAtDeathFloorWithoutMutation(t *testing.T) {
+	login := "post-floor-mall-move"
+	loginKey := uint32(0x19191c80)
+	owner := peerVisibilityCharacter("DeadMallMoveOwner", 0x01030c80, 0x02040c80, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5151
+	owner.Inventory = []inventory.ItemInstance{{ID: 1810, Vnum: 27001, Count: 2, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Mall Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1910, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before post-floor mall item-move: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_mall before post-floor mall item-move to emit MALL_OPEN plus one MALL_SET, got %d", len(openOut))
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.MallPosition(0),
+		Destination: itemproto.MallPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor mall ITEM_MOVE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor mall ITEM_MOVE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor mall ITEM_MOVE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor mall ITEM_MOVE")
+	cells := runtime.mallCellsForCharacter(login, owner.ID)
+	if item, ok := cells[0]; !ok || item.ID != 1910 || item.Count != 2 {
+		t.Fatalf("expected post-floor mall ITEM_MOVE to leave seeded cell 0 unchanged, got %+v", cells)
+	}
+	if _, occupied := cells[3]; occupied {
+		t.Fatalf("expected post-floor mall ITEM_MOVE not to occupy destination cell 3, got %+v", cells)
+	}
+}

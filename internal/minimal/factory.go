@@ -688,8 +688,9 @@ func cloneMallCells(cells map[uint8]inventory.ItemInstance) map[uint8]inventory.
 }
 
 // SeedMallCellsForTest installs same-account mall cells for lab /open_mall
-// rematerialize and accepted MALL_CHECKOUT. This bootstrap slice does not
-// invent cash-shop purchase, durable mall FileStore, or mall money.
+// rematerialize, accepted MALL_CHECKOUT, and same-window mall ITEM_MOVE.
+// This bootstrap slice does not invent cash-shop purchase, durable mall
+// FileStore, or mall money.
 func (r *gameRuntime) SeedMallCellsForTest(login string, characterID uint32, cells map[uint8]inventory.ItemInstance) {
 	if r == nil {
 		return
@@ -4673,6 +4674,62 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			runtime.SeedMallCellsForTest(sessionTicket.Login, selected.LiveCharacter().ID, activeMallItems)
 		}
+		executeOpenMallWindowItemMove := func(packet itemproto.ClientMovePacket, selectedPlayer *player.Runtime) gameflow.ItemMoveResult {
+			if selectedPlayer == nil || !hasActiveMallOpen {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Source.WindowType != itemproto.WindowMall || packet.Destination.WindowType != itemproto.WindowMall {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Source.Cell > 0xff || packet.Destination.Cell > 0xff {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			sourceSlot := uint8(packet.Source.Cell)
+			destinationSlot := uint8(packet.Destination.Cell)
+			if sourceSlot == destinationSlot {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			capacity := bootstrapMallCapacity(activeMallSize)
+			if capacity == 0 || sourceSlot >= capacity || destinationSlot >= capacity {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			sourceItem, occupied := activeMallItems[sourceSlot]
+			if !occupied {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			template, ok := runtime.itemTemplates[sourceItem.Vnum]
+			if !ok || !itemcatalog.ValidTemplate(template) || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 || sourceItem.Count > template.MaxCount {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if sourceItem.Equipped || sourceItem.Locked {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if err := sourceItem.Validate(); err != nil {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Count != 0 && uint16(packet.Count) != sourceItem.Count {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if _, destinationOccupied := activeMallItems[destinationSlot]; destinationOccupied {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			resultItem, ok := safeboxWholeStackRelocateItem(sourceItem, inventory.SlotIndex(destinationSlot))
+			if !ok {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			setFrame, err := encodeBootstrapMallSetFrame(itemproto.MallPosition(uint16(destinationSlot)), resultItem, runtime.itemTemplates)
+			if err != nil {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			frames := [][]byte{
+				itemproto.EncodeMallDel(itemproto.DelPacket{Position: itemproto.MallPosition(uint16(sourceSlot))}),
+				setFrame,
+			}
+			delete(activeMallItems, sourceSlot)
+			activeMallItems[destinationSlot] = resultItem
+			persistActiveMallCells(selectedPlayer)
+			return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
+		}
 		encodeActiveMallSetFrames := func() [][]byte {
 			if len(activeMallItems) == 0 {
 				return nil
@@ -8576,11 +8633,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if hasActiveMyShopOpen {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
-					if packet.Source.WindowType != itemproto.WindowInventory {
-						return gameflow.ItemMoveResult{Accepted: false}
-					}
 					selectedPlayer, ok := currentSelectedPlayer()
 					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+						return gameflow.ItemMoveResult{Accepted: false}
+					}
+					if packet.Source.WindowType == itemproto.WindowMall || packet.Destination.WindowType == itemproto.WindowMall {
+						return executeOpenMallWindowItemMove(packet, selectedPlayer)
+					}
+					if packet.Source.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemMoveResult{Accepted: false}
 					}
 					previousSelected := selectedPlayer.LiveCharacter()
