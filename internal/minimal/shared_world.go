@@ -54,6 +54,7 @@ type sharedWorldRegistry struct {
 	staticActorCombatHP               map[uint64]uint8
 	staticActorCombatRespawnAt        map[uint64]time.Time
 	syncRespawnPrefixes               map[string]struct{}
+	sharedHPPrefixes                  map[string]struct{}
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
@@ -434,6 +435,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		staticActorCombatHP:                make(map[uint64]uint8),
 		staticActorCombatRespawnAt:         make(map[uint64]time.Time),
 		syncRespawnPrefixes:                make(map[string]struct{}),
+		sharedHPPrefixes:                   make(map[string]struct{}),
 		staticActorCombatSnapshot:          make(map[uint64]uint64),
 		staticActorCombatEngagedBy:         make(map[uint64]uint64),
 		staticActorProximityAggroSuppress:  make(map[uint64]map[uint64]struct{}),
@@ -2485,6 +2487,24 @@ func (r *sharedWorldRegistry) syncRespawnPrefixesSnapshot() map[string]struct{} 
 	return cloneStringSet(r.syncRespawnPrefixes)
 }
 
+func (r *sharedWorldRegistry) replaceSharedHPPrefixes(prefixes map[string]struct{}) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.sharedHPPrefixes = cloneStringSet(prefixes)
+}
+
+func (r *sharedWorldRegistry) sharedHPPrefixesSnapshot() map[string]struct{} {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneStringSet(r.sharedHPPrefixes)
+}
+
 // alignOptInPackSyncRespawnLocked keeps one-count refs and live siblings on
 // their own clocks. When two or more already-dead same-prefix members opted
 // into sync_respawn, they share the latest pending ReadyAt. No pack object,
@@ -2536,6 +2556,53 @@ func (r *sharedWorldRegistry) alignOptInPackSyncRespawnLocked(actor worldruntime
 	}
 	for _, member := range dead {
 		r.staticActorCombatRespawnAt[member.id] = shared
+	}
+}
+
+// copyOptInPackSharedHPLocked copies remaining HP from an accepted live hit onto
+// other currently-live same-prefix members that opted into shared_hp. One-count
+// refs, default packs, and already-dead siblings stay independent. No pack
+// object, MOVE, or pack AI assist is invented here.
+func (r *sharedWorldRegistry) copyOptInPackSharedHPLocked(actor worldruntime.StaticEntity, remainingHP uint8) {
+	if r == nil || actor.Entity.ID == 0 || len(r.sharedHPPrefixes) == 0 || r.entities == nil {
+		return
+	}
+	prefix, ok := spawnGroupPackMemberPrefix(actor.SpawnGroupRef)
+	if !ok {
+		return
+	}
+	if _, opted := r.sharedHPPrefixes[prefix]; !opted {
+		return
+	}
+	if r.staticActorCombatHP == nil {
+		r.staticActorCombatHP = make(map[uint64]uint8)
+	}
+	for _, sibling := range r.entities.AllStaticActors() {
+		if sibling.Entity.ID == 0 || sibling.Entity.ID == actor.Entity.ID {
+			continue
+		}
+		siblingPrefix, ok := spawnGroupPackMemberPrefix(sibling.SpawnGroupRef)
+		if !ok || siblingPrefix != prefix {
+			continue
+		}
+		if sibling.Position.MapIndex != actor.Position.MapIndex {
+			continue
+		}
+		if _, waiting := r.staticActorCombatRespawnAt[sibling.Entity.ID]; waiting {
+			continue
+		}
+		currentHP, hpOK := r.staticActorCombatHP[sibling.Entity.ID]
+		if hpOK && currentHP == 0 {
+			continue
+		}
+		if _, percentOK := worldruntime.BootstrapStaticActorHPPercent(sibling.CombatKind, remainingHP); !percentOK {
+			continue
+		}
+		r.staticActorCombatHP[sibling.Entity.ID] = remainingHP
+		if remainingHP == 0 {
+			r.releaseStaticActorCombatEngagementLocked(sibling, true)
+			r.scheduleStaticActorCombatRespawnLocked(sibling)
+		}
 	}
 }
 
@@ -6552,6 +6619,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		return attempt
 	}
 	r.staticActorCombatHP[actor.Entity.ID] = nextHP
+	r.copyOptInPackSharedHPLocked(actor, nextHP)
 	r.setStaticActorCombatEngagementLocked(actor.Entity.ID, subjectID)
 	if actor.SpawnGroupRef != "" && staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {
 		r.clearOtherSessionCombatTargetsLocked(subjectID, activeTargetVID)

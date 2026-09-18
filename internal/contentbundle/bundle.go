@@ -71,6 +71,7 @@ type RegenSpawn struct {
 	Count              uint16   `json:"count,omitempty"`
 	PackSpacing        int32    `json:"pack_spacing,omitempty"`
 	SyncRespawn        bool     `json:"sync_respawn,omitempty"`
+	SharedHP           bool     `json:"shared_hp,omitempty"`
 	Sx                 int32    `json:"sx,omitempty"`
 	Sy                 int32    `json:"sy,omitempty"`
 	RewardExperience   uint64   `json:"reward_experience,omitempty"`
@@ -1125,6 +1126,31 @@ func SyncRespawnPackPrefixes(bundle Bundle) map[string]struct{} {
 	prefixes := make(map[string]struct{})
 	for _, regenSpawn := range bundle.RegenSpawns {
 		if regenSpawn.Count < 2 || !regenSpawn.SyncRespawn {
+			continue
+		}
+		ref := strings.TrimSpace(regenSpawn.Ref)
+		if ref == "" {
+			continue
+		}
+		prefixes[ref] = struct{}{}
+	}
+	if len(prefixes) == 0 {
+		return nil
+	}
+	return prefixes
+}
+
+// SharedHPPackPrefixes returns the authored multi-count regen prefixes that
+// opted into copying remaining HP onto live same-prefix siblings. Canonical
+// JSON still strips regen_spawns, so this overlay is process-local like
+// sync_respawn and weighted drop entries.
+func SharedHPPackPrefixes(bundle Bundle) map[string]struct{} {
+	if len(bundle.RegenSpawns) == 0 {
+		return nil
+	}
+	prefixes := make(map[string]struct{})
+	for _, regenSpawn := range bundle.RegenSpawns {
+		if regenSpawn.Count < 2 || !regenSpawn.SharedHP {
 			continue
 		}
 		ref := strings.TrimSpace(regenSpawn.Ref)
@@ -4911,7 +4937,7 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 			return nil, false
 		}
 		if count == 1 {
-			if regenSpawn.PackSpacing != 0 || regenSpawn.SyncRespawn {
+			if regenSpawn.PackSpacing != 0 || regenSpawn.SyncRespawn || regenSpawn.SharedHP {
 				return nil, false
 			}
 			x, y := regenSpawn.X, regenSpawn.Y

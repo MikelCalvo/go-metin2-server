@@ -20,8 +20,8 @@ dotted `ref` grammar, or smuggle RNG / legacy rectangle spawn into content
 canonicalization.
 
 This plan freezes the narrow authoring expansion only. It does **not** claim pack
-AI, shared HP, MOVE, or a pack object. Opt-in `sync_respawn` on multi-count rows
-is a later companion, not part of this placement freeze.
+AI, MOVE, or a pack object. Opt-in `sync_respawn` and `shared_hp` on multi-count
+rows are later companions, not part of this placement freeze.
 
 ## Contract to freeze (before RED)
 
@@ -122,6 +122,7 @@ is a later companion, not part of this placement freeze.
 ### Explicit non-goals for this freeze / first GREEN
 
 - pack-wide synchronized respawn unless a multi-count regen row opts in with `sync_respawn` (default packs and live siblings stay independent)
+- shared HP unless a multi-count regen row opts in with `shared_hp` (default packs and live one-count refs stay independent)
 - pack aggro / assist / multi-mob linkage
 - direction, or legacy regen timers
 - roaming, pathing, or group formations beyond the deterministic grid offsets
@@ -163,8 +164,12 @@ The first opt-in pack-wide synchronized respawn companion now lives on multi-cou
 `regen_spawns[].sync_respawn`: one-count refs and live siblings stay independent,
 and when two or more already-dead same-prefix members share that overlay they take
 one later respawn instant. Canonical JSON still strips `regen_spawns`. Default
-packs and the composed PvE independent-member proof stay unchanged. Shared HP,
-pack AI assist, MOVE, and a pack object stay deferred.
+packs and the composed PvE independent-member proof stay unchanged.
+The first opt-in shared-HP companion now lives on multi-count
+`regen_spawns[].shared_hp`: one-count refs fail closed, default packs and live
+one-count refs stay independent, and an accepted live hit copies remaining HP
+onto other live same-prefix siblings. Canonical JSON still strips `regen_spawns`.
+Pack AI assist, MOVE, and a pack object stay deferred.
 The first one-count random-rectangle GREEN now samples a deterministic FNV cell
 inside authored `sx` × `sy` at canonicalize time and writes that cell onto the
 expanded `spawn_groups` home. Direction, legacy regen timers, live RNG, and
