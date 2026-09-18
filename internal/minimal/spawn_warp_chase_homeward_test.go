@@ -119,6 +119,7 @@ func TestGameRuntimeWarpInteractClearsPendingSpawnGroupChaseAndArmsHomewardAfter
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before warp chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

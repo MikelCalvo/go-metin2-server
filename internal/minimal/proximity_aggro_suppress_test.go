@@ -79,6 +79,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterIn
 	if len(clearOut) != 0 {
 		t.Fatalf("expected proximity-only TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
 		t.Fatalf("expected in-radius TARGET(0) clear to release engaged_by for entity %d", group.EntityID)
 	}
@@ -197,6 +198,7 @@ func TestGameRuntimeProximityAggroDeathAndRespawnSeedSuppressesNearbyReacquireUn
 		t.Fatalf("expected 1 owner target-selection frame before kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	for hit := 0; hit < int(worldruntime.PracticeMobBootstrapMaxHP); hit++ {
 		attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
@@ -923,6 +925,7 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 	if len(clearOut) != 0 {
 		t.Fatalf("expected proximity-only TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
 		t.Fatalf("expected in-radius TARGET(0) clear to release engaged_by for entity %d", originalEntityID)
 	}
@@ -1076,6 +1079,7 @@ func TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart(t *t
 	if len(clearOut) != 0 {
 		t.Fatalf("expected proximity-only TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if runtime.sharedWorld.StaticActorCombatEngagedBySubject(originalEntityID, ownerEntity.Entity.ID) {
 		t.Fatalf("expected in-radius TARGET(0) clear to release engaged_by for entity %d", originalEntityID)
 	}

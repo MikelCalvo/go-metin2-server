@@ -126,6 +126,7 @@ func TestGameRuntimePackMemberAssistCopiesOwnerLockWithoutMove(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select pack member .m01, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  hitVID,
@@ -196,6 +197,7 @@ func TestGameRuntimePackMemberAssistCopiesOwnerLockWithoutMove(t *testing.T) {
 	if len(watcherBlocked) != 0 {
 		t.Fatalf("expected third-party TARGET against assisted sibling to fail closed, got %d frames", len(watcherBlocked))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherOther, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: otherVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher target error against independent spawn group: %v", err)
@@ -203,4 +205,5 @@ func TestGameRuntimePackMemberAssistCopiesOwnerLockWithoutMove(t *testing.T) {
 	if len(watcherOther) != 1 {
 		t.Fatalf("expected third-party TARGET against unengaged independent spawn group to succeed, got %d frames", len(watcherOther))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }

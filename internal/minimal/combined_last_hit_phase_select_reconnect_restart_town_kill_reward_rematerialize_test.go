@@ -349,6 +349,7 @@ func assertCombinedLastHitKillRewardRestartTownCatchUp(
 	if len(townRetargetOut) != 0 {
 		t.Fatalf("expected town-side dummy TARGET to fail closed after %s, got %d frames", context, len(townRetargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	townPickupOut := pickupGroundItem(t, ownerFlow, ground.VID)
 	if len(townPickupOut) != 0 {
 		t.Fatalf("expected town-side kill-reward pickup to fail closed after %s, got %d frames", context, len(townPickupOut))
@@ -448,6 +449,7 @@ func assertCombinedLastHitKillRewardRestartTownCatchUp(
 		t.Fatalf("expected still-dead dummy to stay non-targetable after %s relocate-back, got %d frames", context, len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	pickupOut := pickupGroundItem(t, ownerFlow, ground.VID)
 	assertPostFloorItemPickupSuccessBurst(t, pickupOut, 0, rewardDropVnum, 1, context+" kill-reward pickup")
 	if runtime.sharedWorld.GroundItemExists(ground.VID) {
@@ -515,4 +517,5 @@ func assertCombinedLastHitKillRewardRestartTownCatchUp(
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected dummy target to be full HP after %s respawn, got %+v", context, reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }

@@ -86,6 +86,7 @@ func TestGameRuntimeAuthoredReactionDelayArmsAndRearmsAtTwoSeconds(t *testing.T)
 	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
 		t.Fatalf("expected owner to select authored reaction-delay practice mob, got frames=%d err=%v", len(selectOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

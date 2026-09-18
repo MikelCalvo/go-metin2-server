@@ -50,6 +50,7 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before stun presentation, got %d", len(selectOut))
 	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "StunPresentationDummy", targetVID)
 
 	sitOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: bootstrapCharacterPositionSittingGround})))
 	if err != nil {

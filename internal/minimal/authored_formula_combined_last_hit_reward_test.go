@@ -110,6 +110,7 @@ func TestGameSessionFlowAuthoredFormulaProfileKillingHitAlsoFloorsOwnerEmitsProf
 		t.Fatalf("expected 1 formula combined last-hit target acknowledgement, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	wantPercents := []uint8{75, 50, 25}
 	wantOwnerHP := []int32{6, 4, 2}
 	for i, wantPercent := range wantPercents {

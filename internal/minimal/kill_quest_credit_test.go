@@ -356,6 +356,7 @@ func TestHandleAttackKillAppliesQuestFlagCreditAfterDeathReward(t *testing.T) {
 		t.Fatalf("expected kill quest target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -445,6 +446,7 @@ func TestHandleAttackKillQuestCreditDoesNotAdvanceWhenDeathRewardAccountSaveFail
 		t.Fatalf("expected kill quest reward-save-failure target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -543,6 +545,7 @@ func TestHandleAttackKillQuestCreditSilentOnCurrentValueMismatch(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected mismatch target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -617,6 +620,7 @@ func TestHandleAttackKillQuestCreditAppliesWhenDeathRewardEmpty(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected empty-reward target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -721,6 +725,7 @@ func TestKillQuestCreditThenTurnInClearsKilledQAMob(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected turn-in target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -889,6 +894,7 @@ func TestHandleAttackKillQuestRequireGateSilentWhenUnmet(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected gated miss target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -972,6 +978,7 @@ func TestHandleAttackKillQuestRequireGateAppliesWhenMet(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected gated hit target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {

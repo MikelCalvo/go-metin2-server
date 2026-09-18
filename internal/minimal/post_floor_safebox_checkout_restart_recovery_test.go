@@ -99,6 +99,7 @@ func TestGameSessionFlowPostFloorSafeboxCheckoutFailsClosed(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target-selection frame before post-floor safebox checkout, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -252,6 +253,7 @@ func TestGameSessionFlowPostFloorSafeboxCheckoutFailsClosedBeforeRestartTown(t *
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected target selection before post-floor town safebox checkout: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

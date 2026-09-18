@@ -125,6 +125,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenSafeboxBef
 		t.Fatalf("expected 1 target-selection frame before safebox town immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -356,6 +357,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenSafeboxBefor
 		t.Fatalf("expected 1 target-selection frame before safebox town delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

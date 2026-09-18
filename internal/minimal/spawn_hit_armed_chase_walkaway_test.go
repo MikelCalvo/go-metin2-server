@@ -81,6 +81,7 @@ func TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius(t
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select hit-armed chase practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -115,6 +116,7 @@ func TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius(t
 		t.Fatalf("expected third-party TARGET to fail closed while hit-armed engagement remains live, got %d frames", len(watcherBlocked))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	// Stay inside visibility/leash (400) and combat-target range (300) but leave
 	// DefaultSpawnAggroRadius (200): distance from authored home 1700 -> 1950 is 250.
 	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
@@ -168,6 +170,7 @@ func TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius(t
 		t.Fatalf("expected third-party TARGET to stay fail-closed after hit-armed walk outside aggro, got %d frames", len(watcherStillBlocked))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 2 {
 		t.Fatalf("expected delayed retaliation to continue under hit-armed engagement after walk outside aggro, got %d frames", len(queued))

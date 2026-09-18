@@ -208,6 +208,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectRestartTownSourceMapReselectResume
 		t.Fatalf("expected town-side source target-selection after reconnect /restart_town to fail closed before source-map reselect, got %d frames", len(townRetargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if !runtime.RelocateCharacter(owner.Name, bootstrapMapIndex, owner.X, owner.Y) {
 		t.Fatal("expected relocate back to source map to succeed before /phase_select /restart_town source-map reselect")
 	}
@@ -261,6 +262,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectRestartTownSourceMapReselectResume
 		t.Fatalf("expected source-map fresh target-selection after /phase_select /restart_town relocate-back to preserve the still-live practice mob at 90%% HP, got %+v", retarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  sourceVID,

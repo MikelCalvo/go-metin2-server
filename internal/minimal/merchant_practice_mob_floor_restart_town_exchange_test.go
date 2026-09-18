@@ -137,6 +137,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantBe
 		t.Fatalf("expected 1 target-selection frame before merchant town immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -385,6 +386,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMerchantBefo
 		t.Fatalf("expected 1 target-selection frame before merchant town delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

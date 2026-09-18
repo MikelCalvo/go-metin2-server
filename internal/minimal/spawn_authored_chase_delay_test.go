@@ -91,6 +91,7 @@ func TestGameRuntimeAuthoredChaseDelayArmsAndRearmsAtTwoSeconds(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select authored chase-delay practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

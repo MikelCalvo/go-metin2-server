@@ -96,6 +96,7 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceKeepsStillDeadAtDeathCoordsAndRe
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before kill-after-chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -239,6 +240,7 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceKeepsStillDeadAtDeathCoordsAndRe
 	if len(deniedTarget) != 0 {
 		t.Fatalf("expected still-dead displaced spawn group to stay non-targetable, got %d frames", len(deniedTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 	_ = flushServerFrames(t, ownerFlow)
 	_ = flushServerFrames(t, watcherFlow)
 
@@ -308,6 +310,7 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceKeepsStillDeadAtDeathCoordsAndRe
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("unexpected post-respawn target packet after chase-displace kill: %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func assertNoActorMoveFrames(t *testing.T, queued [][]byte, targetVID uint32, context string) {

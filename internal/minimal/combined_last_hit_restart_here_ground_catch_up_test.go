@@ -124,6 +124,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRemateria
 		t.Fatalf("expected 1 target-selection frame before combined last-hit recovery ground catch-up, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -262,6 +263,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRemateria
 		t.Fatalf("expected still-dead dummy to stay non-targetable after combined last-hit /restart_here ground catch-up, got %d frames", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	pickupOut := pickupGroundItem(t, ownerFlow, ground.VID)
 	assertPostFloorItemPickupSuccessBurst(t, pickupOut, 0, rewardDropVnum, 1, "combined last-hit /restart_here kill-reward pickup")
 	if runtime.sharedWorld.GroundItemExists(ground.VID) {
@@ -326,4 +328,5 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRemateria
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected dummy target to be full HP after combined last-hit /restart_here ground catch-up respawn, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }

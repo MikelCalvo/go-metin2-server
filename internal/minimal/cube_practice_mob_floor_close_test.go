@@ -104,6 +104,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCube(t *te
 		t.Fatalf("expected 1 target-selection frame before cube immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -262,6 +263,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCube(t *test
 		t.Fatalf("expected 1 target-selection frame before cube delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -444,6 +446,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenCubeBefore
 		t.Fatalf("expected 1 target-selection frame before cube town immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -673,6 +676,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenCubeBeforeRe
 		t.Fatalf("expected 1 target-selection frame before cube town delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

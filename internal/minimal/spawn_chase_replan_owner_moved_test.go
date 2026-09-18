@@ -75,6 +75,7 @@ func TestGameRuntimeFlushServerFramesReplansSpawnGroupChaseTowardOwnerMovedBetwe
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase replan arm: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

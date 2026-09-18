@@ -47,6 +47,7 @@ func TestGameSessionFlowAcceptedCharacterPositionEmitsSelfOnlyChangeSpeed(t *tes
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before change-speed presentation, got %d", len(selectOut))
 	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "SpeedPresentationDummy", targetVID)
 
 	sitOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: bootstrapCharacterPositionSittingGround})))
 	if err != nil {

@@ -1612,6 +1612,7 @@ func TestGameRuntimeImportIdenticalContentBundlePreservesLivePracticeMobCombatSt
 		t.Fatalf("expected one target ack before no-op reimport, got %d frames", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack error before no-op reimport: %v", err)

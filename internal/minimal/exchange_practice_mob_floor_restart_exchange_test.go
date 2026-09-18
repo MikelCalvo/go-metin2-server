@@ -103,6 +103,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 		t.Fatalf("expected one target selection frame before exchange restart immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected exchange restart immediate floor-close attack: %v", err)
@@ -254,6 +255,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShel
 		t.Fatalf("expected one target selection frame before delayed exchange restart floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected delayed exchange first attack: %v", err)

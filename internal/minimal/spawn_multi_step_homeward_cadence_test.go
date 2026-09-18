@@ -72,6 +72,7 @@ func TestGameRuntimeFlushServerFramesAppliesMultiStepSpawnGroupHomewardCadenceAf
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before multi-step homeward chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -143,6 +144,7 @@ func TestGameRuntimeFlushServerFramesAppliesMultiStepSpawnGroupHomewardCadenceAf
 		t.Fatalf("expected TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	runtime.spawnChaseMu.Lock()
 	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()

@@ -290,6 +290,7 @@ func driveCombinedLastHitKillRewardDummyKill(
 		t.Fatalf("expected 1 target-selection frame before %s, got %d", context, len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -506,4 +507,5 @@ func assertCombinedLastHitKillRewardRestartHereCatchUp(
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected dummy target to be full HP after %s respawn, got %+v", context, reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }

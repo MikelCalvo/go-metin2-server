@@ -99,6 +99,7 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenSafeboxBusyBeforeRestartExchan
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target selection frame before safebox death, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -237,6 +238,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenSafebox(t *t
 		t.Fatalf("expected one target selection frame before safebox delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -405,6 +407,7 @@ func TestGameSessionFlowPracticeMobDeathClearsOpenRefineBusyBeforeRestartExchang
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target selection frame before refine death, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -554,6 +557,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenRefine(t *te
 		t.Fatalf("expected one target selection frame before refine delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

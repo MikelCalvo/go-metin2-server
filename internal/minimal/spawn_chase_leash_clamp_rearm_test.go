@@ -95,6 +95,7 @@ func TestGameRuntimeFlushServerFramesClearsLeashClampedSpawnGroupChaseStepAndRea
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select chase leash-clamp practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -450,6 +451,7 @@ func TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep(t *testi
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select occupancy-detour practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

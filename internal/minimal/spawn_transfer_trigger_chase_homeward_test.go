@@ -101,6 +101,7 @@ func assertExactPositionTransferTriggerClearsPendingSpawnGroupChaseAndArmsHomewa
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before %s transfer-trigger chase displace: %v", ingress, err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

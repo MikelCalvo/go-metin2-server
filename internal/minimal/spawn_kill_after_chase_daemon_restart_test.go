@@ -85,6 +85,7 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceStillDeadPersistsAcrossDaemonRes
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-displace still-dead restart: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -254,6 +255,7 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceStillDeadPersistsAcrossDaemonRes
 		t.Fatalf("expected still-dead restarted spawn group to stay non-targetable, got %d frames", len(deniedTarget))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 	currentTime = currentTime.Add(bootstrapSpawnGroupHomewardStepDelay)
 	assertNoActorMoveFrames(t, flushServerFrames(t, lateFlow), uint32(afterRestart.EntityID), "after homeward delay during rematerialized still-dead interval")
 	stillDead, ok := reloaded.SpawnGroupByRef(spawnRef)
@@ -329,4 +331,5 @@ func TestGameRuntimeKillingHitAfterChaseDisplaceStillDeadPersistsAcrossDaemonRes
 	if reselected.TargetVID != uint32(respawned.EntityID) || reselected.HPPercent != 100 {
 		t.Fatalf("unexpected post-respawn target packet after still-dead restart: %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerRestartFlow)
 }

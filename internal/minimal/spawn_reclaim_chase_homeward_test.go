@@ -106,6 +106,7 @@ func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseAndArmsHomewardA
 	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected stale owner target error before reclaim chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, staleFlow)
 	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

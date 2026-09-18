@@ -123,6 +123,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShop(t *
 		t.Fatalf("expected 1 target-selection frame before myshop immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -296,6 +297,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShop(t *te
 		t.Fatalf("expected 1 target-selection frame before myshop delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -480,6 +482,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorQueuesGuestBrowseSho
 		t.Fatalf("expected 1 target-selection frame before myshop guest floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -633,6 +636,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesGuestBrowseOnD
 		t.Fatalf("expected 1 target-selection frame before dead-guest floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, guestFlow)
 	attackOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -782,6 +786,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorQueuesGuestBrowseShopE
 		t.Fatalf("expected 1 target-selection frame before myshop guest delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -944,6 +949,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesGuestBrowseOnDea
 		t.Fatalf("expected 1 target-selection frame before dead-guest delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, guestFlow)
 	attackOut, err := guestFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -1116,6 +1122,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMyShopBefo
 		t.Fatalf("expected 1 target-selection frame before myshop town immediate floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -1356,6 +1363,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMyShopBefore
 		t.Fatalf("expected 1 target-selection frame before myshop town delayed floor-close, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

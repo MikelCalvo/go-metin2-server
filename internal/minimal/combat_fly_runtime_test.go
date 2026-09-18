@@ -57,6 +57,7 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before fly presentation, got %d", len(selectOut))
 	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "FlyPresentationDummy", targetVID)
 
 	mismatch, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID + 1, X: 123456, Y: -234567})))
 	if err != nil {

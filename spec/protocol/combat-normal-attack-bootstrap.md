@@ -11,6 +11,7 @@ It sits on top of:
 Those documents already freeze:
 - one visible `training_dummy` target class addressed by client-visible `VID`
 - the first self-only `GC TARGET` acknowledgement for accepted target selection
+- the first self-only `GC TARGET_CREATE_NEW` presentation companion after that accepted non-zero selection, frozen in `combat-target-marker-bootstrap.md` and deliberately separate from the HP/selection carrier
 - the current visibility/range/runtime ownership rules that decide whether a dummy can stay targetable at all
 - the existing reconnect/reclaim cleanup style that later combat slices must reuse instead of inventing separate ownership semantics
 
@@ -236,6 +237,8 @@ So the first owned target-state surface is now intentionally tiny but expressive
 1. `TARGET(target_vid > 0, hp_percent = 100)` — selected live dummy with fresh full bootstrap HP on first owned selection
 2. `TARGET(target_vid > 0, hp_percent = updated)` — same selected dummy after accepted bootstrap attack-driven HP changes
 3. `TARGET(0, 0)` — selected target cleared or no longer valid
+
+Accepted non-zero `TARGET` also queues one self-only `GC TARGET_CREATE_NEW` presentation companion documented in `combat-target-marker-bootstrap.md`. That companion does not replace `GC TARGET(target_vid, hp_percent)` as the HP/selection carrier, and client `TARGET(0)` still emits no marker.
 
 The client-originated clear request is deliberately separate from that server clear companion:
 - client -> server `TARGET(target_vid = 0)` is accepted as a silent clear-target intent for the current live selected session

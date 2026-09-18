@@ -425,6 +425,7 @@ func TestGameRuntimeReturnSpawnGroupHomeFailsClosedWithoutPersistingOrClearingTa
 	if len(targetOut) != 1 {
 		t.Fatalf("expected selected return-required fixture target to start accepted before forced move, got %d frames", len(targetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	selectedBeforeFailure, ok := runtime.CombatTargetSnapshot("ReturnFailOwner")
 	if !ok || selectedBeforeFailure.TargetVID != uint32(group.EntityID) {
 		t.Fatalf("expected selected combat target before failed return-home, ok=%v snapshot=%+v", ok, selectedBeforeFailure)
@@ -524,6 +525,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsTargetsEvenWhenSnapshotPersi
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select at-home no-persist practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected owner attack before at-home no-persist return-home: %v", err)
@@ -561,6 +563,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsTargetsEvenWhenSnapshotPersi
 	if len(peerSelect) != 1 {
 		t.Fatalf("expected at-home no-persist return-home to release engagement so peer can target, got %d frames", len(peerSelect))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, peerFlow)
 }
 
 func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngagement(t *testing.T) {
@@ -615,6 +618,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngag
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select at-home practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected owner attack error before at-home return-home: %v", err)
@@ -650,6 +654,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeClearsCombatTargetAndReleasesEngag
 	if len(peerSelect) != 1 {
 		t.Fatalf("expected at-home return-home to release engagement so peer can target, got %d frames", len(peerSelect))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, peerFlow)
 }
 
 func TestGameRuntimeReturnSpawnGroupHomeAtHomeResetsRetaliationCadenceBeforeFreshReengage(t *testing.T) {
@@ -701,6 +706,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeResetsRetaliationCadenceBeforeFres
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target frame before return-home cadence reset, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack before return-home cadence reset: %v", err)
@@ -724,6 +730,7 @@ func TestGameRuntimeReturnSpawnGroupHomeAtHomeResetsRetaliationCadenceBeforeFres
 	if len(reselectOut) != 1 {
 		t.Fatalf("expected fresh target selection after return-home cadence reset, got %d frames", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	reengageOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected reengage attack after return-home cadence reset: %v", err)
@@ -859,6 +866,7 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesReturnRequiredMobBackToAuthoredHome
 	if len(targetOut) != 1 {
 		t.Fatalf("expected returned spawn group to be targetable after return-home, got %d frames", len(targetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, homeFlow)
 }
 
 func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t *testing.T) {
@@ -932,6 +940,7 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 		t.Fatalf("expected within-radius spawn group to remain targetable before return-home, got %d frames", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	returned, ok := runtime.ReturnSpawnGroupHome(group.EntityID)
 	if !ok {
 		t.Fatalf("expected return-home trigger to accept within-radius entity %d", group.EntityID)
@@ -1638,6 +1647,7 @@ func TestGameRuntimeDeadSpawnGroupUpdateDoesNotArmAutomaticReturnStep(t *testing
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection before dead return-step update, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -1730,6 +1740,7 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	if len(selectOut) != 1 {
 		t.Fatalf("expected selected return-step target selection to succeed, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack before selected return-step: %v", err)
@@ -1812,6 +1823,7 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	if peerTarget.TargetVID != targetVID || peerTarget.HPPercent != 90 {
 		t.Fatalf("expected peer to reselect damaged mob after return-step reset, got %+v", peerTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, peerFlow)
 }
 
 func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
@@ -1869,6 +1881,7 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select automatic return-step clear mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack before automatic return-step clear: %v", err)
@@ -1943,6 +1956,7 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	if len(peerSelect) != 1 {
 		t.Fatalf("expected automatic return-step to release engagement so peer can reselect, got %d frames", len(peerSelect))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, peerFlow)
 }
 
 func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupReturnStep(t *testing.T) {
@@ -2109,6 +2123,7 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStep(t *testing.T)
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select chase-step practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -2311,6 +2326,7 @@ func TestGameRuntimeFlushServerFramesAcquiresProximitySpawnGroupAggroWithoutHit(
 	if len(watcherSelect) != 0 {
 		t.Fatalf("expected third-party TARGET to fail closed after proximity acquisition, got %d frames", len(watcherSelect))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWithoutHitOrTarget(t *testing.T) {
@@ -2497,6 +2513,7 @@ func TestGameRuntimeFlushServerFramesArmsDelayedRetaliationFromProximityAggroWit
 		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	_, ownerDamage := flushNonFloorDelayedRetaliationFrames(
 		t,
@@ -2629,6 +2646,7 @@ func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithou
 		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	floorQueued := flushServerFrames(t, ownerFlow)
 	if len(floorQueued) != 4 {
@@ -2677,6 +2695,7 @@ func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithou
 	if len(postFloorTarget) != 0 {
 		t.Fatalf("expected post-floor owner TARGET to fail closed at HP 0, got %d frames", len(postFloorTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	postFloorAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(group.EntityID),
@@ -2695,6 +2714,7 @@ func TestGameRuntimeProximityAggroDelayedRetaliationReachesOwnerDeathFloorWithou
 	if len(watcherSelect) != 1 {
 		t.Fatalf("expected watcher to freshly TARGET the still-live mob after proximity-armed death-floor release, got %d frames", len(watcherSelect))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRetaliation(t *testing.T) {
@@ -2773,6 +2793,7 @@ func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRet
 		t.Fatalf("expected third-party TARGET to fail closed while proximity engagement remains live, got %d frames", len(watcherBlocked))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	// Stay inside visibility/leash (radius 400) but leave DefaultSpawnAggroRadius (200).
 	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
 		Func: 1,
@@ -2820,6 +2841,7 @@ func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRet
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 100 {
 		t.Fatalf("expected watcher to reacquire still-full live practice mob after proximity walk-away, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestGameRuntimeFlushServerFramesSkipsProximityAggroOutsideDefaultRadius(t *testing.T) {
@@ -3228,6 +3250,7 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupChaseStepWithMoveFanout
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select chase-step MOVE practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -3354,6 +3377,7 @@ func TestGameRuntimeUpdateStaticActorClearsPendingSpawnGroupChaseStepDeadline(t 
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step update cleanup: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -3458,6 +3482,7 @@ func TestGameRuntimeTransferClearsPendingSpawnGroupChaseStepDeadline(t *testing.
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step transfer cleanup: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -3552,6 +3577,7 @@ func TestGameRuntimeClientTargetZeroClearsPendingSpawnGroupChaseStepDeadline(t *
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step TARGET(0) cleanup: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -3570,6 +3596,7 @@ func TestGameRuntimeClientTargetZeroClearsPendingSpawnGroupChaseStepDeadline(t *
 		t.Fatalf("expected owner TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	runtime.spawnChaseMu.Lock()
 	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()
@@ -3644,6 +3671,7 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupHomewardStepAfterChaseE
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before homeward chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -3697,6 +3725,7 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupHomewardStepAfterChaseE
 		t.Fatalf("expected TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	runtime.spawnChaseMu.Lock()
 	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()
@@ -3845,6 +3874,7 @@ func TestGameRuntimeOwnerDeathFloorArmsHomewardAfterChaseDisplaceWithinRadius(t 
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before death-floor chase displace: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -4012,6 +4042,7 @@ func TestGameRuntimeEnterGameReclaimClearsPendingSpawnGroupChaseStepDeadline(t *
 	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step reclaim cleanup: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, staleFlow)
 	if _, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -4162,6 +4193,7 @@ func TestGameRuntimeEnterGameReclaimStopsPendingRetaliationAndReleasesAggroForVi
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before retaliation reclaim cleanup, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, staleFlow)
 	attackOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -4194,6 +4226,7 @@ func TestGameRuntimeEnterGameReclaimStopsPendingRetaliationAndReleasesAggroForVi
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	if _, ok := runtime.sharedWorld.sessionDirectory.Remove(staleOwnerID); !ok {
 		t.Fatal("expected simulated reclaim to remove stale owner session hook")
 	}
@@ -4227,6 +4260,7 @@ func TestGameRuntimeEnterGameReclaimStopsPendingRetaliationAndReleasesAggroForVi
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after EnterGame reclaim released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, staleFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after EnterGame reclaim, got %d queued frames", len(queued))
@@ -4381,6 +4415,7 @@ func TestGameSessionFlowDueSpawnGroupChaseStepFlushesBeforeFreshEnterBootstrap(t
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before fresh-enter chase-step flush: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -4516,6 +4551,7 @@ func TestGameSessionFlowDueSpawnGroupHomewardStepFlushesBeforeFreshEnterBootstra
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before fresh-enter homeward flush: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -4562,6 +4598,7 @@ func TestGameSessionFlowDueSpawnGroupHomewardStepFlushesBeforeFreshEnterBootstra
 	if len(clearOut) != 0 {
 		t.Fatalf("expected TARGET(0) clear to emit no frames before homeward fresh-enter, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	runtime.spawnHomewardMu.Lock()
 	dueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
@@ -4926,6 +4963,7 @@ func TestGameRuntimeSpawnGroupChaseStepSnapshotsReportPendingSchedules(t *testin
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step snapshot: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -5041,6 +5079,7 @@ func TestGameRuntimeSpawnGroupChaseStepsForMapReturnsMapLocalPendingSchedules(t 
 	if _, err := flow42.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(map42Group.EntityID)}))); err != nil {
 		t.Fatalf("unexpected map 42 target error: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow42)
 	if _, err := flow42.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(map42Group.EntityID),
@@ -5054,6 +5093,7 @@ func TestGameRuntimeSpawnGroupChaseStepsForMapReturnsMapLocalPendingSchedules(t 
 	if _, err := flow43.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(map43Group.EntityID)}))); err != nil {
 		t.Fatalf("unexpected map 43 target error: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow43)
 	if _, err := flow43.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(map43Group.EntityID),
@@ -5136,6 +5176,7 @@ func TestGameRuntimeSpawnGroupChaseStepSnapshotsOmitIneligibleScheduledActors(t 
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step omit: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -5226,6 +5267,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsReportPendingSchedules(t *tes
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before homeward-step snapshot: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -5259,6 +5301,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsReportPendingSchedules(t *tes
 		t.Fatalf("unexpected owner TARGET(0) clear before homeward snapshot arm: %v", err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	pending := runtime.SpawnGroupHomewardSteps()
 	if len(pending) != 1 {
 		t.Fatalf("expected one pending homeward-step snapshot, got %d: %+v", len(pending), pending)
@@ -5370,6 +5413,7 @@ func TestGameRuntimeSpawnGroupHomewardStepsForMapReturnsMapLocalPendingSchedules
 		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 			t.Fatalf("unexpected target error before homeward map arm: %v", err)
 		}
+		drainAcceptedTargetCreateNewIfQueued(t, flow)
 		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 			AttackType: combatproto.ClientAttackTypeNormal,
 			TargetVID:  targetVID,
@@ -5398,6 +5442,7 @@ func TestGameRuntimeSpawnGroupHomewardStepsForMapReturnsMapLocalPendingSchedules
 		if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0}))); err != nil {
 			t.Fatalf("unexpected TARGET(0) clear before homeward map arm: %v", err)
 		}
+		drainAcceptedTargetCreateNewIfQueued(t, flow)
 		if pending, ok := runtime.SpawnGroupHomewardStep(entityID); !ok || pending.EntityID != entityID {
 			t.Fatalf("expected homeward deadline after map arm, ok=%v snapshot=%+v", ok, pending)
 		}
@@ -5495,6 +5540,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsOmitIneligibleScheduledActors
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before homeward-step omit: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -5524,6 +5570,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsOmitIneligibleScheduledActors
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0}))); err != nil {
 		t.Fatalf("unexpected TARGET(0) clear before homeward omit arm: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID || pending.Actor.Dead {
 		t.Fatalf("expected live unengaged within_radius actor to expose a pending homeward-step row before death, ok=%v snapshot=%+v", ok, pending)
 	}
@@ -5543,6 +5590,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsOmitIneligibleScheduledActors
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner re-target before homeward re-engage omit: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -5571,6 +5619,7 @@ func TestGameRuntimeSpawnGroupHomewardStepSnapshotsOmitIneligibleScheduledActors
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0}))); err != nil {
 		t.Fatalf("unexpected TARGET(0) clear before homeward dead omit re-arm: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID || pending.Actor.Dead {
 		t.Fatalf("expected live unengaged within_radius actor to expose a pending homeward-step row before forced death, ok=%v snapshot=%+v", ok, pending)
 	}
@@ -6188,6 +6237,7 @@ func TestGameRuntimeStepSpawnGroupReturnHomeNoOpsWithinRadiusWithoutClearingTarg
 		t.Fatalf("expected within-radius spawn group to be targetable before return-step no-op, got %d frames", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	stepped, ok := runtime.StepSpawnGroupReturnHome(group.EntityID, 100)
 	if !ok {
 		t.Fatalf("expected within-radius return-step trigger to return a no-op snapshot for entity %d", group.EntityID)
@@ -6390,6 +6440,7 @@ func TestGameSessionFlowSpawnGroupReturnRequiredMobTargetFailsClosed(t *testing.
 	if len(targetOut) != 0 {
 		t.Fatalf("expected return-required spawn group target to fail closed with no frames, got %d", len(targetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected return-required stale attack dispatch error: %v", err)
@@ -7766,6 +7817,7 @@ func TestGameSessionFlowAuthoredFormulaCombatProfilePracticeMobUsesProfileMaxHPA
 		t.Fatalf("expected formula-profile select to start at full HP, got %+v", selected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	wantPercents := []uint8{75, 50, 25}
 	for i, wantPercent := range wantPercents {
 		if i > 0 {
@@ -7897,6 +7949,7 @@ func TestGameSessionFlowAuthoredFormulaProfileDelayedRetaliationFloorRestartHere
 		t.Fatalf("expected formula floor target acknowledgement, got %d frames", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -7981,6 +8034,7 @@ func TestGameSessionFlowAuthoredFormulaProfileDelayedRetaliationFloorRestartHere
 		t.Fatalf("expected formula profile fresh target to preserve damaged 75%% HP, got %+v", retarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	resumedHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -8074,6 +8128,7 @@ func TestGameRuntimeAuthoredFormulaCombatProfileDeathRespawnPersistsAcrossDaemon
 		t.Fatalf("expected one formula spawn target acknowledgement, got %d frames", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	for attackIndex := 0; attackIndex < 4; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -8170,6 +8225,7 @@ func TestGameRuntimeAuthoredFormulaCombatProfileDeathRespawnPersistsAcrossDaemon
 		t.Fatalf("expected formula still-dead target to fail closed, got %d frames", len(deniedTarget))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 	currentTime = wantReadyAt.Add(time.Millisecond)
 	respawnFrames := flushServerFrames(t, lateFlow)
 	if len(respawnFrames) != 4 {
@@ -8201,6 +8257,7 @@ func TestGameRuntimeAuthoredFormulaCombatProfileDeathRespawnPersistsAcrossDaemon
 	if len(freshTarget) != 1 {
 		t.Fatalf("expected fresh formula respawn target acknowledgement, got %d frames", len(freshTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 }
 
 func TestGameRuntimeImportsContentBundleDropTablesAsSpawnGroupRewardDescriptor(t *testing.T) {
@@ -8672,6 +8729,7 @@ func TestGameRuntimeFailedContentBundleImportDoesNotLeakSelectedTargetClear(t *t
 		t.Fatalf("expected target selection to return one self frame before failed import, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
 		{
 			Ref:           "practice.rollback_selected_first",
@@ -12311,6 +12369,7 @@ func TestNewGameSessionFactoryNormalAttackCadenceRejectsImmediateRepeatWithoutMu
 		t.Fatalf("expected 1 self-only target frame before cadence test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack error in cadence test: %v", err)
@@ -12385,6 +12444,7 @@ func TestNewGameSessionFactoryShootIntentFailsClosedWithoutMutatingSelectedPract
 		t.Fatalf("expected fresh selected target at full HP before shoot no-op test, got %+v", selected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	shootOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: 0x83})))
 	if err != nil {
 		t.Fatalf("unexpected unsupported shoot error: %v", err)
@@ -12451,6 +12511,7 @@ func TestNewGameSessionFactoryNormalAttackCadenceSurvivesAcceptedRetarget(t *tes
 		t.Fatalf("expected first target selection to return one frame before retarget cadence test, got %d", len(firstSelect))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: firstVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack error before retarget cadence test: %v", err)
@@ -12481,6 +12542,7 @@ func TestNewGameSessionFactoryNormalAttackCadenceSurvivesAcceptedRetarget(t *tes
 		t.Fatalf("expected accepted retarget to bind the second full-HP dummy, got %+v", secondTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	immediateSecondAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: secondVID})))
 	if err != nil {
 		t.Fatalf("unexpected immediate second-target attack dispatch error inside cadence window: %v", err)
@@ -12536,6 +12598,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsSelectedTargetAndCadence(t *
 		t.Fatalf("expected 1 target-selection frame before client clear-target test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack error before client clear-target test: %v", err)
@@ -12559,6 +12622,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsSelectedTargetAndCadence(t *
 		t.Fatalf("expected client TARGET(0) to clear silently with no echo frames, got %d", len(clearOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	staleAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected stale old-target attack dispatch error after client clear-target: %v", err)
@@ -12582,6 +12646,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsSelectedTargetAndCadence(t *
 		t.Fatalf("expected fresh selection after clear to preserve current runtime HP at 90%%, got %+v", freshTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	immediateFreshAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected immediate fresh attack error after client clear-target: %v", err)
@@ -12628,6 +12693,7 @@ func TestNewGameSessionFactoryUseSkillFailsClosedWithoutMutatingSelectedTarget(t
 		t.Fatalf("expected 1 target-selection frame before use-skill guard, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	useSkillOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 35, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected use-skill guard dispatch error: %v", err)
@@ -12683,6 +12749,7 @@ func TestNewGameSessionFactoryCharacterPositionFailsClosedWithoutMutatingSelecte
 		t.Fatalf("expected 1 target-selection frame before character-position guard, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	positionOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})))
 	if err != nil {
 		t.Fatalf("unexpected character-position guard dispatch error: %v", err)
@@ -12748,6 +12815,7 @@ func TestNewGameSessionFactoryCharacterPositionEmitsSelfAndPeerPresentationWitho
 		t.Fatalf("expected 1 target-selection frame before character-position presentation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	for _, position := range []uint8{4, 0} {
 		positionOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: position})))
 		if err != nil {
@@ -12966,6 +13034,7 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 		t.Fatalf("expected 1 self-only target frame before pending-retaliation cleanup test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -12993,6 +13062,7 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 	if len(staleTargetOut) != 0 {
 		t.Fatalf("expected stale post-death target selection to fail closed before respawn, got %d frames", len(staleTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	staleAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected stale attack dispatch error before respawn: %v", err)
@@ -13033,6 +13103,7 @@ func TestNewGameSessionFactoryPracticeMobDeathClearsPendingServerOriginRetaliati
 	if freshTarget.TargetVID != targetVID || freshTarget.HPPercent != 100 {
 		t.Fatalf("expected respawned practice mob to require fresh full-HP selection, got %+v", freshTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliationAndEngagement(t *testing.T) {
@@ -13091,6 +13162,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliatio
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before practice-mob clear-target test, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected owner attack before practice-mob clear-target test: %v", err)
@@ -13107,6 +13179,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliatio
 	if len(clearOut) != 0 {
 		t.Fatalf("expected owner TARGET(0) clear for practice mob to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected client TARGET(0) to cancel delayed retaliation before timer expiry, got %d queued frames", len(queued))
@@ -13126,6 +13199,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliatio
 	if watcherTarget.TargetVID != targetVID || watcherTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to observe owner-damaged mob at 90%% after clear-target release, got %+v", watcherTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThirdParty(t *testing.T) {
@@ -13203,6 +13277,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 	if len(selectFirst) != 1 {
 		t.Fatalf("expected first target selection to return 1 frame, got %d", len(selectFirst))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	firstAttack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: firstTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first practice-mob attack before retarget engagement test: %v", err)
@@ -13220,6 +13295,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 		t.Fatalf("expected owner retarget to second mob to return 1 frame, got %d", len(selectSecond))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	watcherStolenTarget, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher target-selection dispatch error for owner-engaged mob: %v", err)
@@ -13228,6 +13304,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 		t.Fatalf("expected non-zero owner retarget not to release first engaged practice mob to third-party target selection, got %d frames", len(watcherStolenTarget))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	clearOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
 	if err != nil {
 		t.Fatalf("unexpected owner TARGET(0) clear after retarget engagement test: %v", err)
@@ -13235,6 +13312,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 	if len(clearOut) != 0 {
 		t.Fatalf("expected owner TARGET(0) after retarget engagement test to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected owner TARGET(0) after retarget to keep delayed retaliation cancelled, got %d queued frames", len(queued))
@@ -13254,6 +13332,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 	if watcherTarget.TargetVID != firstTargetVID || watcherTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to observe owner-damaged first mob at 90%% after explicit clear, got %+v", watcherTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestNewGameSessionFactoryPracticeMobServerOriginRetaliationTicksUntilOwnerFloorAndClearsTarget(t *testing.T) {
@@ -13301,6 +13380,7 @@ func TestNewGameSessionFactoryPracticeMobServerOriginRetaliationTicksUntilOwnerF
 		t.Fatalf("expected 1 self-only target frame before server-origin retaliation floor test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first owner attack before server-origin retaliation floor: %v", err)
@@ -13395,6 +13475,7 @@ func TestNewGameSessionFactoryPracticeMobAcceptedHitsDoNotResetPendingDelayedRet
 		t.Fatalf("expected 1 self-only target frame before delayed-retaliation timer test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected first attack before delayed-retaliation timer test: %v", err)
@@ -13497,6 +13578,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisi
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before dummy death, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -14552,6 +14634,7 @@ func TestNewGameSessionFactoryDueSpawnGroupChaseStepFlushesBeforeMoveTransferReb
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-step transfer preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -14693,6 +14776,7 @@ func TestNewGameSessionFactoryDueSpawnGroupHomewardStepFlushesBeforeMoveTransfer
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before homeward-step transfer preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -14741,6 +14825,7 @@ func TestNewGameSessionFactoryDueSpawnGroupHomewardStepFlushesBeforeMoveTransfer
 	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0}))); err != nil {
 		t.Fatalf("unexpected owner TARGET(0) clear before homeward arm: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	runtime.spawnHomewardMu.Lock()
 	homewardDueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
@@ -14932,6 +15017,7 @@ func TestNewGameSessionFactoryDueStaticActorRespawnFlushesBeforeMoveTransferRebo
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected mover to target full-HP respawned mob after transfer, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, moverFlow)
 }
 
 func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStillDeadTrainingDummyReplay(t *testing.T) {
@@ -14971,6 +15057,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before target-map dummy death, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -16153,6 +16240,7 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner server-notice skip after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16341,6 +16429,7 @@ func TestGameRuntimePeerAppearanceUpdateSkipsZeroHPOwnerRecipientAfterDelayedRet
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before zero-HP peer-appearance recipient skip test, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16447,6 +16536,7 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 	if len(watcherSelectOut) != 1 {
 		t.Fatalf("expected 1 watcher target-selection frame before zero-HP peer-DEAD recipient skip test, got %d", len(watcherSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16480,6 +16570,7 @@ func TestGameSessionFlowPracticeMobPeerDeadFanoutSkipsZeroHPOwnerRecipientAfterD
 	if len(ownerSelectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before zero-HP peer-DEAD recipient skip test, got %d", len(ownerSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16557,6 +16648,7 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 	if len(ownerSelectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before zero-HP owner visible mob-death recipient skip test, got %d", len(ownerSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16591,6 +16683,7 @@ func TestGameSessionFlowPracticeMobVisibleMobDeathFanoutSkipsZeroHPOwnerRecipien
 		t.Fatalf("expected watcher to reacquire the still-live practice mob at 90%% HP after owner death, got %+v", watcherSelected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	for attackIndex := 0; attackIndex < 8; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -16702,6 +16795,7 @@ func TestGameSessionFlowPracticeMobDamageInfoFanoutSkipsZeroHPOwnerRecipientAfte
 	if len(ownerSelectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before zero-HP damage-info recipient skip test, got %d", len(ownerSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16743,6 +16837,7 @@ func TestGameSessionFlowPracticeMobDamageInfoFanoutSkipsZeroHPOwnerRecipientAfte
 		t.Fatalf("expected watcher to reacquire the still-live practice mob at 90%% HP after owner death, got %+v", watcherSelected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16865,6 +16960,7 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 	if len(ownerSelectOut) != 1 {
 		t.Fatalf("expected 1 owner target-selection frame before zero-HP owner respawn recipient skip test, got %d", len(ownerSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -16895,6 +16991,7 @@ func TestGameSessionFlowPracticeMobRespawnRebuildSkipsZeroHPOwnerRecipientAfterI
 		t.Fatalf("expected watcher to reacquire the still-live practice mob at 90%% HP after owner death, got %+v", watcherSelected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	for attackIndex := 0; attackIndex < 8; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -17017,6 +17114,7 @@ func drivePracticeMobOwnerToZeroHPAfterDelayedRetaliation(t *testing.T, ownerFlo
 		t.Fatalf("expected 1 target-selection frame before zero-HP static-actor visibility recipient test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -17130,6 +17228,7 @@ func TestGameSessionFlowPracticeMobRestartHereRebuildsDeadOwnerOnSameSocket(t *t
 	if len(retargetOut) != 1 {
 		t.Fatalf("expected fresh target-selection to succeed after /restart_here, got %d frames", len(retargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if snapshots := runtime.ConnectedCharacters(); len(snapshots) != 2 {
 		t.Fatalf("expected restart-here recovery to keep both sessions connected in shared world, got %+v", snapshots)
 	}
@@ -17375,6 +17474,7 @@ func TestGameSessionFlowPracticeMobRestartHereFreshTargetKeepsRuntimeOwnedMobHP(
 	if retarget.TargetVID != targetVID || retarget.HPPercent != 90 {
 		t.Fatalf("expected fresh target-selection after /restart_here to preserve the still-live practice mob at 90%% HP, got %+v", retarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected /restart_here retarget continuity check to avoid extra watcher fanout, got %d queued frames", len(queued))
 	}
@@ -17424,6 +17524,7 @@ func TestGameSessionFlowPracticeMobRestartHereFreshTargetResumesNormalAttack(t *
 		t.Fatalf("expected fresh target-selection after /restart_here to preserve the still-live practice mob at 90%% HP before attack resume, got %+v", retarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -17468,6 +17569,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testi
 	if len(watcherSelectOut) != 1 {
 		t.Fatalf("expected watcher to reacquire the still-live practice mob before /restart_here due-respawn preflight, got %d frames", len(watcherSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	for attackIndex := 0; attackIndex < 8; attackIndex++ {
 		if attackIndex > 0 {
 			advance(bootstrapNormalAttackCadenceWindow)
@@ -17546,6 +17648,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalRespawn(t *testi
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected practice mob target to be full HP after /restart_here due-respawn preflight, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalChaseStep(t *testing.T) {
@@ -17617,6 +17720,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalChaseStep(t *tes
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected engager target error before /restart_here due chase-step preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -17790,6 +17894,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalHomewardStep(t *
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
 		t.Fatalf("unexpected engager target error before /restart_here due homeward-step preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -17856,6 +17961,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalHomewardStep(t *
 	if len(clearOut) != 0 {
 		t.Fatalf("expected TARGET(0) clear to emit no frames before homeward /restart_here, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	runtime.spawnHomewardMu.Lock()
 	dueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
@@ -18032,6 +18138,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalReturnStep(t *te
 	if len(reselectOut) != 0 {
 		t.Fatalf("expected stepped return_required practice mob to remain non-targetable after /restart_here due return-step preflight, got %d frames", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRestartTownCoversOwnedEmpireCreatePositions(t *testing.T) {
@@ -18317,6 +18424,7 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	if len(townRetargetOut) != 0 {
 		t.Fatalf("expected town-restarted owner to fail closed when retargeting source-map practice mob outside visibility, got %d frames", len(townRetargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	sourceWatcherRetargetOut, err := sourceWatcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected source watcher target-selection dispatch after /restart_town: %v", err)
@@ -18331,6 +18439,7 @@ func TestGameSessionFlowPracticeMobRestartTownTransfersDeadOwnerToEmpireCreatePo
 	if sourceWatcherRetarget.TargetVID != targetVID || sourceWatcherRetarget.HPPercent != 90 {
 		t.Fatalf("expected source watcher to see source-map practice mob preserved at 90%% HP after /restart_town, got %+v", sourceWatcherRetarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, sourceWatcherFlow)
 	persisted, err := accounts.Load("peer-one")
 	if err != nil {
 		t.Fatalf("load persisted owner account after /restart_town: %v", err)
@@ -18537,6 +18646,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreservesSourcePracticeMobHPForOth
 	if watcherTarget.TargetVID != targetVID || watcherTarget.HPPercent != 90 {
 		t.Fatalf("expected source watcher to observe practice mob preserved at 90%% HP after owner /restart_town, got %+v", watcherTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, sourceWatcherFlow)
 }
 
 func TestGameSessionFlowPracticeMobRestartTownLateDestinationPeerSeesRecoveredOwnerAlive(t *testing.T) {
@@ -18903,6 +19013,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationRespawn(t 
 	if len(selectOut) != 1 {
 		t.Fatalf("expected source-mob target before restart-town due-respawn preflight, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: sourceVID})))
 	if err != nil {
 		t.Fatalf("unexpected source-mob attack before restart-town due-respawn preflight: %v", err)
@@ -18981,6 +19092,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationRespawn(t 
 	if reselected.TargetVID != destinationVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected destination mob target to be full HP after /restart_town due-respawn preflight, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationChaseStep(t *testing.T) {
@@ -19051,6 +19163,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationChaseStep(
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: destinationVID}))); err != nil {
 		t.Fatalf("unexpected destination engager target before /restart_town due chase-step preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  destinationVID,
@@ -19322,6 +19435,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationReturnStep
 	if len(reselectOut) != 0 {
 		t.Fatalf("expected stepped return_required destination practice mob to remain non-targetable after /restart_town due return-step preflight, got %d frames", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationHomewardStep(t *testing.T) {
@@ -19394,6 +19508,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationHomewardSt
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: destinationVID}))); err != nil {
 		t.Fatalf("unexpected destination engager target before /restart_town due homeward-step preflight: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	if _, err := engagerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  destinationVID,
@@ -19457,6 +19572,7 @@ func TestGameSessionFlowPracticeMobRestartTownPreflightsDueDestinationHomewardSt
 	if len(clearOut) != 0 {
 		t.Fatalf("expected TARGET(0) clear to emit no frames before homeward /restart_town, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, engagerFlow)
 	runtime.spawnHomewardMu.Lock()
 	dueAt, homewardScheduled := runtime.spawnHomewardStepDueAt[group.EntityID]
 	runtime.spawnHomewardMu.Unlock()
@@ -19642,6 +19758,7 @@ func TestGameSessionFlowPracticeMobRestartTownFreshTargetKeepsRuntimeOwnedMobHP(
 	if len(retargetOut) != 0 {
 		t.Fatalf("expected fresh target-selection after /restart_town to fail closed because the source practice mob is no longer visible, got %d frames", len(retargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	if queued := flushServerFrames(t, sourceWatcherFlow); len(queued) != 0 {
 		t.Fatalf("expected /restart_town retarget continuity check to avoid extra source-watcher fanout, got %d queued frames", len(queued))
 	}
@@ -20246,6 +20363,7 @@ func TestGameSessionFlowPracticeMobPeerJoinSkipsZeroHPOwnerRecipientAfterDelayed
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner peer-join skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20358,6 +20476,7 @@ func TestGameSessionFlowPracticeMobFreshPeerBootstrapAppendsDeadForAlreadyDeadVi
 		t.Fatalf("expected 1 target-selection frame before fresh-peer dead bootstrap test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20470,6 +20589,7 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner move-into-range skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20585,6 +20705,7 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionIntoRangeSkipsZeroHPOwnerReci
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner sync-into-range skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20703,6 +20824,7 @@ func TestGameSessionFlowPracticeMobPeerMoveWithinVisibleSetSkipsZeroHPOwnerRecip
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner stable-move skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20828,6 +20950,7 @@ func TestGameSessionFlowPracticeMobPeerSyncPositionWithinVisibleSetSkipsZeroHPOw
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner stable-sync skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -20956,6 +21079,7 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner later peer-death skip test, got %d", len(ownerSelectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -21008,6 +21132,7 @@ func TestGameSessionFlowPracticeMobLaterVisiblePeerDeathSkipsZeroHPOwnerRecipien
 		t.Fatalf("expected victim to reacquire the released practice mob at 90%% HP before later peer-death skip test, got %+v", victimTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, victimFlow)
 	victimAttackOut, err := victimFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -21106,6 +21231,7 @@ func TestGameSessionFlowPracticeMobPeerTransferIntoVisibilitySkipsZeroHPOwnerRec
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner transfer-visibility skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -21222,6 +21348,7 @@ func TestGameSessionFlowDeadOwnerTransferIntoVisibilityReplaysDeathStateForLiveP
 		t.Fatalf("expected 1 target-selection frame before dead-owner transfer replay test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -21336,6 +21463,7 @@ func TestGameSessionFlowDeadOwnerTransferSkipsDestinationPeerVisibilityForSelf(t
 		t.Fatalf("expected 1 target-selection frame before dead-owner transfer self-replay test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -21451,6 +21579,7 @@ func TestGameSessionFlowDeadOwnerTransferSkipsDestinationStaticActorVisibilityFo
 		t.Fatalf("expected 1 target-selection frame before dead-owner transfer static-actor skip test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  sourceTargetVID,
@@ -22277,6 +22406,7 @@ func TestGameRuntimeStaticActorSnapshotsMarkDeadTrainingDummy(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before snapshot death check, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -22388,6 +22518,7 @@ func TestGameRuntimePlayerSnapshotsMarkDeadOwner(t *testing.T) {
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before dead-owner player snapshot check, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -22513,6 +22644,7 @@ func TestGameRuntimeTransferCharacterStructuredSnapshotsMarkDeadTrainingDummy(t 
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before structured-result death check, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -22622,6 +22754,7 @@ func TestGameRuntimeTransferCharacterStructuredPlayerSnapshotsMarkDeadOwner(t *t
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before dead-owner transfer snapshot check, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -23380,6 +23513,7 @@ func TestGameRuntimeCombinedScalarAndDropRewardEmitsAllRewards(t *testing.T) {
 		t.Fatalf("expected target selection before combined reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23491,6 +23625,7 @@ func TestGameRuntimeDropTableRewardDescriptorKillingHitEmitsAllRewards(t *testin
 		t.Fatalf("expected table reward target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23588,6 +23723,7 @@ func TestGameRuntimeScalarRewardRefreshesLiveWorldSnapshotAndPersistsRetaliation
 		t.Fatalf("expected target selection before retaliated reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23690,6 +23826,7 @@ func TestGameRuntimeScalarRewardPersistenceFailureRollsBackLiveScalarsWithoutClo
 		t.Fatalf("expected target selection before save-fail reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23764,6 +23901,7 @@ func TestGameRuntimeScalarRewardPersistenceFailureKeepsValidDropReward(t *testin
 		t.Fatalf("expected target selection before save-fail scalar/drop reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23860,6 +23998,7 @@ func TestGameRuntimeDropRewardCollisionFailsClosedWithoutDuplicateGroundItem(t *
 		t.Fatalf("expected target selection before colliding reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -23933,6 +24072,7 @@ func TestGameRuntimeDropRewardTemplateRestrictionsSkipOnlyInvalidDrop(t *testing
 		t.Fatalf("expected target selection before template-restricted reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24020,6 +24160,7 @@ func TestGameRuntimeDropRewardInvalidOwnerNameSkipsGroundFrames(t *testing.T) {
 		t.Fatalf("expected target selection before invalid-owner reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24103,6 +24244,7 @@ func TestGameRuntimeDropRewardOverlongOwnerNameSkipsGroundFrames(t *testing.T) {
 		t.Fatalf("expected target selection before overlong-owner reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24193,6 +24335,7 @@ func TestGameRuntimeDropRewardCollisionSkipsOnlyCollidingDrop(t *testing.T) {
 		t.Fatalf("expected target selection before partial collision reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24278,6 +24421,7 @@ func TestGameRuntimeNormalizesDropRewardOrderBeforeGroundVIDGeneration(t *testin
 		t.Fatalf("expected target selection before descriptor collision reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24355,6 +24499,7 @@ func TestGameRuntimeScalarRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t
 		t.Fatalf("expected target selection before scalar overflow drop reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24444,6 +24589,7 @@ func TestGameRuntimeGoldRewardOverflowSkipsOnlyScalarAndKeepsValidDropReward(t *
 		t.Fatalf("expected target selection before gold overflow drop reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24543,6 +24689,7 @@ func TestGameRuntimeScalarRewardSurvivesCollidingDropReward(t *testing.T) {
 		t.Fatalf("expected target selection before scalar collision reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24644,6 +24791,7 @@ func TestGameRuntimeDropRewardQueuesGroundVisibilityForLivePeers(t *testing.T) {
 		t.Fatalf("expected target selection before peer-visible drop kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24743,6 +24891,7 @@ func TestGameRuntimeDropRewardSkipsDeadVisiblePeers(t *testing.T) {
 		t.Fatalf("expected target selection before dead-peer drop kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24811,6 +24960,7 @@ func TestGameRuntimeDropRewardOwnerCloseRemovesPendingGroundHandleForVisiblePeer
 		t.Fatalf("expected target selection before reward owner close kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -24905,6 +25055,7 @@ func TestGameRuntimeGroundRewardPickupUpdatesMapOccupancy(t *testing.T) {
 		t.Fatalf("expected target selection before occupancy drop kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -25005,6 +25156,7 @@ func TestGameRuntimeRewardDropPickupUsesTemplateAuthoredPickupRange(t *testing.T
 		t.Fatalf("expected target selection before long-range reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -25108,6 +25260,7 @@ func TestGameRuntimeRewardDropPickupTemplateAuthoredShortRangeFailsClosed(t *tes
 		t.Fatalf("expected target selection before short-range reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -25203,6 +25356,7 @@ func TestGameRuntimeDeadCollectorCannotPickupPracticeMobDropReward(t *testing.T)
 		t.Fatalf("expected target selection before dead-collector reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -25287,6 +25441,7 @@ func TestGameRuntimeLivingCollectorTakesPracticeMobDropRewardWhenOwnerIsDead(t *
 		t.Fatalf("expected target selection before dead-owner reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -25413,6 +25568,7 @@ func TestGameRuntimeRewardDropPublicReleaseAllowsLivingCollectorPickup(t *testin
 		t.Fatalf("expected target selection before public reward kill to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -28380,6 +28536,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatAttackNonAuthoritative(t *te
 		t.Fatalf("expected original owner target ack before reclaim, got %d frames", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOwnerOld)
 	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
 	if !ok {
 		t.Fatal("expected live player entity before stale combat reclaim")
@@ -28422,6 +28579,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatAttackNonAuthoritative(t *te
 		t.Fatalf("unexpected replacement owner target ack after stale combat attack: %+v", targetPacket)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOwnerNew)
 	liveAttackOut, err := flowOwnerNew.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
 	if err != nil {
 		t.Fatalf("unexpected replacement owner attack error after stale combat attack: %v", err)
@@ -28476,6 +28634,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatTargetSelectionNonAuthoritat
 		t.Fatalf("expected original owner target ack before reclaim, got %d frames", len(oldTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOwnerOld)
 	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
 	if !ok {
 		t.Fatal("expected live player entity before stale combat target reclaim")
@@ -28500,6 +28659,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatTargetSelectionNonAuthoritat
 		t.Fatalf("expected replacement owner target ack before stale target attempt, got %d frames", len(liveTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOwnerNew)
 	staleTargetOut, err := flowOwnerOld.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(firstDummy.EntityID)})))
 	if err != nil {
 		t.Fatalf("unexpected stale target error after reclaim: %v", err)
@@ -28507,6 +28667,7 @@ func TestGameRuntimeEnterGameReclaimKeepsStaleCombatTargetSelectionNonAuthoritat
 	if len(staleTargetOut) != 0 {
 		t.Fatalf("expected stale target attempt to remain non-authoritative with no frames, got %d", len(staleTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowOwnerOld)
 	if queued := flushServerFrames(t, flowOwnerNew); len(queued) != 0 {
 		t.Fatalf("expected replacement owner to receive no queued frames from stale target attempt, got %d", len(queued))
 	}
@@ -29709,6 +29870,7 @@ func TestGameRuntimeRemoveStaticActorReturnsDeadTrainingDummySnapshot(t *testing
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before delete snapshot death check, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -29830,6 +29992,7 @@ func TestGameRuntimeReclaimPreventsStaleSessionCombatTargetAndAttack(t *testing.
 	if len(staleTargetOut) != 0 {
 		t.Fatalf("expected reclaimed stale session target selection to fail closed with no frames, got %d", len(staleTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, staleFlow)
 	staleAttackOut, err := staleFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected stale attack error after reclaim: %v", err)
@@ -29855,6 +30018,7 @@ func TestGameRuntimeReclaimPreventsStaleSessionCombatTargetAndAttack(t *testing.
 	if targetPacket.TargetVID != targetVID || targetPacket.HPPercent != 100 {
 		t.Fatalf("expected replacement owner to see untouched training dummy target, got %+v", targetPacket)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, replacementFlow)
 }
 
 func TestSharedWorldRegistryRemoveStaticActorClearsSelectedCombatTargetOwnership(t *testing.T) {
@@ -30223,6 +30387,7 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before dead refresh, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, nearFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -30297,6 +30462,7 @@ func TestGameRuntimeUpdateStaticActorRefreshReplaysDeadTrainingDummyForVisiblePl
 	if len(postRefreshTargetOut) != 0 {
 		t.Fatalf("expected zero self frames for post-refresh dead-target rejection, got %d", len(postRefreshTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, nearFlow)
 }
 
 func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDummy(t *testing.T) {
@@ -30342,6 +30508,7 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only target frame before respawn, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, nearFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -30406,6 +30573,7 @@ func TestGameRuntimeFlushReadyStaticActorRespawnsRebuildsVisibleDeadTrainingDumm
 	if len(postRespawnTargetOut) != 1 {
 		t.Fatalf("expected fresh target acquisition after respawn, got %d self frames", len(postRespawnTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, nearFlow)
 }
 
 func TestSharedWorldRegistryStaticActorRespawnsReportsPendingDeadActors(t *testing.T) {
@@ -30675,6 +30843,7 @@ func TestGameRuntimePracticeMobRespawnPreservesAuthoredSpawnRewardSnapshot(t *te
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 target-selection frame before reward respawn, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -30742,6 +30911,7 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 		t.Fatalf("expected 1 target-selection frame before registered-profile respawn, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected registered-profile first attack error: %v", err)
@@ -30798,6 +30968,7 @@ func TestGameRuntimeRegisteredProfileRespawnUsesRegisteredDelayAndFullHP(t *test
 	if postRespawnRefresh.TargetVID != targetVID || postRespawnRefresh.HPPercent != 100 {
 		t.Fatalf("expected registered-profile respawn to restore full HP, got %+v", postRespawnRefresh)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameRuntimeUpdateStaticActorRelocateAcrossAOIBoundaryQueuesVisibilityDeltasForOnlinePlayers(t *testing.T) {
@@ -32368,6 +32539,7 @@ func TestGameRuntimeCombatTargetSnapshotsReportsActiveSelections(t *testing.T) {
 		t.Fatalf("expected target selection before runtime snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	snapshots := runtime.CombatTargetSnapshots()
 	if len(snapshots) != 1 {
 		t.Fatalf("expected one runtime combat target snapshot, got %d: %+v", len(snapshots), snapshots)
@@ -32400,6 +32572,7 @@ func TestGameRuntimeCombatTargetSnapshotsForMapReportsActiveSelections(t *testin
 		t.Fatalf("expected target selection before map-local runtime snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	snapshots, ok := runtime.CombatTargetSnapshotsForMap(42)
 	if !ok {
 		t.Fatal("expected map-42 runtime combat-target lookup to resolve")
@@ -32433,6 +32606,7 @@ func TestGameRuntimeCombatTargetSnapshotsExposeEngagementAndRetaliationAfterPrac
 	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
 		t.Fatalf("expected target selection before runtime aggro snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack before runtime aggro snapshot: %v", err)
@@ -32485,6 +32659,7 @@ func TestGameRuntimeCombatTargetSnapshotExposesPendingServerOriginRetaliationTim
 	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
 		t.Fatalf("expected target selection before pending-retaliation snapshot to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack before pending-retaliation snapshot: %v", err)
@@ -32640,6 +32815,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDeathRew
 		t.Fatalf("expected target selection before registered-profile reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= 2; hit++ {
 		if hit > 1 {
@@ -32735,6 +32911,7 @@ func TestNewGameSessionFactoryAppliesRegisteredProfileDefaultPracticeMobDropRewa
 		t.Fatalf("expected target selection before registered-profile drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= 2; hit++ {
 		if hit > 1 {
@@ -32826,6 +33003,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileCombinedDeathRe
 		t.Fatalf("expected target selection before formula reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstHit, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected formula reward first attack error: %v", err)
@@ -32959,6 +33137,7 @@ func TestNewGameSessionFactoryPrefersExplicitDeathRewardOverRegisteredProfileDef
 		t.Fatalf("expected target selection before explicit reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= 2; hit++ {
 		if hit > 1 {
@@ -33047,6 +33226,7 @@ func TestNewGameSessionFactoryAppliesFormulaOnlyRegisteredProfileDeathReward(t *
 		t.Fatalf("expected target selection before formula reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstHitOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected formula reward first hit error: %v", err)
@@ -33156,6 +33336,7 @@ func TestNewGameSessionFactoryAppliesExperienceOnlyPracticeMobDeathReward(t *tes
 		t.Fatalf("expected 1 target selection frame before experience reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33238,6 +33419,7 @@ func TestNewGameSessionFactoryAppliesGoldOnlyPracticeMobDeathReward(t *testing.T
 		t.Fatalf("expected 1 target selection frame before gold reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33325,6 +33507,7 @@ func TestNewGameSessionFactoryOmitsOverflowingScalarPracticeMobDeathReward(t *te
 		t.Fatalf("expected 1 target selection frame before overflow reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33408,6 +33591,7 @@ func TestNewGameSessionFactoryRollsBackScalarPracticeMobDeathRewardWhenAccountSa
 		t.Fatalf("expected 1 target selection frame before save-failure reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33481,6 +33665,7 @@ func TestNewGameSessionFactoryDropsMultipleItemRewardsForPracticeMobDeath(t *tes
 		t.Fatalf("expected target selection before multi-drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33589,6 +33774,7 @@ func TestNewGameSessionFactoryQueuesPracticeMobDeathDropRewardToVisiblePeer(t *t
 	if selectOut, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selectOut) != 1 {
 		t.Fatalf("expected target selection before peer drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	if queued := flushServerFrames(t, watcherFlow); len(queued) != 0 {
 		t.Fatalf("expected target selection to stay self-only before peer drop reward kill, got %d queued watcher frames", len(queued))
 	}
@@ -33701,6 +33887,7 @@ func TestNewGameSessionFactorySkipsPracticeMobDeathDropRewardForDeadVisiblePeer(
 		t.Fatalf("expected target selection before dead-peer drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33764,6 +33951,7 @@ func TestNewGameSessionFactoryAppliesMixedScalarAndDropPracticeMobDeathReward(t 
 		t.Fatalf("expected target selection before mixed reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33881,6 +34069,7 @@ func TestNewGameSessionFactoryAppliesAuthoredSpawnGroupPracticeMobDeathReward(t 
 		t.Fatalf("expected target selection before authored reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -33981,6 +34170,7 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobScalarRewardS
 		t.Fatalf("expected 1 target selection frame before scalar-save-fail reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -34076,6 +34266,7 @@ func TestNewGameSessionFactoryDropsFirstItemRewardForPracticeMobDeath(t *testing
 		t.Fatalf("expected 1 target selection frame before drop reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -34210,6 +34401,7 @@ func TestGameRuntimeDropRewardQueuesVisibilityForLivePeer(t *testing.T) {
 		t.Fatalf("expected target selection before visible drop reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -34304,6 +34496,7 @@ func TestNewGameSessionFactoryRejectsPracticeMobDropRewardVIDCollisionWithoutGro
 		t.Fatalf("expected target selection before collision reward kill to succeed with one frame, got frames=%d err=%v", len(selectOut), err)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -34403,6 +34596,7 @@ func TestNewGameSessionFactoryPreservesAcceptedDeathWhenPracticeMobRewardDescrip
 		t.Fatalf("expected 1 target selection frame before unsupported reward kill, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var killOut [][]byte
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
 		if hit > 1 {
@@ -38737,6 +38931,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenExchangeSh
 		t.Fatalf("expected one target selection frame before exchange death, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected exchange death attack: %v", err)
@@ -38842,6 +39037,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenExchangeShel
 		t.Fatalf("expected one target selection frame before delayed exchange death, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected delayed exchange first attack: %v", err)
@@ -38979,6 +39175,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationFloorClosesOpenMerchantWi
 		t.Fatalf("expected 1 target-selection frame before merchant immediate floor-close test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -39107,6 +39304,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationFloorClosesOpenMerchantWind
 		t.Fatalf("expected 1 target-selection frame before merchant floor-close test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41385,6 +41583,7 @@ func TestGameSessionFlowStaticActorCombatTargetReturnsSelfOnlyTargetPacket(t *te
 	if target.TargetVID != uint32(actor.EntityID) || target.HPPercent != 100 {
 		t.Fatalf("unexpected combat target packet: %+v", target)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for self-only combat targeting, got %d", len(queued))
 	}
@@ -41416,6 +41615,7 @@ func TestGameSessionFlowStaticActorCombatTargetRejectsVisibleNonTargetableActorW
 	if len(out) != 0 {
 		t.Fatalf("expected no self frames for rejected non-targetable combat target, got %d", len(out))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for rejected combat target, got %d", len(queued))
 	}
@@ -41457,6 +41657,7 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshAndDamageIn
 		t.Fatalf("unexpected selected training-dummy target packet: %+v", selected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(actor.EntityID),
@@ -41522,6 +41723,7 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyTargetRefreshAndDamageIn
 	if reselected.TargetVID != uint32(actor.EntityID) || reselected.HPPercent != 80 {
 		t.Fatalf("unexpected reselected damaged training-dummy target packet: %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for accepted bootstrap dummy attack, got %d", len(queued))
 	}
@@ -41557,6 +41759,7 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyDamageInfoForStandaloneP
 		t.Fatalf("expected 1 self-only practice-mob target frame, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41627,6 +41830,7 @@ func TestGameSessionFlowStaticActorAttackDamageInfoQueuesVisiblePeerForStandalon
 		t.Fatalf("expected 1 self-only target frame before damage-info fanout, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41702,6 +41906,7 @@ func TestGameSessionFlowStaticActorAttackDamageInfoUsesRegisteredFormulaDamage(t
 		t.Fatalf("expected 1 self-only registered-profile target frame, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41775,6 +41980,7 @@ func TestGameSessionFlowContentSpawnBackedPracticeMobAttackAppendsSelfDamageInfo
 		t.Fatalf("expected 1 self-only spawn-backed practice-mob target frame, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41872,6 +42078,7 @@ func TestGameSessionFlowContentSpawnBackedPracticeMobAttackDamageInfoQueuesVisib
 		t.Fatalf("expected 1 self-only spawn-backed target frame before damage-info fanout, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -41965,6 +42172,7 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 		t.Fatalf("expected 1 self-only combat target frame before death transition, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -42034,6 +42242,7 @@ func TestGameSessionFlowStaticActorAttackTransitionsSelectedDummyToDeadStateAndR
 	if len(postDeathReselectOut) != 0 {
 		t.Fatalf("expected zero self frames for post-death target rejection, got %d", len(postDeathReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for zero-HP death with a single visible session, got %d", len(queued))
 	}
@@ -42069,6 +42278,7 @@ func TestNewGameSessionFactoryBootstrapsStillDeadTrainingDummyWithTrailingDeadRe
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only combat target frame before death transition, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, killerFlow)
 	for attackIndex := 0; attackIndex < 10; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -42165,6 +42375,7 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 		if len(selectOut) != 1 {
 			t.Fatalf("expected 1 self-only combat target frame for selected visible session %d, got %d", idx+1, len(selectOut))
 		}
+		drainAcceptedTargetCreateNewIfQueued(t, flow)
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
@@ -42247,6 +42458,7 @@ func TestGameSessionFlowStaticActorDummyDeathClearsOtherSelectedVisibleSessions(
 	if len(peerPostDeathReselectOut) != 0 {
 		t.Fatalf("expected zero self frames for cleared visible-session post-death target rejection, got %d", len(peerPostDeathReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowTwo)
 }
 
 func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequiresFreshReselect(t *testing.T) {
@@ -42279,6 +42491,7 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 		t.Fatalf("expected 1 self-only combat target frame before respawn slice, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -42373,6 +42586,7 @@ func TestGameSessionFlowStaticActorDummyRespawnsAfterServerDrivenDelayAndRequire
 		t.Fatalf("unexpected post-respawn target packet: %+v", reselected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	postRespawnAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -42447,6 +42661,7 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 		t.Fatalf("expected 1 self-only combat target frame before content respawn slice, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -42563,6 +42778,7 @@ func TestGameSessionFlowContentSpawnGroupPracticeMobRespawnsAfterServerDrivenDel
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("unexpected post-respawn content practice-mob target packet: %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowContentSpawnGroupDueRespawnFlushesBeforeFreshEnterBootstrap(t *testing.T) {
@@ -42663,6 +42879,7 @@ func TestGameSessionFlowContentSpawnGroupDueRespawnFlushesBeforeFreshEnterBootst
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected fresh enter to target full-HP respawned mob, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, newcomerFlow)
 }
 
 func TestGameSessionFlowContentSpawnGroupStillDeadEnterGameReplaysTrailingDead(t *testing.T) {
@@ -42764,6 +42981,7 @@ func TestGameSessionFlowContentSpawnGroupStillDeadEnterGameReplaysTrailingDead(t
 	if len(selectOut) != 0 {
 		t.Fatalf("expected still-dead content practice mob to stay non-targetable on fresh enter, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 	attackOut, err := lateFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -42914,6 +43132,7 @@ func TestGameRuntimeContentSpawnGroupStillDeadReplacementDoesNotResurrectEarly(t
 	if len(deniedTarget) != 0 {
 		t.Fatalf("expected still-dead replaced spawn group to stay non-targetable, got %d frames", len(deniedTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 }
 
 func TestGameRuntimeContentSpawnGroupStillDeadPersistsAcrossDaemonRestart(t *testing.T) {
@@ -43058,6 +43277,7 @@ func TestGameRuntimeContentSpawnGroupStillDeadPersistsAcrossDaemonRestart(t *tes
 		t.Fatalf("expected still-dead restarted spawn group to stay non-targetable, got %d frames", len(deniedTarget))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 	currentTime = wantReadyAt.Add(25 * time.Millisecond)
 	reloaded.flushReadyStaticActorRespawns()
 	respawned, ok := reloaded.SpawnGroupByRef("practice.mob_still_dead_restart")
@@ -43122,6 +43342,7 @@ func TestGameRuntimeContentSpawnGroupDamagedHPPersistsAcrossDaemonRestart(t *tes
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target ack before damaged hit, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, attackerFlow)
 	attackOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType:   0,
 		TargetVID:    targetVID,
@@ -43229,6 +43450,7 @@ func TestGameRuntimeContentSpawnGroupDamagedHPPersistsAcrossDaemonRestart(t *tes
 	if reselect.TargetVID != uint32(afterRestart.EntityID) || reselect.HPPercent != wantPercent {
 		t.Fatalf("expected post-restart target ack to keep damaged hp_percent=%d, got %+v", wantPercent, reselect)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 }
 
 func TestGameRuntimeContentSpawnGroupDamagedHPReplacementDoesNotResetToFullHP(t *testing.T) {
@@ -43277,6 +43499,7 @@ func TestGameRuntimeContentSpawnGroupDamagedHPReplacementDoesNotResetToFullHP(t 
 	if len(selectOut) != 1 {
 		t.Fatalf("expected one target ack before damaged hit, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, attackerFlow)
 	attackOut, err := attackerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType:   0,
 		TargetVID:    targetVID,
@@ -43386,6 +43609,7 @@ func TestGameRuntimeContentSpawnGroupDamagedHPReplacementDoesNotResetToFullHP(t 
 	if reselect.TargetVID != uint32(afterReplace.EntityID) || reselect.HPPercent != wantPercent {
 		t.Fatalf("expected post-replacement target ack to keep damaged hp_percent=%d, got %+v", wantPercent, reselect)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, lateFlow)
 }
 
 func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRespawn(t *testing.T) {
@@ -43434,6 +43658,7 @@ func TestGameSessionFlowPracticeMobDeathCancelsPendingDelayedRetaliationBeforeRe
 		t.Fatalf("expected 1 self-only combat target frame before pending-retaliation cleanup test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
 		if attackIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -43545,6 +43770,7 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 		t.Fatalf("expected 1 self-only target frame before first aggro-lite hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOne)
 	attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -43563,6 +43789,7 @@ func TestGameSessionFlowPracticeMobAggroLiteRejectsFreshThirdPartyTargetAfterFir
 	if len(thirdPartyTarget) != 0 {
 		t.Fatalf("expected fresh third-party target selection to fail closed once the content practice mob is engaged, got %d frames", len(thirdPartyTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowTwo)
 }
 
 func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTargetAfterFirstAcceptedHit(t *testing.T) {
@@ -43630,6 +43857,7 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 		t.Fatalf("expected 1 self-only target frame before first custom-profile aggro-lite hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flowOne)
 	attackOut, err := flowOne.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -43662,6 +43890,7 @@ func TestGameSessionFlowRegisteredCombatProfileAggroLiteRejectsFreshThirdPartyTa
 	if len(thirdPartyTarget) != 0 {
 		t.Fatalf("expected fresh third-party target selection to fail closed once the custom-profile mob is engaged, got %d frames", len(thirdPartyTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowTwo)
 	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
 		t.Fatalf("expected no custom-profile delayed retaliation before the owned delay expires, got %d frames", len(queued))
 	}
@@ -43736,6 +43965,7 @@ func TestGameSessionFlowRegisteredCombatProfileCustomRetaliationPointDelta(t *te
 		t.Fatalf("expected 1 self-only target frame before custom-retaliation hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -43814,6 +44044,7 @@ func TestGameSessionFlowPracticeMobFirstHostileRetaliationAppliesSelfOnlyPointLo
 		t.Fatalf("expected 1 self-only target frame before first hostile retaliation hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -43886,6 +44117,7 @@ func TestGameSessionFlowPracticeMobProfileFirstHostileRetaliationAppliesSelfOnly
 		t.Fatalf("expected 1 self-only target frame before practice-mob-profile hostile retaliation hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -43957,6 +44189,7 @@ func TestGameSessionFlowPracticeMobQueuesDelayedServerOriginRetaliationBeatAfter
 		t.Fatalf("expected 1 self-only target frame before delayed retaliation beat, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44037,6 +44270,7 @@ func TestGameSessionFlowPracticeMobProfileQueuesDelayedServerOriginRetaliationBe
 		t.Fatalf("expected 1 self-only target frame before practice-mob-profile delayed retaliation beat, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44111,6 +44345,7 @@ func TestGameSessionFlowPracticeMobDeniedAttackInsideCadenceWindowDoesNotRetalia
 		t.Fatalf("expected 1 self-only target frame before cadence-window denial test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44225,6 +44460,7 @@ func TestGameSessionFlowPracticeMobSustainsDelayedServerOriginRetaliationCadence
 		t.Fatalf("expected 1 self-only target frame before sustained delayed retaliation cadence test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44306,6 +44542,7 @@ func TestGameSessionFlowPracticeMobAcceptedHitWhileDelayedRetaliationPendingDoes
 		t.Fatalf("expected 1 self-only target frame before pending-retaliation stacking test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44427,6 +44664,7 @@ func TestGameSessionFlowPracticeMobRetaliationStopsAtOwnerHPFloorAfterImmediateB
 		t.Fatalf("expected 1 self-only target frame before owner-HP-floor retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44497,6 +44735,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationStopsAtOwnerHPFloor(t *test
 		t.Fatalf("expected 1 self-only target frame before delayed owner-HP-floor retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44584,6 +44823,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossPersistsDeathFlo
 		t.Fatalf("expected 1 self-only target frame before immediate retaliation runtime-only test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44657,6 +44897,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 		t.Fatalf("expected 1 self-only target frame before delayed retaliation /phase_select recovery test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44730,6 +44971,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPhaseSelectReentryRebuildsP
 		t.Fatalf("expected zero-HP /phase_select re-entry to keep combat target fail-closed, got %d frames", len(reselectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackAfterRecovery, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44808,6 +45050,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPartialPointLossPersistsAcr
 		t.Fatalf("expected 1 self-only target frame before delayed retaliation reconnect test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -44910,6 +45153,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationPersistsZeroHPFloorAcrossRe
 		t.Fatalf("expected 1 self-only target frame before delayed retaliation death-persistence reconnect test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45026,6 +45270,7 @@ func TestGameSessionFlowPracticeMobRetaliationPointLossPersistsAcrossPersistedMo
 		t.Fatalf("expected 1 self-only target frame before persisted-move retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45152,6 +45397,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossPersistsAcrossTr
 		t.Fatalf("expected 1 self-only target frame before transfer rebootstrap retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45301,6 +45547,7 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 		t.Fatalf("expected 1 self-only target frame before transfer retaliation teardown test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45321,6 +45568,7 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate before transfer, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	transferOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222326})))
 	if err != nil {
 		t.Fatalf("unexpected transfer move error after delayed retaliation was armed: %v", err)
@@ -45356,6 +45604,7 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner transfer released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner transfer, got %d queued frames", len(queued))
@@ -45442,6 +45691,7 @@ func TestGameSessionFlowPracticeMobWarpRebootstrapQueuesTargetClearAndReleasesAg
 		t.Fatalf("expected 1 self-only target frame before warp retaliation teardown test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45462,6 +45712,7 @@ func TestGameSessionFlowPracticeMobWarpRebootstrapQueuesTargetClearAndReleasesAg
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate before warp, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	warpOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: teleporterVID})))
 	if err != nil {
 		t.Fatalf("unexpected warp interaction error after delayed retaliation was armed: %v", err)
@@ -45497,6 +45748,7 @@ func TestGameSessionFlowPracticeMobWarpRebootstrapQueuesTargetClearAndReleasesAg
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner warp released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner warp, got %d queued frames", len(queued))
@@ -45552,6 +45804,7 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterImmediateRetaliationRea
 		t.Fatalf("expected 1 self-only target frame before zero-HP owner attack denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45631,6 +45884,7 @@ func TestGameSessionFlowPracticeMobAttackFailsClosedAfterDelayedRetaliationReach
 		t.Fatalf("expected 1 self-only target frame before zero-HP owner attack denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45718,6 +45972,7 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterImmediateRetaliationRea
 		t.Fatalf("expected 1 initial self-only target frame before zero-HP owner target denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45741,6 +45996,7 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterImmediateRetaliationRea
 	if len(repeatedTarget) != 0 {
 		t.Fatalf("expected combat target attempt to fail closed once immediate retaliation reached owner HP floor, got %d frames", len(repeatedTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReachesOwnerHPFloor(t *testing.T) {
@@ -45789,6 +46045,7 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReach
 		t.Fatalf("expected 1 initial self-only target frame before zero-HP owner target denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45820,6 +46077,7 @@ func TestGameSessionFlowPracticeMobTargetFailsClosedAfterDelayedRetaliationReach
 	if len(repeatedTarget) != 0 {
 		t.Fatalf("expected combat target attempt to fail closed once delayed retaliation reached owner HP floor, got %d frames", len(repeatedTarget))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterImmediateRetaliationKillsOwner(t *testing.T) {
@@ -45878,6 +46136,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterImmediateRetaliatio
 		t.Fatalf("expected 1 owner target-selection frame before immediate-retaliation aggro release, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45909,6 +46168,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterImmediateRetaliatio
 		t.Fatalf("unexpected watcher target packet after immediate retaliation killed owner: %+v", watcherTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -45984,6 +46244,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 		t.Fatalf("expected 1 owner target-selection frame before delayed-retaliation aggro release, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46021,6 +46282,7 @@ func TestGameSessionFlowPracticeMobThirdPartyCanRetargetAfterDelayedRetaliationK
 		t.Fatalf("unexpected watcher target packet after delayed retaliation killed owner: %+v", watcherTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46103,6 +46365,7 @@ func TestGameSessionFlowPracticeMobMoveFailsClosedAfterImmediateRetaliationReach
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner move denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46205,6 +46468,7 @@ func TestGameSessionFlowPracticeMobSyncPositionFailsClosedAfterDelayedRetaliatio
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner sync-position denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46320,6 +46584,7 @@ func TestGameSessionFlowPracticeMobInteractionFailsClosedAfterImmediateRetaliati
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner interaction denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46423,6 +46688,7 @@ func TestGameSessionFlowPracticeMobInteractionFailsClosedAfterDelayedRetaliation
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner interaction denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -46551,6 +46817,7 @@ func TestGameSessionFlowPracticeMobPacketShopBuyFailsClosedAfterImmediateRetalia
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before zero-HP merchant packet-buy denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -46679,6 +46946,7 @@ func TestGameSessionFlowPracticeMobSlashShopBuyFailsClosedAfterDelayedRetaliatio
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before zero-HP merchant slash-buy denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -46816,6 +47084,7 @@ func TestGameSessionFlowPracticeMobPacketShopSellFailsClosedAfterImmediateRetali
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before zero-HP merchant packet-sell denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -46940,6 +47209,7 @@ func TestGameSessionFlowPracticeMobPacketShopSell2FailsClosedAfterDelayedRetalia
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before zero-HP merchant packet-sell2 denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -47075,6 +47345,7 @@ func TestGameSessionFlowPracticeMobPacketShopSell2PersistsRetaliationPointLossWi
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only merchant sell persistence, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only merchant sell persistence: %v", err)
@@ -47245,6 +47516,7 @@ func TestGameSessionFlowPracticeMobMerchantBuyPersistsRetaliationPointLossWithPu
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only merchant buy persistence, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only merchant buy persistence: %v", err)
@@ -47402,6 +47674,7 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterImmediateRetaliation
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP merchant close, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -47509,6 +47782,7 @@ func TestGameSessionFlowPracticeMobMerchantWindowClosesAfterDelayedRetaliationRe
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP merchant close, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -47610,6 +47884,7 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterImmediateRetaliationRe
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP item-use denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -47704,6 +47979,7 @@ func TestGameSessionFlowPracticeMobGoldDropFailsClosedAfterImmediateRetaliationR
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP gold-drop denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -47791,6 +48067,7 @@ func TestGameSessionFlowPracticeMobItemDropFailsClosedAfterImmediateRetaliationR
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP item-drop denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -47898,6 +48175,7 @@ func TestGameSessionFlowPracticeMobItemUsePacketFailsClosedAfterImmediateRetalia
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP packet item-use denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48005,6 +48283,7 @@ func TestGameSessionFlowPracticeMobUseItemFailsClosedAfterDelayedRetaliationReac
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP item-use denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48116,6 +48395,7 @@ func TestGameSessionFlowPracticeMobUseToItemFailsClosedAfterImmediateRetaliation
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP use-to-item denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48223,6 +48503,7 @@ func TestGameSessionFlowPracticeMobEquipItemFailsClosedAfterImmediateRetaliation
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP equip denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48351,6 +48632,7 @@ func TestGameSessionFlowPracticeMobUnequipItemFailsClosedAfterDelayedRetaliation
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP equip denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48474,6 +48756,7 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterImmediateRetalia
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before immediate zero-HP inventory-move denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before immediate zero-HP inventory-move denial: %v", err)
@@ -48572,6 +48855,7 @@ func TestGameSessionFlowPracticeMobInventoryMoveFailsClosedAfterDelayedRetaliati
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before delayed zero-HP inventory-move denial, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before delayed zero-HP inventory-move denial: %v", err)
@@ -48679,6 +48963,7 @@ func TestGameSessionFlowPracticeMobInventoryMovePersistsRetaliationPointLossWith
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only inventory-move persistence, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only inventory-move persistence: %v", err)
@@ -48813,6 +49098,7 @@ func TestGameSessionFlowPracticeMobPeerChatFailsClosedAfterImmediateRetaliationR
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner peer-chat denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48907,6 +49193,7 @@ func TestGameSessionFlowPracticeMobInfoChatFailsClosedAfterImmediateRetaliationR
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner info-chat denial after immediate retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -48979,6 +49266,7 @@ func TestGameSessionFlowPracticeMobInfoChatFailsClosedAfterDelayedRetaliationRea
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner info-chat denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49071,6 +49359,7 @@ func TestGameSessionFlowPracticeMobWhisperFailsClosedAfterDelayedRetaliationReac
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner whisper denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49180,6 +49469,7 @@ func TestGameSessionFlowPracticeMobWhisperToZeroHPOwnerFailsClosedAfterDelayedRe
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner recipient whisper denial after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49281,6 +49571,7 @@ func TestGameSessionFlowPracticeMobLocalChatSkipsZeroHPOwnerRecipientAfterDelaye
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner recipient local-chat skip after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49393,6 +49684,7 @@ func TestGameSessionFlowPracticeMobPeerChatRecipientSkipsZeroHPOwnerAfterDelayed
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner recipient broadcast-chat skip after delayed retaliation, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49504,6 +49796,7 @@ func TestGameSessionFlowPracticeMobQuitSlashCommandStillWorksAfterImmediateRetal
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner /quit regression check, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49584,6 +49877,7 @@ func TestGameSessionFlowPracticeMobLogoutSlashCommandStillWorksAfterImmediateRet
 		t.Fatalf("expected 1 target-selection frame before zero-HP owner /logout regression check, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49667,6 +49961,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationSendsSelfDeadBeforeTarget
 		t.Fatalf("expected 1 target-selection frame before immediate retaliation target clear, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49739,6 +50034,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationSendsSelfDeadBeforeTargetCl
 		t.Fatalf("expected 1 target-selection frame before delayed retaliation target clear, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49825,6 +50121,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationQueuesVisiblePeerDeadAtOw
 		t.Fatalf("expected 1 target-selection frame before immediate peer-dead retaliation check, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -49899,6 +50196,7 @@ func TestGameSessionFlowPracticeMobImmediateOwnerFloorHitEmitsMobAndOwnerDamageI
 		t.Fatalf("expected 1 target-selection frame before immediate owner-floor mob damage-info check, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50023,6 +50321,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsCombinedDeathBu
 		t.Fatalf("expected 1 target-selection frame before combined last-hit, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50179,6 +50478,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerEmitsRewardsBeforeOw
 		t.Fatalf("expected 1 target-selection frame before combined last-hit reward, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50373,6 +50673,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUp
 		t.Fatalf("expected 1 target-selection frame before combined last-hit still-dead restart-here, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50495,6 +50796,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUp
 		t.Fatalf("expected still-dead dummy to stay non-targetable after combined last-hit /restart_here, got %d frames", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	spawned, ok = runtime.SpawnGroupByRef(spawnRef)
 	if !ok || !spawned.Dead {
 		t.Fatalf("expected combined last-hit dummy to stay dead after /restart_here still-dead catch-up, ok=%v snapshot=%+v", ok, spawned)
@@ -50549,6 +50851,7 @@ func TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereCatchesUp
 	if reselected.TargetVID != targetVID || reselected.HPPercent != 100 {
 		t.Fatalf("expected dummy target to be full HP after combined last-hit /restart_here respawn, got %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwnerHPFloor(t *testing.T) {
@@ -50607,6 +50910,7 @@ func TestGameSessionFlowPracticeMobDelayedRetaliationQueuesVisiblePeerDeadAtOwne
 		t.Fatalf("expected 1 target-selection frame before delayed peer-dead retaliation check, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50684,6 +50988,7 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationRejectsQuickslotMutations
 		t.Fatalf("expected target selection to emit 1 frame before quickslot floor denial, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before quickslot floor denial: %v", err)
@@ -50770,6 +51075,7 @@ func TestGameSessionFlowPracticeMobCadenceWindowDeniedRepeatDoesNotAppendRetalia
 		t.Fatalf("expected 1 self-only target frame before cadence-window retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50855,6 +51161,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationContinuesAutono
 		t.Fatalf("expected 1 self-only target frame before autonomous delayed retaliation cadence, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -50938,6 +51245,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotResetPen
 		t.Fatalf("expected 1 self-only target frame before repeatable delayed retaliation beat, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -51041,6 +51349,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationDoesNotStackWhi
 		t.Fatalf("expected 1 self-only target frame before non-stacking delayed retaliation beat, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	for hitIndex := 0; hitIndex < 2; hitIndex++ {
 		if hitIndex > 0 {
 			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
@@ -51115,6 +51424,7 @@ func TestGameSessionFlowZeroHPOwnerMoveAndSyncFailClosed(t *testing.T) {
 		t.Fatalf("expected 1 target-selection frame before zero-HP movement rejection test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -51197,6 +51507,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 		t.Fatalf("expected 1 self-only target frame before mob-death retaliation cleanup test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -51307,6 +51618,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMobDe
 	if postRespawnSelected.TargetVID != targetVID || postRespawnSelected.HPPercent != 100 {
 		t.Fatalf("expected post-respawn reselect to reacquire full-HP target vid %d, got %+v", targetVID, postRespawnSelected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	postRespawnAcceptedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -51343,6 +51655,10 @@ func (f tcpStartedSessionFlow) FlushServerFrames() ([][]byte, error) {
 		return source.FlushServerFrames()
 	}
 	return nil, nil
+}
+
+func (f tcpStartedSessionFlow) unwrapSessionFlow() service.SessionFlow {
+	return f.inner
 }
 
 func (f tcpStartedSessionFlow) Close() error {
@@ -51655,6 +51971,13 @@ func (h *practiceMobTCPHarness) selectTarget(t *testing.T) combatproto.ServerTar
 	selected, err := combatproto.DecodeServerTarget(h.client.readFrame(t))
 	if err != nil {
 		t.Fatalf("decode tcp target-select response: %v", err)
+	}
+	marker, err := combatproto.DecodeServerTargetCreateNew(h.client.readFrame(t))
+	if err != nil {
+		t.Fatalf("decode tcp self-only TARGET_CREATE_NEW after accepted TARGET: %v", err)
+	}
+	if marker.ID != int32(h.targetID) || marker.VID != h.targetID || marker.Type != combatproto.ServerTargetMarkerTypeCharacter {
+		t.Fatalf("unexpected tcp self-only TARGET_CREATE_NEW after accepted TARGET: %+v", marker)
 	}
 	return selected
 }
@@ -52456,6 +52779,7 @@ func drivePracticeMobOwnerKill(t *testing.T, ownerFlow service.SessionFlow, targ
 		t.Fatalf("expected 1 owner target-selection frame before %s, got %d", context, len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	var killingAttack [][]byte
 	for attackIndex := 0; attackIndex < int(worldruntime.TrainingDummyBootstrapMaxHP); attackIndex++ {
 		if attackIndex > 0 {
@@ -52555,6 +52879,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 		t.Fatalf("expected watcher target-selection while mob is dead before respawn to fail closed, got %d frames", len(preRespawnSelectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(worldruntime.TrainingDummyBootstrapRespawnDelay)
 	ownerRespawn := flushServerFrames(t, ownerFlow)
 	if len(ownerRespawn) != 4 {
@@ -52595,6 +52920,7 @@ func TestGameSessionFlowPracticeMobRespawnReleasesAggroForWatcherReselect(t *tes
 	if watcherReselect.TargetVID != targetVID || watcherReselect.HPPercent != 100 {
 		t.Fatalf("expected watcher to reselect respawned full-HP practice mob, got %+v", watcherReselect)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -52715,6 +53041,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if len(watcherReselectOut) != 1 {
 		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
@@ -52729,6 +53056,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	watcherRetargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: releaseTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher retarget after post-respawn combat: %v", err)
@@ -52736,6 +53064,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if len(watcherRetargetOut) != 1 {
 		t.Fatalf("expected watcher retarget to second mob after post-respawn combat to return 1 target frame, got %d", len(watcherRetargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	retargetBlockedOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected blocker target-selection after watcher post-respawn retarget: %v", err)
@@ -52743,6 +53072,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if len(retargetBlockedOut) != 0 {
 		t.Fatalf("expected watcher non-zero retarget not to release first post-respawn mob to blocker, got %d frames", len(retargetBlockedOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	clearOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
 	if err != nil {
 		t.Fatalf("unexpected watcher explicit clear after post-respawn retarget: %v", err)
@@ -52750,6 +53080,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if len(clearOut) != 0 {
 		t.Fatalf("expected watcher explicit clear after post-respawn retarget to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	releasedTargetOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected blocker target-selection after watcher explicit clear released first mob: %v", err)
@@ -52764,6 +53095,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherRetargetKeepsSecondWatcherBlock
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after watcher explicit clear, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatcher(t *testing.T) {
@@ -52856,6 +53188,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if len(watcherReselectOut) != 1 {
 		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
@@ -52870,6 +53203,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	moveOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x31323334})))
 	if err != nil {
 		t.Fatalf("unexpected watcher move error before post-respawn movement release: %v", err)
@@ -52906,6 +53240,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after movement clear, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *testing.T) {
@@ -52998,6 +53333,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if len(watcherReselectOut) != 1 {
 		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
@@ -53012,6 +53348,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	logoutOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
 	if err != nil {
 		t.Fatalf("unexpected watcher /logout error after post-respawn combat: %v", err)
@@ -53062,6 +53399,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherLogoutReleasesSecondWatcher(t *
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after logout, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t *testing.T) {
@@ -53154,6 +53492,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if len(watcherReselectOut) != 1 {
 		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
@@ -53168,6 +53507,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	quitOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/quit"})))
 	if err != nil {
 		t.Fatalf("unexpected watcher /quit error after post-respawn combat: %v", err)
@@ -53218,6 +53558,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherQuitReleasesSecondWatcherLoop(t
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after quit, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	blockerAttackOut, err := blockerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected blocker attack after watcher /quit released post-respawn mob: %v", err)
@@ -53324,6 +53665,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if len(watcherReselectOut) != 1 {
 		t.Fatalf("expected watcher reselect after respawn rebuild to return 1 target frame, got %d", len(watcherReselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher attack after respawn reselect: %v", err)
@@ -53338,6 +53680,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if len(blockedTargetOut) != 0 {
 		t.Fatalf("expected blocker target-selection to fail closed while watcher holds post-respawn aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 	syncOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeSyncPosition(movep.SyncPositionPacket{Elements: []movep.SyncPositionElement{{VID: watcher.VID, X: 1900, Y: 3100}}})))
 	if err != nil {
 		t.Fatalf("unexpected watcher sync-position error before post-respawn sync-position release: %v", err)
@@ -53374,6 +53717,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherSyncClearReleasesSecondWatcher(
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected blocker to reacquire first post-respawn mob at current HP after sync-position clear, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, blockerFlow)
 }
 
 func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTargetReplacement(t *testing.T) {
@@ -53430,6 +53774,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTarge
 		t.Fatalf("expected 1 self-only target frame before delayed retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  firstTargetVID,
@@ -53456,6 +53801,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterTarge
 		t.Fatalf("expected replacement target to be selected at full HP while clearing old retaliation, got %+v", replacedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected delayed retaliation cadence to stop after target replacement, got %d queued frames", len(queued))
@@ -53507,6 +53853,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMovem
 		t.Fatalf("expected 1 self-only target frame before movement-clear retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -53598,6 +53945,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterSyncP
 		t.Fatalf("expected 1 self-only target frame before sync-position-clear retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -53697,6 +54045,7 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 		t.Fatalf("expected 1 self-only target frame before movement-clear aggro release test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -53716,6 +54065,7 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	moveOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1900, Y: 3100, Time: 0x21222324})))
 	if err != nil {
 		t.Fatalf("unexpected move error before movement-clear aggro release test: %v", err)
@@ -53749,6 +54099,7 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after movement cleared owner target intent, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *testing.T) {
@@ -53803,6 +54154,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 	if len(ownerSelectOut) != 1 {
 		t.Fatalf("expected 1 self-only owner target frame before stale-third-party invalidation test, got %d", len(ownerSelectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	watcherSelectOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher preselection error before stale-third-party invalidation test: %v", err)
@@ -53811,6 +54163,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 		t.Fatalf("expected 1 self-only watcher target frame before stale-third-party invalidation test, got %d", len(watcherSelectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	ownerAttackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -53852,6 +54205,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 	if len(watcherRetargetOut) != 0 {
 		t.Fatalf("expected watcher retarget to keep failing closed while owner still holds engagement, got %d frames", len(watcherRetargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	ownerRefreshOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected owner refresh target-selection error after stale-third-party invalidation: %v", err)
@@ -53866,6 +54220,7 @@ func TestGameSessionFlowPracticeMobOwnerHitClearsPreselectedThirdPartyTarget(t *
 	if ownerRefresh.TargetVID != targetVID || ownerRefresh.HPPercent != 90 {
 		t.Fatalf("expected owner refresh to preserve current runtime-owned HP after stale third-party invalidation, got %+v", ownerRefresh)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 }
 
 func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(t *testing.T) {
@@ -53933,6 +54288,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 		t.Fatalf("expected 1 self-only first target frame before retarget aggro release test, got %d", len(firstSelectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  firstTargetVID,
@@ -53952,6 +54308,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds first practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	secondSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected second target-selection error when owner replaces target intent: %v", err)
@@ -53960,6 +54317,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 		t.Fatalf("expected 1 self-only second target frame when owner replaces target intent, got %d", len(secondSelectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	retargetBlockedOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher target-selection error after owner replaced first practice-mob target intent: %v", err)
@@ -53968,6 +54326,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 		t.Fatalf("expected owner non-zero retarget not to release first practice-mob aggro-lite gate, got %d watcher frames", len(retargetBlockedOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	clearOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: 0})))
 	if err != nil {
 		t.Fatalf("unexpected owner explicit clear after replacing first practice-mob target intent: %v", err)
@@ -53975,6 +54334,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 	if len(clearOut) != 0 {
 		t.Fatalf("expected owner explicit clear after replacing first practice-mob target intent to emit no frames, got %d", len(clearOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	releasedTargetOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected watcher target-selection error after owner explicit clear released first practice mob: %v", err)
@@ -53989,6 +54349,7 @@ func TestGameSessionFlowPracticeMobRetargetKeepsPreviousAggroUntilExplicitClear(
 	if releasedTarget.TargetVID != firstTargetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to reacquire first live practice mob at its current runtime-owned HP after owner explicit clear released aggro-lite gate, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 }
 
 func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleasesAggro(t *testing.T) {
@@ -54046,6 +54407,7 @@ func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleases
 		t.Fatalf("expected 1 self-only target frame before slash-logout retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54066,6 +54428,7 @@ func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleases
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	logoutOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/logout"})))
 	if err != nil {
 		t.Fatalf("unexpected /logout error after delayed retaliation was armed: %v", err)
@@ -54119,6 +54482,7 @@ func TestGameSessionFlowPracticeMobSlashLogoutStopsPendingRetaliationAndReleases
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner logout released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner /logout, got %d queued frames", len(queued))
@@ -54183,6 +54547,7 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 		t.Fatalf("expected 1 self-only target frame before slash-quit retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54203,6 +54568,7 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	quitOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/quit"})))
 	if err != nil {
 		t.Fatalf("unexpected /quit error after delayed retaliation was armed: %v", err)
@@ -54255,6 +54621,7 @@ func TestGameSessionFlowPracticeMobSlashQuitStopsPendingRetaliationAndReleasesAg
 	if releasedTarget.TargetVID != targetVID || releasedTarget.HPPercent != 90 {
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner quit released aggro-lite gate, got %+v", releasedTarget)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	watcherAttackOut, err := watcherFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54345,6 +54712,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectStopsPendingRetaliationAndReleases
 		t.Fatalf("expected 1 self-only target frame before /phase_select retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54365,6 +54733,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectStopsPendingRetaliationAndReleases
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	phaseSelectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
 	if err != nil {
 		t.Fatalf("unexpected /phase_select error after delayed retaliation was armed: %v", err)
@@ -54418,6 +54787,7 @@ func TestGameSessionFlowPracticeMobPhaseSelectStopsPendingRetaliationAndReleases
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner /phase_select released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner /phase_select, got %d queued frames", len(queued))
@@ -54481,6 +54851,7 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 		t.Fatalf("expected 1 self-only target frame before close retaliation stop test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54501,6 +54872,7 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	closeSessionFlow(t, ownerFlow)
 
 	snapshots := runtime.ConnectedCharacters()
@@ -54535,6 +54907,7 @@ func TestGameSessionFlowPracticeMobCloseStopsPendingRetaliationAndReleasesAggro(
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after owner close released aggro-lite gate, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after owner close, got %d queued frames", len(queued))
@@ -54599,6 +54972,7 @@ func setupPracticeMobPendingRetaliationWithBlockedWatcher(t *testing.T) (*gameRu
 		t.Fatalf("expected 1 self-only target frame before partial-ownership-loss retaliation test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -54619,6 +54993,7 @@ func setupPracticeMobPendingRetaliationWithBlockedWatcher(t *testing.T) (*gameRu
 		t.Fatalf("expected watcher target-selection to fail closed while owner still holds practice-mob aggro-lite gate, got %d frames", len(blockedTargetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	ownerEntity, ok := runtime.sharedWorld.entities.PlayerByName(owner.Name)
 	if !ok {
 		t.Fatal("expected live player entity for engaged owner before partial ownership-loss test")
@@ -54651,6 +55026,7 @@ func TestGameSessionFlowPracticeMobSessionDirectoryLossStopsPendingRetaliationAn
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after session-directory ownership loss, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	*currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after engaged owner lost session-directory ownership, got %d queued frames", len(queued))
@@ -54684,6 +55060,7 @@ func TestGameSessionFlowPracticeMobEntityLossStopsPendingRetaliationAndReleasesA
 		t.Fatalf("expected watcher to reacquire same live practice mob at its current runtime-owned HP after entity ownership loss, got %+v", releasedTarget)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, watcherFlow)
 	*currentTime = currentTime.Add(time.Second)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected pending delayed retaliation cadence to stop after engaged owner lost entity ownership, got %d queued frames", len(queued))
@@ -54733,6 +55110,7 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 		if len(selectOut) != 1 {
 			t.Fatalf("expected 1 self-only combat target frame for respawn-visible session %d, got %d", idx+1, len(selectOut))
 		}
+		drainAcceptedTargetCreateNewIfQueued(t, flow)
 	}
 
 	for attackIndex := 0; attackIndex < 9; attackIndex++ {
@@ -54843,6 +55221,7 @@ func TestGameSessionFlowStaticActorDummyRespawnRebuildsForOtherVisibleSessionsAn
 	if peerReselected.TargetVID != targetVID || peerReselected.HPPercent != 100 {
 		t.Fatalf("unexpected other-session post-respawn target packet: %+v", peerReselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowTwo)
 }
 
 func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplacement(t *testing.T) {
@@ -54871,6 +55250,7 @@ func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplac
 	if len(selectOut) != 1 {
 		t.Fatalf("expected 1 self-only combat target frame before snapshot replacement, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, ok := runtime.sharedWorld.UpdateStaticActorWithCombatKind(actor.EntityID, "TrainingDummy", bootstrapMapIndex, 1210, 2210, 20350, worldruntime.StaticActorCombatKindTrainingDummy); !ok {
 		t.Fatal("expected training-dummy snapshot replacement to succeed")
 	}
@@ -54904,6 +55284,7 @@ func TestGameSessionFlowStaticActorAttackRejectsSelectedDummyAfterSnapshotReplac
 		t.Fatalf("unexpected reselected training-dummy target packet after snapshot replacement: %+v", reselected)
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	freshAttackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(actor.EntityID),
@@ -54950,6 +55331,7 @@ func TestGameSessionFlowStaticActorCombatTargetAndAttackRejectDeadTrainingDummy(
 		t.Fatalf("expected 1 self-only combat target frame before dead-state injection, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	runtime.sharedWorld.mu.Lock()
 	runtime.sharedWorld.staticActorCombatHP[actor.EntityID] = 0
 	runtime.sharedWorld.mu.Unlock()
@@ -54972,6 +55354,7 @@ func TestGameSessionFlowStaticActorCombatTargetAndAttackRejectDeadTrainingDummy(
 	if len(reselectOut) != 0 {
 		t.Fatalf("expected dead training-dummy reselect to fail closed, got %d frames", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames for dead training-dummy rejection, got %d", len(queued))
 	}
@@ -55005,6 +55388,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyIsRemoved(
 		t.Fatalf("expected 1 self-only combat target frame before selected-dummy removal, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	removed, ok := runtime.RemoveStaticActor(actor.EntityID)
 	if !ok || removed.EntityID != actor.EntityID {
 		t.Fatalf("expected selected training-dummy removal to return actor snapshot, got actor=%+v ok=%v", removed, ok)
@@ -55068,6 +55452,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesComb
 		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x11121314})))
 	if err != nil {
 		t.Fatalf("unexpected move-out error: %v", err)
@@ -55138,6 +55523,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesComb
 	if reselected.TargetVID != uint32(actor.EntityID) || reselected.HPPercent != 100 {
 		t.Fatalf("unexpected reselected target packet after range-loss clear: %+v", reselected)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisibility(t *testing.T) {
@@ -55173,6 +55559,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisi
 		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x11121314})))
 	if err != nil {
 		t.Fatalf("unexpected move-out visibility error: %v", err)
@@ -55238,6 +55625,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisi
 	if len(reselectOut) != 1 {
 		t.Fatalf("expected 1 self-only combat target frame after visibility-loss clear and reselection, got %d", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t *testing.T) {
@@ -55283,6 +55671,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t
 		t.Fatalf("expected 1 target ack frame before transfer, got %d", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	transferOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1500, Y: 2600, Time: 0x21222324})))
 	if err != nil {
 		t.Fatalf("unexpected transfer move error: %v", err)
@@ -55316,6 +55705,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t
 	if len(reselectOut) != 1 {
 		t.Fatalf("expected 1 target ack frame after transfer rebootstrap, got %d", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackAfterReselect, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(actor.EntityID)})))
 	if err != nil {
 		t.Fatalf("unexpected attack error after transfer rebootstrap reselect: %v", err)
@@ -55374,6 +55764,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossPhaseSelectReenter(t 
 		t.Fatalf("expected 1 target ack frame before /phase_select, got %d", len(targetOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	phaseSelectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{Type: chatproto.ChatTypeTalking, Message: "/phase_select"})))
 	if err != nil {
 		t.Fatalf("unexpected /phase_select error: %v", err)
@@ -55410,6 +55801,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossPhaseSelectReenter(t 
 	if len(reselectOut) != 1 {
 		t.Fatalf("expected 1 target ack frame after /phase_select re-enter, got %d", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 }
 
 func TestGameSessionFlowStaticActorCombatTargetClearsAcrossReconnect(t *testing.T) {
@@ -55440,6 +55832,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossReconnect(t *testing.
 	if len(targetOut) != 1 {
 		t.Fatalf("expected 1 target ack frame before reconnect, got %d", len(targetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowOld)
 	closeSessionFlow(t, flowOld)
 
 	issuePeerTicket(t, store, "peer-one", 0x22222222, peer)
@@ -55467,6 +55860,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossReconnect(t *testing.
 	if len(reselectOut) != 1 {
 		t.Fatalf("expected 1 target ack frame after reconnect, got %d", len(reselectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flowReconnect)
 }
 
 func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSelection(t *testing.T) {
@@ -55511,6 +55905,7 @@ func TestGameSessionFlowStaticActorAttackRejectsWithoutActiveTargetOrMatchingSel
 		t.Fatalf("expected 1 self-only combat target frame after selection, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	mismatched, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  uint32(second.EntityID),
@@ -55567,6 +55962,7 @@ func TestGameSessionFlowStaticActorAttackSuppressesRepeatedSameTargetHitUntilCad
 		t.Fatalf("expected 1 self-only combat target frame before cadence-window test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -55642,6 +56038,7 @@ func TestGameSessionFlowStaticActorAttackReselectingSameTargetDoesNotBypassCaden
 		t.Fatalf("expected 1 self-only combat target frame before cadence-window reselect test, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -55661,6 +56058,7 @@ func TestGameSessionFlowStaticActorAttackReselectingSameTargetDoesNotBypassCaden
 		t.Fatalf("expected 1 self-only target frame for same-target reselect inside cadence window, got %d", len(reselectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	repeatedAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,
@@ -55706,6 +56104,7 @@ func TestGameSessionFlowStaticActorAttackRetargetDoesNotBypassCadenceWindow(t *t
 	if selectOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: firstVID}))); err != nil || len(selectOut) != 1 {
 		t.Fatalf("expected first target selection before retarget cadence test to return 1 frame, got frames=%d err=%v", len(selectOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	firstAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  firstVID,
@@ -55720,6 +56119,7 @@ func TestGameSessionFlowStaticActorAttackRetargetDoesNotBypassCadenceWindow(t *t
 	if retargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: secondVID}))); err != nil || len(retargetOut) != 1 {
 		t.Fatalf("expected second target selection inside cadence window to return 1 frame, got frames=%d err=%v", len(retargetOut), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	retargetAttack, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  secondVID,
@@ -56113,6 +56513,7 @@ func TestGameSessionFlowPracticeMobEquipPersistsRetaliationPointLossWithEquipEff
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only equip persistence, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only equip persistence: %v", err)
@@ -56246,6 +56647,7 @@ func TestGameSessionFlowPracticeMobUnequipPersistsRetaliationPointLossWithEquipR
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only unequip persistence, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only unequip persistence: %v", err)
@@ -56379,6 +56781,7 @@ func TestGameSessionFlowPracticeMobUseItemPersistsRetaliationPointLossWithUseEff
 	if len(selectOut) != 1 {
 		t.Fatalf("expected target selection to emit 1 frame before runtime-only item-use persistence, got %d", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: practiceMobTargetVID})))
 	if err != nil {
 		t.Fatalf("unexpected attack error before runtime-only item-use persistence: %v", err)

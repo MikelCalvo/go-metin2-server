@@ -853,6 +853,7 @@ func TestGameSessionFlowPracticeMobQuickslotEditsFailClosedAfterImmediateRetalia
 			if len(selectOut) != 1 {
 				t.Fatalf("expected target selection to emit 1 frame before post-floor quickslot denial, got %d", len(selectOut))
 			}
+			drainAcceptedTargetCreateNewIfQueued(t, flow)
 			attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 			if err != nil {
 				t.Fatalf("unexpected attack error before post-floor quickslot denial: %v", err)

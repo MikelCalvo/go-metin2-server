@@ -86,6 +86,7 @@ func TestGameSessionFlowPostFloorShopBuyFailsClosed(t *testing.T) {
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID}))); err != nil {
 		t.Fatalf("unexpected target selection before post-floor shop buy: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,
@@ -240,6 +241,7 @@ func TestGameSessionFlowPostFloorShopBuyFailsClosedBeforeRestartTown(t *testing.
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: practiceMobTargetVID}))); err != nil {
 		t.Fatalf("unexpected target selection before post-floor town shop buy: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  practiceMobTargetVID,

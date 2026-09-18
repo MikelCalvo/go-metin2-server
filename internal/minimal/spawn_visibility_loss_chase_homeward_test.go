@@ -93,6 +93,7 @@ func TestGameRuntimeVisibilityLossClearsPendingSpawnGroupChaseAndArmsHomewardAft
 	if len(selectOut) != 1 {
 		t.Fatalf("expected owner to select visibility-loss practice mob, got %d frames", len(selectOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  targetVID,

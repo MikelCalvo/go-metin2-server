@@ -94,6 +94,7 @@ const bootstrapCharacterPositionGeneral uint8 = 0
 const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
 const bootstrapCreateFlyType uint8 = 0
+const bootstrapTargetMarkerType = combatproto.ServerTargetMarkerTypeCharacter
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
 const itemBuyRejectedInfoMessage = "The merchant will not sell this item to you."
@@ -9824,6 +9825,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							sharedWorld.SetSessionCombatRetaliation(sharedWorldID, resolution.Packet.TargetVID, resolution.SnapshotVersion, pendingPracticeMobServerOriginRetaliationAt)
 						}
 					}
+					maybeEnqueueAcceptedTargetCreateNew(pending, resolution)
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleAttack: func(packet combatproto.ClientAttackPacket) gameflow.AttackResult {
@@ -15367,6 +15369,70 @@ func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 
 func staticActorKillingHitDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 	return staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(actor) || staticActorDamageInfoRuntimeEmissionOwned(actor)
+}
+
+func maybeEnqueueAcceptedTargetCreateNew(pending *pendingServerFrames, resolution staticActorCombatTargetResolution) {
+	if pending == nil || !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID == 0 {
+		return
+	}
+	raw, err := combatproto.EncodeServerTargetCreateNew(combatproto.ServerTargetCreateNewPacket{
+		ID:         int32(resolution.Packet.TargetVID),
+		TargetName: resolution.Actor.Name,
+		VID:        resolution.Packet.TargetVID,
+		Type:       bootstrapTargetMarkerType,
+	})
+	if err != nil {
+		return
+	}
+	pending.Enqueue([][]byte{raw})
+}
+
+func isServerTargetCreateNewFrame(raw []byte) bool {
+	if len(raw) < 4 {
+		return false
+	}
+	return binary.LittleEndian.Uint16(raw[0:2]) == combatproto.HeaderServerTargetCreateNew
+}
+
+func (q *pendingServerFrames) takeMatching(match func([]byte) bool) [][]byte {
+	if q == nil || match == nil {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	taken := make([][]byte, 0)
+	rest := make([][]byte, 0, len(q.frames))
+	for _, raw := range q.frames {
+		if match(raw) {
+			taken = append(taken, raw)
+			continue
+		}
+		rest = append(rest, raw)
+	}
+	q.frames = rest
+	return taken
+}
+
+func (f *queuedSessionFlow) drainPendingTargetCreateNew() [][]byte {
+	if f == nil || f.pending == nil {
+		return nil
+	}
+	return f.pending.takeMatching(isServerTargetCreateNewFrame)
+}
+
+func drainPendingTargetCreateNew(flow service.SessionFlow) [][]byte {
+	switch typed := flow.(type) {
+	case *queuedSessionFlow:
+		return typed.drainPendingTargetCreateNew()
+	default:
+		type sessionFlowUnwrapper interface {
+			unwrapSessionFlow() service.SessionFlow
+		}
+		if unwrapper, ok := flow.(sessionFlowUnwrapper); ok {
+			return drainPendingTargetCreateNew(unwrapper.unwrapSessionFlow())
+		}
+		return nil
+	}
 }
 
 func maybeEnqueueSittingStandaloneDummyStun(pending *pendingServerFrames, activeCharacterPosition uint8, resolution staticActorCombatAttackResolution) {

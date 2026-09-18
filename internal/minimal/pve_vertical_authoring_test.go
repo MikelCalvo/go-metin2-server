@@ -246,6 +246,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected pre-guide target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var preGuideKillOut [][]byte
 	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
 		if hit > 1 {
@@ -348,6 +349,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: pack2VID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected warp-tile pack-2 target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var packKillOut [][]byte
 	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
 		if hit > 1 {
@@ -431,6 +433,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if reselectedPack.TargetVID != pack2VID || reselectedPack.HPPercent != 100 {
 		t.Fatalf("unexpected warp-tile pack-2 fresh target packet after respawn: %+v", reselectedPack)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	clearPackTargetOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{})))
 	if err != nil {
 		t.Fatalf("unexpected warp-tile pack-2 target clear after respawn: %v", err)
@@ -438,6 +441,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if len(clearPackTargetOut) != 0 {
 		t.Fatalf("expected warp-tile pack-2 target clear after respawn to be consumed without frames, got %d", len(clearPackTargetOut))
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	_ = flushServerFrames(t, flow)
 
 	moveOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
@@ -687,6 +691,7 @@ func TestPveVerticalAuthoringBundleClosesGuideUnlockKillCreditAndTurnIn(t *testi
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected post-guide target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	var postGuideKillOut [][]byte
 	for hit := 1; hit <= pveVerticalMobHitsToKill; hit++ {
 		if hit > 1 {
@@ -2651,6 +2656,7 @@ func TestDropTableAuthoringBundlePicksOneWeightedKillDrop(t *testing.T) {
 	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: mobVID}))); err != nil || len(out) != 1 {
 		t.Fatalf("expected weighted-loot target selection to return 1 frame, got frames=%d err=%v", len(out), err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	const practiceMobHitsToKill = int(worldruntime.PracticeMobBootstrapMaxHP / worldruntime.PracticeMobBootstrapDamagePerNormalAttack)
 	var killOut [][]byte
 	for hit := 1; hit <= practiceMobHitsToKill; hit++ {

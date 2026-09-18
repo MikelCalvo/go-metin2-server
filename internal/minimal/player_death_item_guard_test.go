@@ -3625,6 +3625,7 @@ func drivePracticeMobOwnerToBootstrapHPFloor(t *testing.T, flow service.SessionF
 		t.Fatalf("expected one target-selection frame before post-floor item guard, got %d", len(selectOut))
 	}
 
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
 		t.Fatalf("unexpected practice-mob attack before post-floor item guard: %v", err)

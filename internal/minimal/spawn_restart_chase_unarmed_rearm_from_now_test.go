@@ -87,6 +87,7 @@ func TestGameRuntimeDaemonRestartRearmsReturnAndHomewardFromNowAndLeavesChaseUna
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: withinVID}))); err != nil {
 		t.Fatalf("unexpected owner target error before chase-armed restart setup: %v", err)
 	}
+	drainAcceptedTargetCreateNewIfQueued(t, flow)
 	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
 		AttackType: combatproto.ClientAttackTypeNormal,
 		TargetVID:  withinVID,
