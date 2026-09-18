@@ -44,11 +44,9 @@ The export projects live item-shaped and gold-shaped ground snapshots onto the `
 These slices deliberately do not add:
 
 - a DB-backed ground-item repository;
-- process-restart restoration of pending ground handles;
-- ownership timer persistence;
-- public ownership release policy;
+- process-restart restoration of pending ground handles from SQL (FileStore remains the restart path);
 - party loot ownership tables;
-- item sockets/bonuses for ground entries;
+- item sockets/attributes/ownership timers on the original `0010` table (additive `0026`/`0029`/`0030` later project those FileStore extras onto the same rows);
 - import/backfill execution tooling for live ground handles;
 - any daemon-local mutating migration endpoint.
 
@@ -92,5 +90,5 @@ It validates and canonicalizes retained export JSON without opening a database, 
 
 1. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
 2. Add import/backfill execution tooling only after operators have a closed quarantine/validation policy for retained exports.
-3. Add ownership timer/public-release columns in a separate migration once timer semantics are owned.
+3. Additive `0030_bootstrap_ground_item_ownership_timer` now projects FileStore exclusive-ownership / public-release / despawn timers onto `bootstrap_ground_items` while export identity stays tip-`0010`. Live DB rematerialize and a stock production driver remain out of scope.
 4. Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.

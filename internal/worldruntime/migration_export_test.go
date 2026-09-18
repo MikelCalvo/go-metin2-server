@@ -4,15 +4,19 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestExportBootstrapGroundItemStateBuildsDeterministicRowsMatchingMigrationShape(t *testing.T) {
 	count := uint16(2)
 	explicitZeroCount := uint16(1)
 	gold := uint32(250)
+	ownershipExpires := time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)
+	despawnItem := time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)
+	despawnGold := time.Date(2026, 9, 18, 12, 6, 0, 0, time.UTC)
 	snapshots := []GroundItemSnapshot{
-		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3},
-		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
+		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3, DespawnAt: &despawnGold},
+		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3, OwnershipExclusive: true, OwnershipExpiresAt: &ownershipExpires, DespawnAt: &despawnItem},
 		{VID: 0x0700002e, Vnum: 3002, Count: explicitZeroCount, OwnerName: "GroundZeroOwner", OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, PickupRange: 300, MapIndex: 2, X: 1300, Y: 2300, Z: 1, HasSockets: true, HasAttributes: true},
 	}
 
@@ -24,8 +28,8 @@ func TestExportBootstrapGroundItemStateBuildsDeterministicRowsMatchingMigrationS
 		t.Fatalf("unexpected migration boundary: version=%d name=%q", export.MigrationVersion, export.MigrationName)
 	}
 	want := []BootstrapGroundItemStateRow{
-		{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
-		{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},
+		{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3, OwnershipExclusive: true, OwnershipExpiresAt: &ownershipExpires, DespawnAt: &despawnItem},
+		{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750, DespawnAt: &despawnGold},
 		{VID: 0x0700002e, Vnum: 3002, ItemCount: &explicitZeroCount, OwnerLogin: "ground-zero-owner", OwnerCharacterID: 0x0103019e, OwnerVID: 0x0204019e, OwnerName: "GroundZeroOwner", MapIndex: 2, X: 1300, Y: 2300, Z: 1, PickupRange: 300, HasSockets: true, HasAttributes: true},
 	}
 	if !reflect.DeepEqual(export.GroundItems, want) {
@@ -70,6 +74,10 @@ func TestExportBootstrapGroundItemStateRejectsRowsThatCannotTargetMigrationSchem
 		{name: "non-zero attributes without has_attributes", snapshot: withGroundAttributes(valid, false, 1, 0)},
 		{name: "gold-shaped with has_attributes", snapshot: withGroundAttributes(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), true, 0, 0)},
 		{name: "gold-shaped with attributes", snapshot: withGroundAttributes(withGroundGold(withGroundVnum(withGroundCount(valid, 0), 1), 250), false, 1, 0)},
+		{name: "exclusive without ownership expiry", snapshot: withGroundOwnership(valid, true, nil, timePtr(time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)))},
+		{name: "exclusive without despawn", snapshot: withGroundOwnership(valid, true, timePtr(time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)), nil)},
+		{name: "public with ownership expiry", snapshot: withGroundOwnership(valid, false, timePtr(time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)), timePtr(time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)))},
+		{name: "ownership expiry after despawn", snapshot: withGroundOwnership(valid, true, timePtr(time.Date(2026, 9, 18, 12, 6, 0, 0, time.UTC)), timePtr(time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)))},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,4 +158,15 @@ func withGroundAttributes(snapshot GroundItemSnapshot, hasAttributes bool, attr0
 	snapshot.Attr0Type = attr0Type
 	snapshot.Attr0Value = attr0Value
 	return snapshot
+}
+
+func withGroundOwnership(snapshot GroundItemSnapshot, exclusive bool, expiresAt, despawnAt *time.Time) GroundItemSnapshot {
+	snapshot.OwnershipExclusive = exclusive
+	snapshot.OwnershipExpiresAt = expiresAt
+	snapshot.DespawnAt = despawnAt
+	return snapshot
+}
+
+func timePtr(value time.Time) *time.Time {
+	return &value
 }

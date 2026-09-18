@@ -71,6 +71,8 @@ const (
 	expectedCharacterSafeboxItemInstanceAttributesDownSHA256 = "973c16bc5768661898e12cba55b0c7a21aa0cf5e5ef905d6d79e65b004ba61d8"
 	expectedBootstrapGroundItemInstanceAttributesUpSHA256    = "c7afca9b9e68e99926b644298df476dfb1bed88667246d0783d8b0a6f8c9df31"
 	expectedBootstrapGroundItemInstanceAttributesDownSHA256  = "5785614d646db03278f59174ffef124b4f490e2bf59362794ae7dabf0411058c"
+	expectedBootstrapGroundItemOwnershipTimerUpSHA256        = "d8e1b4a242e8b6270cedc7deba505ee67dbf755df9cc65402904cd1140283912"
+	expectedBootstrapGroundItemOwnershipTimerDownSHA256      = "9ea446575a1f2d957eead206b09271babf630c681647714bb1b22924a849391f"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -1206,6 +1208,49 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 30 {
+		t.Fatalf("expected bootstrap ground item ownership-timer migration after bootstrap ground item instance-attributes, got %d", len(catalog))
+	}
+	thirtieth := catalog[29]
+	if thirtieth.Version != 30 || thirtieth.Name != "bootstrap_ground_item_ownership_timer" {
+		t.Fatalf("unexpected thirtieth migration: %#v", thirtieth)
+	}
+	if thirtieth.UpPath != "0030_bootstrap_ground_item_ownership_timer.up.sql" {
+		t.Fatalf("unexpected thirtieth up path: %q", thirtieth.UpPath)
+	}
+	if thirtieth.DownPath != "0030_bootstrap_ground_item_ownership_timer.down.sql" {
+		t.Fatalf("unexpected thirtieth down path: %q", thirtieth.DownPath)
+	}
+	if thirtieth.UpSHA256 != expectedBootstrapGroundItemOwnershipTimerUpSHA256 {
+		t.Fatalf("unexpected bootstrap ground item ownership-timer up checksum: got %q want %q", thirtieth.UpSHA256, expectedBootstrapGroundItemOwnershipTimerUpSHA256)
+	}
+	if thirtieth.DownSHA256 != expectedBootstrapGroundItemOwnershipTimerDownSHA256 {
+		t.Fatalf("unexpected bootstrap ground item ownership-timer down checksum: got %q want %q", thirtieth.DownSHA256, expectedBootstrapGroundItemOwnershipTimerDownSHA256)
+	}
+	for _, want := range []string{
+		"ALTER TABLE bootstrap_ground_items",
+		"ADD COLUMN ownership_exclusive INTEGER NOT NULL DEFAULT 0",
+		"ADD COLUMN ownership_expires_at TEXT",
+		"ADD COLUMN despawn_at TEXT",
+		"ownership_exclusive IN (0, 1)",
+		"ownership_exclusive = 0 AND ownership_expires_at IS NULL",
+		"ownership_exclusive = 1",
+		"ownership_expires_at <= despawn_at",
+	} {
+		if !strings.Contains(thirtieth.UpSQL, want) {
+			t.Fatalf("expected bootstrap ground item ownership-timer up migration to contain %q, got:\n%s", want, thirtieth.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"ALTER TABLE bootstrap_ground_items DROP COLUMN despawn_at",
+		"ALTER TABLE bootstrap_ground_items DROP COLUMN ownership_expires_at",
+		"ALTER TABLE bootstrap_ground_items DROP COLUMN ownership_exclusive",
+	} {
+		if !strings.Contains(thirtieth.DownSQL, want) {
+			t.Fatalf("expected bootstrap ground item ownership-timer down migration to contain %q, got:\n%s", want, thirtieth.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1275,7 +1320,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 29 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 30 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1285,7 +1330,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_instance_attributes" {
+	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_ownership_timer" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

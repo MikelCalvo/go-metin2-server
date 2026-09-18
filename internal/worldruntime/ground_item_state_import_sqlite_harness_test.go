@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 
@@ -22,8 +23,8 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{
@@ -54,9 +55,12 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 
 	count := uint16(2)
 	gold := uint32(250)
+	ownershipExpires := time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)
+	despawnItem := time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)
+	despawnGold := time.Date(2026, 9, 18, 12, 6, 0, 0, time.UTC)
 	snapshots := []GroundItemSnapshot{
-		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3},
-		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
+		{VID: 0x0700002d, Vnum: 1, GoldAmount: gold, OwnerName: "GroundGoldOwner", OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, PickupRange: 750, MapIndex: 42, X: 1200, Y: 2200, Z: 3, DespawnAt: &despawnGold},
+		{VID: 0x0700002c, Vnum: 3001, Count: count, OwnerName: "GroundItemOwner", OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, PickupRange: 450, MapIndex: 1, X: 1100, Y: 2100, Z: 2, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3, OwnershipExclusive: true, OwnershipExpiresAt: &ownershipExpires, DespawnAt: &despawnItem},
 	}
 	groundExport, err := ExportBootstrapGroundItemState(snapshots)
 	if err != nil {
@@ -87,6 +91,8 @@ func TestSQLiteHarnessGroundItemStateImportInsertsItemAndGoldRows(t *testing.T) 
 
 	assertGroundItemRow(t, db, 0x0700002c, 3001, sql.NullInt64{Int64: 2, Valid: true}, sql.NullInt64{}, "ground-item-owner", 0x0103019c, 0x0204019c, "GroundItemOwner", 1, 1100, 2100, 2, 450, true, 1, 2, 3, true, 1, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7, -3)
 	assertGroundItemRow(t, db, 0x0700002d, 1, sql.NullInt64{}, sql.NullInt64{Int64: 250, Valid: true}, "ground-gold-owner", 0x0103019d, 0x0204019d, "GroundGoldOwner", 42, 1200, 2200, 3, 750, false, 0, 0, 0, false, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	assertGroundItemOwnershipTimer(t, db, 0x0700002c, true, sql.NullString{String: ownershipExpires.Format(time.RFC3339), Valid: true}, sql.NullString{String: despawnItem.Format(time.RFC3339), Valid: true})
+	assertGroundItemOwnershipTimer(t, db, 0x0700002d, false, sql.NullString{}, sql.NullString{String: despawnGold.Format(time.RFC3339), Valid: true})
 }
 
 func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing.T) {
@@ -94,8 +100,8 @@ func TestSQLiteHarnessGroundItemStateImportRejectsDuplicatePrimaryKey(t *testing
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -206,13 +212,36 @@ func TestSQLiteHarnessGroundItemStateImportRejectsTipTwentySixOnlyLedger(t *test
 	}
 }
 
-func TestSQLiteHarnessGroundItemStateImportRejectsMissingParentCharacter(t *testing.T) {
+func TestSQLiteHarnessGroundItemStateImportRejectsTipTwentyNineOnlyLedger(t *testing.T) {
 	db := openSQLiteGroundItemStateImportDB(t)
 	defer db.Close()
 
 	ctx := context.Background()
 	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
 		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	}
+
+	export := BootstrapGroundItemStateExport{
+		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
+		MigrationName:    BootstrapGroundItemStateMigrationName,
+		GroundItems:      []BootstrapGroundItemStateRow{},
+	}
+	_, err := ImportBootstrapGroundItemState(ctx, db, export)
+	if !errors.Is(err, ErrBootstrapGroundItemStateImportSchemaRequired) {
+		t.Fatalf("ImportBootstrapGroundItemState tip-29-only error = %v, want %v", err, ErrBootstrapGroundItemStateImportSchemaRequired)
+	}
+	if err == nil || !strings.Contains(err.Error(), "30") || !strings.Contains(err.Error(), BootstrapGroundItemOwnershipTimerMigrationName) {
+		t.Fatalf("expected tip-29-only error to name additive 30, got %v", err)
+	}
+}
+
+func TestSQLiteHarnessGroundItemStateImportRejectsMissingParentCharacter(t *testing.T) {
+	db := openSQLiteGroundItemStateImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	count := uint16(1)
@@ -246,8 +275,8 @@ func TestSQLiteHarnessGroundItemStateImportAcceptsEmptyExport(t *testing.T) {
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	export := BootstrapGroundItemStateExport{
@@ -272,8 +301,8 @@ func TestSQLiteHarnessGroundItemStateImportReplaceOverwritesCanonicalRows(t *tes
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -346,8 +375,8 @@ func TestSQLiteHarnessGroundItemStateImportReplaceLeavesUnlistedVIDsUntouched(t 
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{
@@ -426,8 +455,8 @@ func TestSQLiteHarnessGroundItemStateImportReplaceWipesListedVIDWithEmptyRows(t 
 	defer db.Close()
 
 	ctx := context.Background()
-	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemInstanceAttributesMigrationVersion); err != nil {
-		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemInstanceAttributesMigrationVersion, err)
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", BootstrapGroundItemOwnershipTimerMigrationVersion, err)
 	}
 
 	accounts := []accountstore.Account{{
@@ -582,6 +611,34 @@ FROM bootstrap_ground_items WHERE vid = ?`,
 	}
 	if gotGoldAmount.Valid != goldAmount.Valid || (goldAmount.Valid && gotGoldAmount.Int64 != goldAmount.Int64) {
 		t.Fatalf("ground vid %d gold_amount = %+v, want %+v", vid, gotGoldAmount, goldAmount)
+	}
+}
+
+func assertGroundItemOwnershipTimer(t *testing.T, db *sql.DB, vid uint32, exclusive bool, ownershipExpiresAt, despawnAt sql.NullString) {
+	t.Helper()
+
+	var (
+		gotExclusive int
+		gotExpires   sql.NullString
+		gotDespawn   sql.NullString
+	)
+	if err := db.QueryRowContext(context.Background(), `
+SELECT ownership_exclusive, ownership_expires_at, despawn_at
+FROM bootstrap_ground_items WHERE vid = ?`, vid).Scan(&gotExclusive, &gotExpires, &gotDespawn); err != nil {
+		t.Fatalf("select ground item timers vid %d: %v", vid, err)
+	}
+	wantExclusive := 0
+	if exclusive {
+		wantExclusive = 1
+	}
+	if gotExclusive != wantExclusive {
+		t.Fatalf("ground vid %d ownership_exclusive = %d, want %d", vid, gotExclusive, wantExclusive)
+	}
+	if gotExpires.Valid != ownershipExpiresAt.Valid || (ownershipExpiresAt.Valid && gotExpires.String != ownershipExpiresAt.String) {
+		t.Fatalf("ground vid %d ownership_expires_at = %+v, want %+v", vid, gotExpires, ownershipExpiresAt)
+	}
+	if gotDespawn.Valid != despawnAt.Valid || (despawnAt.Valid && gotDespawn.String != despawnAt.String) {
+		t.Fatalf("ground vid %d despawn_at = %+v, want %+v", vid, gotDespawn, despawnAt)
 	}
 }
 

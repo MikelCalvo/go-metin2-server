@@ -2,6 +2,7 @@ package worldruntime
 
 import (
 	"sort"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
@@ -96,38 +97,41 @@ type StaticActorSnapshot struct {
 }
 
 type GroundItemSnapshot struct {
-	VID              uint32 `json:"vid"`
-	Vnum             uint32 `json:"vnum"`
-	Count            uint16 `json:"count,omitempty"`
-	OwnerName        string `json:"owner_name,omitempty"`
-	OwnerLogin       string `json:"owner_login,omitempty"`
-	OwnerCharacterID uint32 `json:"owner_character_id,omitempty"`
-	OwnerVID         uint32 `json:"owner_vid,omitempty"`
-	GoldAmount       uint32 `json:"gold_amount,omitempty"`
-	HasSockets       bool   `json:"has_sockets,omitempty"`
-	Socket0          int32  `json:"socket0,omitempty"`
-	Socket1          int32  `json:"socket1,omitempty"`
-	Socket2          int32  `json:"socket2,omitempty"`
-	HasAttributes    bool   `json:"has_attributes,omitempty"`
-	Attr0Type        uint8  `json:"attr0_type,omitempty"`
-	Attr0Value       int16  `json:"attr0_value,omitempty"`
-	Attr1Type        uint8  `json:"attr1_type,omitempty"`
-	Attr1Value       int16  `json:"attr1_value,omitempty"`
-	Attr2Type        uint8  `json:"attr2_type,omitempty"`
-	Attr2Value       int16  `json:"attr2_value,omitempty"`
-	Attr3Type        uint8  `json:"attr3_type,omitempty"`
-	Attr3Value       int16  `json:"attr3_value,omitempty"`
-	Attr4Type        uint8  `json:"attr4_type,omitempty"`
-	Attr4Value       int16  `json:"attr4_value,omitempty"`
-	Attr5Type        uint8  `json:"attr5_type,omitempty"`
-	Attr5Value       int16  `json:"attr5_value,omitempty"`
-	Attr6Type        uint8  `json:"attr6_type,omitempty"`
-	Attr6Value       int16  `json:"attr6_value,omitempty"`
-	PickupRange      int64  `json:"pickup_range,omitempty"`
-	MapIndex         uint32 `json:"map_index"`
-	X                int32  `json:"x"`
-	Y                int32  `json:"y"`
-	Z                int32  `json:"z"`
+	VID                uint32     `json:"vid"`
+	Vnum               uint32     `json:"vnum"`
+	Count              uint16     `json:"count,omitempty"`
+	OwnerName          string     `json:"owner_name,omitempty"`
+	OwnerLogin         string     `json:"owner_login,omitempty"`
+	OwnerCharacterID   uint32     `json:"owner_character_id,omitempty"`
+	OwnerVID           uint32     `json:"owner_vid,omitempty"`
+	GoldAmount         uint32     `json:"gold_amount,omitempty"`
+	HasSockets         bool       `json:"has_sockets,omitempty"`
+	Socket0            int32      `json:"socket0,omitempty"`
+	Socket1            int32      `json:"socket1,omitempty"`
+	Socket2            int32      `json:"socket2,omitempty"`
+	HasAttributes      bool       `json:"has_attributes,omitempty"`
+	Attr0Type          uint8      `json:"attr0_type,omitempty"`
+	Attr0Value         int16      `json:"attr0_value,omitempty"`
+	Attr1Type          uint8      `json:"attr1_type,omitempty"`
+	Attr1Value         int16      `json:"attr1_value,omitempty"`
+	Attr2Type          uint8      `json:"attr2_type,omitempty"`
+	Attr2Value         int16      `json:"attr2_value,omitempty"`
+	Attr3Type          uint8      `json:"attr3_type,omitempty"`
+	Attr3Value         int16      `json:"attr3_value,omitempty"`
+	Attr4Type          uint8      `json:"attr4_type,omitempty"`
+	Attr4Value         int16      `json:"attr4_value,omitempty"`
+	Attr5Type          uint8      `json:"attr5_type,omitempty"`
+	Attr5Value         int16      `json:"attr5_value,omitempty"`
+	Attr6Type          uint8      `json:"attr6_type,omitempty"`
+	Attr6Value         int16      `json:"attr6_value,omitempty"`
+	PickupRange        int64      `json:"pickup_range,omitempty"`
+	OwnershipExclusive bool       `json:"ownership_exclusive,omitempty"`
+	OwnershipExpiresAt *time.Time `json:"ownership_expires_at,omitempty"`
+	DespawnAt          *time.Time `json:"despawn_at,omitempty"`
+	MapIndex           uint32     `json:"map_index"`
+	X                  int32      `json:"x"`
+	Y                  int32      `json:"y"`
+	Z                  int32      `json:"z"`
 }
 
 type GroundItemOccupancy = GroundItemSnapshot

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestValidateBootstrapGroundItemStateExportAcceptsCanonicalExport(t *testing.T) {
@@ -158,6 +159,33 @@ func TestValidateBootstrapGroundItemStateExportRejectsMalformedRows(t *testing.T
 				export.GroundItems[1].Attr0Value = 1
 			},
 		},
+		{
+			name: "exclusive without ownership expiry",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				export.GroundItems[0].OwnershipExclusive = true
+				export.GroundItems[0].OwnershipExpiresAt = nil
+				despawn := time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)
+				export.GroundItems[0].DespawnAt = &despawn
+			},
+		},
+		{
+			name: "public with ownership expiry",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				expires := time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)
+				export.GroundItems[0].OwnershipExclusive = false
+				export.GroundItems[0].OwnershipExpiresAt = &expires
+			},
+		},
+		{
+			name: "ownership expiry after despawn",
+			mutate: func(export *BootstrapGroundItemStateExport) {
+				expires := time.Date(2026, 9, 18, 12, 6, 0, 0, time.UTC)
+				despawn := time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)
+				export.GroundItems[0].OwnershipExclusive = true
+				export.GroundItems[0].OwnershipExpiresAt = &expires
+				export.GroundItems[0].DespawnAt = &despawn
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -200,13 +228,16 @@ func TestQuarantineBootstrapGroundItemStateExportCanonicalizesRowOrder(t *testin
 func sampleBootstrapGroundItemStateExport() BootstrapGroundItemStateExport {
 	count := uint16(2)
 	gold := uint32(250)
+	ownershipExpires := time.Date(2026, 9, 18, 12, 0, 30, 0, time.UTC)
+	despawnItem := time.Date(2026, 9, 18, 12, 5, 0, 0, time.UTC)
+	despawnGold := time.Date(2026, 9, 18, 12, 6, 0, 0, time.UTC)
 	return BootstrapGroundItemStateExport{
 		MigrationVersion: BootstrapGroundItemStateMigrationVersion,
 		MigrationName:    BootstrapGroundItemStateMigrationName,
 		VIDs:             []uint32{0x0700002c, 0x0700002d},
 		GroundItems: []BootstrapGroundItemStateRow{
-			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3},
-			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750},
+			{VID: 0x0700002c, Vnum: 3001, ItemCount: &count, OwnerLogin: "ground-item-owner", OwnerCharacterID: 0x0103019c, OwnerVID: 0x0204019c, OwnerName: "GroundItemOwner", MapIndex: 1, X: 1100, Y: 2100, Z: 2, PickupRange: 450, HasSockets: true, Socket0: 1, Socket1: 2, Socket2: 3, HasAttributes: true, Attr0Type: 1, Attr0Value: 10, Attr6Type: 7, Attr6Value: -3, OwnershipExclusive: true, OwnershipExpiresAt: &ownershipExpires, DespawnAt: &despawnItem},
+			{VID: 0x0700002d, Vnum: 1, GoldAmount: &gold, OwnerLogin: "ground-gold-owner", OwnerCharacterID: 0x0103019d, OwnerVID: 0x0204019d, OwnerName: "GroundGoldOwner", MapIndex: 42, X: 1200, Y: 2200, Z: 3, PickupRange: 750, DespawnAt: &despawnGold},
 		},
 	}
 }

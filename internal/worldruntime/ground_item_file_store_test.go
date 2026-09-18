@@ -88,12 +88,23 @@ func TestGroundItemFileStoreRoundTripPersistsTimersAndItemID(t *testing.T) {
 	if export.MigrationVersion != BootstrapGroundItemStateMigrationVersion || len(export.GroundItems) != 2 {
 		t.Fatalf("unexpected 0010 export: %#v", export)
 	}
+	itemRow := export.GroundItems[0]
+	if itemRow.VID != 0x07000001 || !itemRow.OwnershipExclusive || itemRow.OwnershipExpiresAt == nil || !itemRow.OwnershipExpiresAt.Equal(ownershipExpires) || itemRow.DespawnAt == nil || !itemRow.DespawnAt.Equal(despawnItem) {
+		t.Fatalf("expected exclusive item timers in 0010 projection, got %#v", itemRow)
+	}
+	goldRow := export.GroundItems[1]
+	if goldRow.VID != 0x07000002 || goldRow.OwnershipExclusive || goldRow.OwnershipExpiresAt != nil || goldRow.DespawnAt == nil || !goldRow.DespawnAt.Equal(despawnGold) {
+		t.Fatalf("expected public gold despawn timer in 0010 projection, got %#v", goldRow)
+	}
 	raw, err := json.Marshal(export.GroundItems[0])
 	if err != nil {
 		t.Fatalf("marshal export row: %v", err)
 	}
-	if strings.Contains(string(raw), "item_id") || strings.Contains(string(raw), "ownership_exclusive") || strings.Contains(string(raw), "despawn_at") {
-		t.Fatalf("0010 export must omit durable extras, got %s", raw)
+	if strings.Contains(string(raw), "item_id") {
+		t.Fatalf("0010 export must omit process-local item ids, got %s", raw)
+	}
+	if !strings.Contains(string(raw), `"ownership_exclusive"`) || !strings.Contains(string(raw), `"ownership_expires_at"`) || !strings.Contains(string(raw), `"despawn_at"`) {
+		t.Fatalf("0010 export must project additive 0030 ownership timers, got %s", raw)
 	}
 }
 
@@ -194,6 +205,9 @@ func TestGroundItemFileStoreRoundTripPersistsInstanceSocketsIncludingExplicitZer
 	if !export.GroundItems[1].HasSockets || export.GroundItems[1].Socket0 != 0 || export.GroundItems[1].Socket1 != 0 || export.GroundItems[1].Socket2 != 0 {
 		t.Fatalf("expected explicit-zero sockets in 0010 projection, got %#v", export.GroundItems[1])
 	}
+	if !export.GroundItems[0].OwnershipExclusive || export.GroundItems[0].OwnershipExpiresAt == nil || !export.GroundItems[0].OwnershipExpiresAt.Equal(ownershipExpires) || export.GroundItems[0].DespawnAt == nil || !export.GroundItems[0].DespawnAt.Equal(despawnItem) {
+		t.Fatalf("expected exclusive timers on socketed 0010 projection, got %#v", export.GroundItems[0])
+	}
 
 	projected := DurableGroundItemRecordsToSnapshots(got.GroundItems)
 	if len(projected) != 2 || !projected[0].HasSockets || projected[0].Socket0 != 1 || projected[0].Socket1 != 2 || projected[0].Socket2 != 3 {
@@ -201,6 +215,9 @@ func TestGroundItemFileStoreRoundTripPersistsInstanceSocketsIncludingExplicitZer
 	}
 	if !projected[1].HasSockets || projected[1].Socket0 != 0 || projected[1].Socket1 != 0 || projected[1].Socket2 != 0 {
 		t.Fatalf("DurableGroundItemRecordsToSnapshots lost explicit-zero sockets: %#v", projected)
+	}
+	if !projected[0].OwnershipExclusive || projected[0].OwnershipExpiresAt == nil || !projected[0].OwnershipExpiresAt.Equal(ownershipExpires) || projected[0].DespawnAt == nil || !projected[0].DespawnAt.Equal(despawnItem) {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost exclusive timers: %#v", projected[0])
 	}
 }
 
@@ -341,6 +358,9 @@ func TestGroundItemFileStoreRoundTripPersistsInstanceAttributesIncludingExplicit
 	}
 	if !projected[1].HasAttributes || projected[1].Attr0Type != 0 || projected[1].Attr0Value != 0 {
 		t.Fatalf("DurableGroundItemRecordsToSnapshots lost explicit-zero attributes: %#v", projected[1])
+	}
+	if !projected[0].OwnershipExclusive || projected[0].OwnershipExpiresAt == nil || !projected[0].OwnershipExpiresAt.Equal(ownershipExpires) || projected[0].DespawnAt == nil || !projected[0].DespawnAt.Equal(despawnItem) {
+		t.Fatalf("DurableGroundItemRecordsToSnapshots lost exclusive timers beside attributes: %#v", projected[0])
 	}
 }
 

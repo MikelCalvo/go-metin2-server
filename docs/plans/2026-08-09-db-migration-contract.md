@@ -60,15 +60,21 @@ Rules frozen by tests:
   - it adds `has_sockets` + `socket0`/`socket1`/`socket2` to `bootstrap_ground_items`,
   - `has_sockets = 0` means nil instance sockets (template fallback) and requires zero socket values; `has_sockets = 1` is authoritative including all-zero,
   - gold-shaped rows stay socket-less,
-  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26`,
+  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26` plus additive `29` plus additive `30`,
   - upsert / stock production driver / DB-backed live ground rematerialize remain out of scope.
 - the embedded catalog now also includes `0029_bootstrap_ground_item_instance_attributes`, an additive schema-only companion for tip-`0010` after FileStore owned pending ground instance attributes:
   - it adds `has_attributes` + `attr0_type`/`attr0_value` … `attr6_type`/`attr6_value` to `bootstrap_ground_items`,
   - `has_attributes = 0` means nil instance attributes (template fallback) and requires zero attr types/values; `has_attributes = 1` is authoritative including all-zero / type-zero,
   - gold-shaped rows stay attribute-less,
-  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26` plus additive `29`,
+  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26` plus additive `29` plus additive `30`,
   - upsert / stock production driver / DB-backed live ground rematerialize remain out of scope,
   - seeded hermetic tip-`0010`+`0026`+`0029` pending ground instance-attribute tip sync is owned by [seeded ground-item instance-attributes tip sync](2026-08-31-seeded-ground-item-instance-attributes-import-export-drill.md).
+- the embedded catalog now also includes `0030_bootstrap_ground_item_ownership_timer`, an additive schema-only companion for tip-`0010` after FileStore owned exclusive-ownership / public-release / despawn timers:
+  - it adds `ownership_exclusive` + nullable TEXT `ownership_expires_at` / `despawn_at` to `bootstrap_ground_items`,
+  - `ownership_exclusive = 0` is public release and requires `ownership_expires_at` NULL; `ownership_exclusive = 1` requires both timestamps with expiry not after despawn,
+  - existing tip-`0010` rows stay valid as public (`ownership_exclusive = 0`, timers NULL),
+  - tip-`0010` / `bootstrap_ground_item_state` remains the export / quarantine / import-result identity; SQL INSERT requires tip `10` plus additive `26` plus additive `29` plus additive `30`,
+  - upsert / stock production driver / DB-backed live ground rematerialize remain out of scope.
 - the embedded catalog now also includes `0004_character_quest_state`, a schema-only contract for the standalone bootstrap quest-state snapshot:
   - `character_quest_flags` stores owning character id, quest ref, flag name, non-zero value, and timestamps,
   - `(character_id, quest_ref, flag_name)` is the primary key so duplicate flags fail closed at the database boundary,
@@ -101,7 +107,7 @@ Rules frozen by tests:
   - `bootstrap_ground_items` stores the current client-visible ground `vid`, `vnum`, item count or gold amount, owner identity, map location, pickup reach, and timestamps,
   - the item-shaped and gold-shaped cases are mutually exclusive; gold-shaped rows use the current bootstrap marker `vnum = 1` and signed point-change carrier bound,
   - owner character ids reference the existing `characters` schema boundary and map/owner indexes prepare future recovery or cleanup preflights,
-  - the migration deliberately does not make in-memory ground handles durable at runtime, does not add ownership timers/public release policy, and does not add a DB-backed world-state repository.
+  - the migration deliberately does not make in-memory ground handles durable at runtime and does not add a DB-backed world-state repository; additive `0030_bootstrap_ground_item_ownership_timer` later projects FileStore exclusive-ownership / public-release / despawn timers onto the same table while export identity stays tip-`0010`.
 - the embedded catalog now also includes `0011_character_point_state`, a schema-only contract for the fixed-width selected-character point vector:
   - `character_points` stores one row per `(character_id, point_index)` for point indexes `0..254`, including zero values,
   - `value` is constrained to signed `int32` bounds while using a `BIGINT` carrier so negative HP/death-floor style bootstrap state can be represented explicitly,
@@ -237,7 +243,7 @@ This is not a database runtime implementation. It deliberately does not add:
 - account/character/item repository implementations or DB-backed runtime writes,
 - JSON snapshot import/backfill execution tooling,
 - accepted refine result execution,
-- ground-item ownership timers or public-release policy,
+- a live DB world-state repository or stock production driver for ground rematerialize (FileStore remains the restart path; additive `0030` only projects already-owned timers onto tip-`0010` SQL),
 - production deployment scripts.
 
 The dry-run planner added on top of the catalog remains the only daemon-exposed migration-planning behavior: callers can supply already-read ledger rows directly, provide a `database/sql`-compatible query boundary for the same metadata through `ReadSQLLedgerEntries` / `PlanUpToLatestFromSQLLedger` / `PlanToVersionFromSQLLedger`, export that configured metadata into a strict offline `LedgerSnapshot` through `LedgerSnapshotFromSQLLedger`, or provide a strict offline JSON `LedgerSnapshot` through `ReadJSONLedgerSnapshot` / `PlanToVersionFromLedgerSnapshot` when planning from copied ledger metadata. The first loopback ops endpoints use an empty ledger when DB config is disabled and a configured `database/sql` ledger reader when both driver and DSN are set. `/local/db/migrations/status` reports the latest-version target; `/local/db/migrations/plan?target_version=N` previews an explicit target such as rollback-to-zero; `/local/db/migrations/ledger-snapshot` exports only the current ledger metadata as strict offline JSON; `/local/db/migrations/plan-from-ledger-snapshot?target_version=N` accepts a bounded metadata-only snapshot body and produces the same plan shape without opening a configured DB. The account/character roster, character quest-state, item-template-state, auth login-ticket handoff, and static actor content-state exports remain read-only projections: they map committed JSON snapshots to the existing schema shapes but do not insert rows, allocate a real production identity sequence, consume tickets, execute refine results, or import data. Character item-state and character point-state now also expose loopback-only quarantine/preflight endpoints that validate and canonicalize retained export artifacts without opening a database or mutating stores. The bootstrap ground-item schema now also has a daemon-local read-only migration-shaped live export for pending runtime handles, plus a loopback-only `POST /local/ground-items/exports/bootstrap-ground-item-state/quarantine` preflight that validates and canonicalizes retained `0010` artifacts without opening a database or mutating live ground handles; programmatic SQL import/backfill for quarantined `0010` exports is now owned by `worldruntime.ImportBootstrapGroundItemState` under the SQLite harness, while live rematerialize remains FileStore-backed; confirmation-gated CLI `import-export` / `import-export-drill` wiring is now owned (see [CLI import-export](2026-08-27-cli-import-export.md)). The apply primitive executes pending up or down SQL only when a caller explicitly supplies a transaction-capable executor and applied ledger, and it is not exposed through `gamed`.

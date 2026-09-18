@@ -18,7 +18,7 @@ import (
 
 // Durable pending ground-item FileStore for process-restart rematerialization.
 // This is intentionally separate from MemoryGroundItemStore (hermetic export seam)
-// and from the 0010 migration export (which omits item IDs and absolute timers).
+// and from the 0010 migration export (which still omits process-local item IDs).
 
 var (
 	ErrGroundItemStorePathRequired = errors.New("ground item store path is required")
@@ -41,7 +41,8 @@ const (
 // means nil instance attributes (template fallback); HasAttributes=true including
 // all-zero / type-zero is authoritative. Gold-shaped rows stay socket-less and
 // attribute-less. Tip-0010 SQL projection now carries additive 0029
-// presence-aware attributes while export identity stays tip-0010.
+// presence-aware attributes and additive 0030 exclusive-ownership /
+// public-release / despawn timers while export identity stays tip-0010.
 type DurableGroundItemRecord struct {
 	VID                uint32                     `json:"vid"`
 	Vnum               uint32                     `json:"vnum"`
@@ -278,7 +279,7 @@ func (s *FileStore) Save(snapshot DurableGroundItemSnapshot) error {
 }
 
 // ExportBootstrapGroundItemState projects durable records onto the 0010 migration
-// shape without timers or item IDs.
+// shape, including additive 0030 ownership timers, without process-local item IDs.
 func (s *FileStore) ExportBootstrapGroundItemState() (BootstrapGroundItemStateExport, error) {
 	snapshot, err := s.Load()
 	if err != nil {
@@ -400,36 +401,42 @@ func DurableGroundItemRecordsToSnapshots(records []DurableGroundItemRecord) []Gr
 	for _, record := range records {
 		hasAttributes, attrs := durableGroundItemAttributesExportFields(record)
 		snapshot := GroundItemSnapshot{
-			VID:              record.VID,
-			Vnum:             record.Vnum,
-			OwnerName:        record.OwnerName,
-			OwnerLogin:       record.OwnerLogin,
-			OwnerCharacterID: record.OwnerCharacterID,
-			OwnerVID:         record.OwnerVID,
-			PickupRange:      record.PickupRange,
-			MapIndex:         record.MapIndex,
-			X:                record.X,
-			Y:                record.Y,
-			Z:                record.Z,
-			HasSockets:       record.HasSockets,
-			Socket0:          record.Socket0,
-			Socket1:          record.Socket1,
-			Socket2:          record.Socket2,
-			HasAttributes:    hasAttributes,
-			Attr0Type:        attrs[0].Type,
-			Attr0Value:       attrs[0].Value,
-			Attr1Type:        attrs[1].Type,
-			Attr1Value:       attrs[1].Value,
-			Attr2Type:        attrs[2].Type,
-			Attr2Value:       attrs[2].Value,
-			Attr3Type:        attrs[3].Type,
-			Attr3Value:       attrs[3].Value,
-			Attr4Type:        attrs[4].Type,
-			Attr4Value:       attrs[4].Value,
-			Attr5Type:        attrs[5].Type,
-			Attr5Value:       attrs[5].Value,
-			Attr6Type:        attrs[6].Type,
-			Attr6Value:       attrs[6].Value,
+			VID:                record.VID,
+			Vnum:               record.Vnum,
+			OwnerName:          record.OwnerName,
+			OwnerLogin:         record.OwnerLogin,
+			OwnerCharacterID:   record.OwnerCharacterID,
+			OwnerVID:           record.OwnerVID,
+			PickupRange:        record.PickupRange,
+			MapIndex:           record.MapIndex,
+			X:                  record.X,
+			Y:                  record.Y,
+			Z:                  record.Z,
+			HasSockets:         record.HasSockets,
+			Socket0:            record.Socket0,
+			Socket1:            record.Socket1,
+			Socket2:            record.Socket2,
+			HasAttributes:      hasAttributes,
+			Attr0Type:          attrs[0].Type,
+			Attr0Value:         attrs[0].Value,
+			Attr1Type:          attrs[1].Type,
+			Attr1Value:         attrs[1].Value,
+			Attr2Type:          attrs[2].Type,
+			Attr2Value:         attrs[2].Value,
+			Attr3Type:          attrs[3].Type,
+			Attr3Value:         attrs[3].Value,
+			Attr4Type:          attrs[4].Type,
+			Attr4Value:         attrs[4].Value,
+			Attr5Type:          attrs[5].Type,
+			Attr5Value:         attrs[5].Value,
+			Attr6Type:          attrs[6].Type,
+			Attr6Value:         attrs[6].Value,
+			OwnershipExclusive: record.OwnershipExclusive,
+			OwnershipExpiresAt: copyUTCTimePtr(record.OwnershipExpiresAt),
+		}
+		if !record.DespawnAt.IsZero() {
+			despawn := record.DespawnAt.UTC()
+			snapshot.DespawnAt = &despawn
 		}
 		if record.GoldAmount != nil {
 			snapshot.GoldAmount = *record.GoldAmount

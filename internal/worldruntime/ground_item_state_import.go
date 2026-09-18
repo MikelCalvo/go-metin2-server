@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 )
@@ -16,8 +17,8 @@ var ErrBootstrapGroundItemStateImportExecutorRequired = errors.New("bootstrap gr
 
 // ErrBootstrapGroundItemStateImportSchemaRequired reports that the target
 // database has not applied the 0010_bootstrap_ground_item_state migration
-// boundary and/or the additive 0026 instance-socket / 0029 instance-attribute
-// columns yet.
+// boundary and/or the additive 0026 instance-socket / 0029 instance-attribute /
+// 0030 ownership-timer columns yet.
 var ErrBootstrapGroundItemStateImportSchemaRequired = errors.New("bootstrap ground-item-state schema is not applied")
 
 // ErrBootstrapGroundItemStateImportRowCount reports that an INSERT affected an
@@ -131,6 +132,7 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 	hasGroundState := false
 	hasInstanceSockets := false
 	hasInstanceAttributes := false
+	hasOwnershipTimer := false
 	latest := 0
 	for _, entry := range ledger {
 		if entry.Version > latest {
@@ -145,8 +147,11 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 		if entry.Version == BootstrapGroundItemInstanceAttributesMigrationVersion && entry.Name == BootstrapGroundItemInstanceAttributesMigrationName {
 			hasInstanceAttributes = true
 		}
+		if entry.Version == BootstrapGroundItemOwnershipTimerMigrationVersion && entry.Name == BootstrapGroundItemOwnershipTimerMigrationName {
+			hasOwnershipTimer = true
+		}
 	}
-	if hasGroundState && hasInstanceSockets && hasInstanceAttributes {
+	if hasGroundState && hasInstanceSockets && hasInstanceAttributes && hasOwnershipTimer {
 		return nil
 	}
 	if !hasGroundState {
@@ -155,7 +160,10 @@ func requireBootstrapGroundItemStateSchema(ctx context.Context, querier dbmigrat
 	if !hasInstanceSockets {
 		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceSocketsMigrationVersion, BootstrapGroundItemInstanceSocketsMigrationName)
 	}
-	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceAttributesMigrationVersion, BootstrapGroundItemInstanceAttributesMigrationName)
+	if !hasInstanceAttributes {
+		return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemInstanceAttributesMigrationVersion, BootstrapGroundItemInstanceAttributesMigrationName)
+	}
+	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrBootstrapGroundItemStateImportSchemaRequired, latest, BootstrapGroundItemOwnershipTimerMigrationVersion, BootstrapGroundItemOwnershipTimerMigrationName)
 }
 
 func deleteBootstrapGroundItemForVID(ctx context.Context, tx *sql.Tx, vid uint32) error {
@@ -168,8 +176,8 @@ func deleteBootstrapGroundItemForVID(ctx context.Context, tx *sql.Tx, vid uint32
 func insertBootstrapGroundItem(ctx context.Context, tx *sql.Tx, row BootstrapGroundItemStateRow) error {
 	result, err := tx.ExecContext(ctx, `
 INSERT INTO bootstrap_ground_items (
-    vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2, has_attributes, attr0_type, attr0_value, attr1_type, attr1_value, attr2_type, attr2_value, attr3_type, attr3_value, attr4_type, attr4_value, attr5_type, attr5_value, attr6_type, attr6_value
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    vid, vnum, item_count, gold_amount, owner_login, owner_character_id, owner_vid, owner_name, map_index, x, y, z, pickup_range, has_sockets, socket0, socket1, socket2, has_attributes, attr0_type, attr0_value, attr1_type, attr1_value, attr2_type, attr2_value, attr3_type, attr3_value, attr4_type, attr4_value, attr5_type, attr5_value, attr6_type, attr6_value, ownership_exclusive, ownership_expires_at, despawn_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		int64(row.VID),
 		int64(row.Vnum),
 		nullableUint16SQL(row.ItemCount),
@@ -202,6 +210,9 @@ INSERT INTO bootstrap_ground_items (
 		int64(row.Attr5Value),
 		int64(row.Attr6Type),
 		int64(row.Attr6Value),
+		boolToSQLInt(row.OwnershipExclusive),
+		nullableTimeSQL(row.OwnershipExpiresAt),
+		nullableTimeSQL(row.DespawnAt),
 	)
 	if err != nil {
 		return fmt.Errorf("insert bootstrap ground item vid %d: %w", row.VID, err)
@@ -228,6 +239,13 @@ func nullableUint32SQL(value *uint32) any {
 		return nil
 	}
 	return int64(*value)
+}
+
+func nullableTimeSQL(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func requireExactGroundItemStateImportRows(result sql.Result, action string, id int64) error {

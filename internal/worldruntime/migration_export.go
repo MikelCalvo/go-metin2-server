@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -18,6 +19,9 @@ const (
 
 	BootstrapGroundItemInstanceAttributesMigrationVersion = 29
 	BootstrapGroundItemInstanceAttributesMigrationName    = "bootstrap_ground_item_instance_attributes"
+
+	BootstrapGroundItemOwnershipTimerMigrationVersion = 30
+	BootstrapGroundItemOwnershipTimerMigrationName    = "bootstrap_ground_item_ownership_timer"
 
 	bootstrapGroundItemOwnerNameMaxBytes = 25
 	bootstrapGroundItemMaxCount          = uint16(^uint8(0))
@@ -46,46 +50,52 @@ type BootstrapGroundItemStateExport struct {
 }
 
 // BootstrapGroundItemStateRow mirrors the bootstrap_ground_items table columns
-// frozen by migration 0010, including optional additive 0026 instance sockets
-// and additive 0029 instance attributes. HasSockets=false / omitted means nil
-// instance sockets (template fallback); HasSockets=true including all-zero is
-// authoritative. HasAttributes=false / omitted means nil instance attributes
-// (template fallback); HasAttributes=true including all-zero / type-zero is
-// authoritative. Gold-shaped rows stay socket-less and attribute-less. Export
-// identity stays tip-0010.
+// frozen by migration 0010, including optional additive 0026 instance sockets,
+// additive 0029 instance attributes, and additive 0030 ownership-timer /
+// public-release columns. HasSockets=false / omitted means nil instance sockets
+// (template fallback); HasSockets=true including all-zero is authoritative.
+// HasAttributes=false / omitted means nil instance attributes (template
+// fallback); HasAttributes=true including all-zero / type-zero is authoritative.
+// Gold-shaped rows stay socket-less and attribute-less. OwnershipExclusive=false
+// / omitted is public release and must omit ownership_expires_at; exclusive
+// rows require both ownership_expires_at and despawn_at with expiry not after
+// despawn. Export identity stays tip-0010.
 type BootstrapGroundItemStateRow struct {
-	VID              uint32  `json:"vid"`
-	Vnum             uint32  `json:"vnum"`
-	ItemCount        *uint16 `json:"item_count,omitempty"`
-	GoldAmount       *uint32 `json:"gold_amount,omitempty"`
-	OwnerLogin       string  `json:"owner_login"`
-	OwnerCharacterID uint32  `json:"owner_character_id"`
-	OwnerVID         uint32  `json:"owner_vid"`
-	OwnerName        string  `json:"owner_name"`
-	MapIndex         uint32  `json:"map_index"`
-	X                int32   `json:"x"`
-	Y                int32   `json:"y"`
-	Z                int32   `json:"z"`
-	PickupRange      int64   `json:"pickup_range"`
-	HasSockets       bool    `json:"has_sockets,omitempty"`
-	Socket0          int32   `json:"socket0,omitempty"`
-	Socket1          int32   `json:"socket1,omitempty"`
-	Socket2          int32   `json:"socket2,omitempty"`
-	HasAttributes    bool    `json:"has_attributes,omitempty"`
-	Attr0Type        uint8   `json:"attr0_type,omitempty"`
-	Attr0Value       int16   `json:"attr0_value,omitempty"`
-	Attr1Type        uint8   `json:"attr1_type,omitempty"`
-	Attr1Value       int16   `json:"attr1_value,omitempty"`
-	Attr2Type        uint8   `json:"attr2_type,omitempty"`
-	Attr2Value       int16   `json:"attr2_value,omitempty"`
-	Attr3Type        uint8   `json:"attr3_type,omitempty"`
-	Attr3Value       int16   `json:"attr3_value,omitempty"`
-	Attr4Type        uint8   `json:"attr4_type,omitempty"`
-	Attr4Value       int16   `json:"attr4_value,omitempty"`
-	Attr5Type        uint8   `json:"attr5_type,omitempty"`
-	Attr5Value       int16   `json:"attr5_value,omitempty"`
-	Attr6Type        uint8   `json:"attr6_type,omitempty"`
-	Attr6Value       int16   `json:"attr6_value,omitempty"`
+	VID                uint32     `json:"vid"`
+	Vnum               uint32     `json:"vnum"`
+	ItemCount          *uint16    `json:"item_count,omitempty"`
+	GoldAmount         *uint32    `json:"gold_amount,omitempty"`
+	OwnerLogin         string     `json:"owner_login"`
+	OwnerCharacterID   uint32     `json:"owner_character_id"`
+	OwnerVID           uint32     `json:"owner_vid"`
+	OwnerName          string     `json:"owner_name"`
+	MapIndex           uint32     `json:"map_index"`
+	X                  int32      `json:"x"`
+	Y                  int32      `json:"y"`
+	Z                  int32      `json:"z"`
+	PickupRange        int64      `json:"pickup_range"`
+	HasSockets         bool       `json:"has_sockets,omitempty"`
+	Socket0            int32      `json:"socket0,omitempty"`
+	Socket1            int32      `json:"socket1,omitempty"`
+	Socket2            int32      `json:"socket2,omitempty"`
+	HasAttributes      bool       `json:"has_attributes,omitempty"`
+	Attr0Type          uint8      `json:"attr0_type,omitempty"`
+	Attr0Value         int16      `json:"attr0_value,omitempty"`
+	Attr1Type          uint8      `json:"attr1_type,omitempty"`
+	Attr1Value         int16      `json:"attr1_value,omitempty"`
+	Attr2Type          uint8      `json:"attr2_type,omitempty"`
+	Attr2Value         int16      `json:"attr2_value,omitempty"`
+	Attr3Type          uint8      `json:"attr3_type,omitempty"`
+	Attr3Value         int16      `json:"attr3_value,omitempty"`
+	Attr4Type          uint8      `json:"attr4_type,omitempty"`
+	Attr4Value         int16      `json:"attr4_value,omitempty"`
+	Attr5Type          uint8      `json:"attr5_type,omitempty"`
+	Attr5Value         int16      `json:"attr5_value,omitempty"`
+	Attr6Type          uint8      `json:"attr6_type,omitempty"`
+	Attr6Value         int16      `json:"attr6_value,omitempty"`
+	OwnershipExclusive bool       `json:"ownership_exclusive,omitempty"`
+	OwnershipExpiresAt *time.Time `json:"ownership_expires_at,omitempty"`
+	DespawnAt          *time.Time `json:"despawn_at,omitempty"`
 }
 
 // ExportBootstrapGroundItemState validates pending bootstrap ground snapshots
@@ -158,6 +168,9 @@ func bootstrapGroundItemStateRowForExport(snapshot GroundItemSnapshot) (Bootstra
 		Z:                snapshot.Z,
 		PickupRange:      snapshot.PickupRange,
 	}
+	if err := applyBootstrapGroundItemOwnershipTimer(&row, snapshot); err != nil {
+		return BootstrapGroundItemStateRow{}, err
+	}
 	if snapshot.GoldAmount != 0 {
 		if snapshot.Count != 0 {
 			return BootstrapGroundItemStateRow{}, fmt.Errorf("%w: ground vid %d has both item count and gold amount", ErrInvalidBootstrapGroundItemStateExport, snapshot.VID)
@@ -223,6 +236,44 @@ func bootstrapGroundItemStateRowForExport(snapshot GroundItemSnapshot) (Bootstra
 	row.Attr6Type = snapshot.Attr6Type
 	row.Attr6Value = snapshot.Attr6Value
 	return row, nil
+}
+
+func applyBootstrapGroundItemOwnershipTimer(row *BootstrapGroundItemStateRow, snapshot GroundItemSnapshot) error {
+	if err := validateBootstrapGroundItemOwnershipTimer(snapshot.VID, snapshot.OwnershipExclusive, snapshot.OwnershipExpiresAt, snapshot.DespawnAt); err != nil {
+		return err
+	}
+	row.OwnershipExclusive = snapshot.OwnershipExclusive
+	row.OwnershipExpiresAt = copyUTCTimePtr(snapshot.OwnershipExpiresAt)
+	row.DespawnAt = copyUTCTimePtr(snapshot.DespawnAt)
+	return nil
+}
+
+func validateBootstrapGroundItemOwnershipTimer(vid uint32, exclusive bool, expiresAt, despawnAt *time.Time) error {
+	if exclusive {
+		if expiresAt == nil || expiresAt.IsZero() {
+			return fmt.Errorf("%w: ground vid %d exclusive ownership missing ownership_expires_at", ErrInvalidBootstrapGroundItemStateExport, vid)
+		}
+		if despawnAt == nil || despawnAt.IsZero() {
+			return fmt.Errorf("%w: ground vid %d exclusive ownership missing despawn_at", ErrInvalidBootstrapGroundItemStateExport, vid)
+		}
+		if expiresAt.UTC().After(despawnAt.UTC()) {
+			return fmt.Errorf("%w: ground vid %d ownership_expires_at after despawn_at", ErrInvalidBootstrapGroundItemStateExport, vid)
+		}
+	} else if expiresAt != nil {
+		return fmt.Errorf("%w: ground vid %d public ownership must omit ownership_expires_at", ErrInvalidBootstrapGroundItemStateExport, vid)
+	}
+	if despawnAt != nil && despawnAt.IsZero() {
+		return fmt.Errorf("%w: ground vid %d has zero despawn_at", ErrInvalidBootstrapGroundItemStateExport, vid)
+	}
+	return nil
+}
+
+func copyUTCTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	utc := value.UTC()
+	return &utc
 }
 
 func validateBootstrapGroundItemInstanceSockets(vid uint32, hasSockets bool, socket0, socket1, socket2 int32) error {

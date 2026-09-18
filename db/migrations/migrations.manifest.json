@@ -232,6 +232,14 @@
       "down_path": "0029_bootstrap_ground_item_instance_attributes.down.sql",
       "up_sha256": "c7afca9b9e68e99926b644298df476dfb1bed88667246d0783d8b0a6f8c9df31",
       "down_sha256": "5785614d646db03278f59174ffef124b4f490e2bf59362794ae7dabf0411058c"
+    },
+    {
+      "version": 30,
+      "name": "bootstrap_ground_item_ownership_timer",
+      "up_path": "0030_bootstrap_ground_item_ownership_timer.up.sql",
+      "down_path": "0030_bootstrap_ground_item_ownership_timer.down.sql",
+      "up_sha256": "d8e1b4a242e8b6270cedc7deba505ee67dbf755df9cc65402904cd1140283912",
+      "down_sha256": "9ea446575a1f2d957eead206b09271babf630c681647714bb1b22924a849391f"
     }
   ]
 }
