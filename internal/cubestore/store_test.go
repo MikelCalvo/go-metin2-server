@@ -172,6 +172,48 @@ func TestFileStoreRejectsMalformedRecipesFailClosed(t *testing.T) {
 			}}},
 		},
 		{
+			name: "single material option",
+			snapshot: Snapshot{NPCs: []NPCRecipes{{
+				NPCVnum: 20022,
+				Recipes: []Recipe{{
+					Reward: Reward{Vnum: 1, Count: 1},
+					MaterialOptions: [][]Material{
+						{{Vnum: 27002, Count: 2}},
+					},
+					Percent: 100,
+				}},
+			}}},
+		},
+		{
+			name: "empty material option",
+			snapshot: Snapshot{NPCs: []NPCRecipes{{
+				NPCVnum: 20022,
+				Recipes: []Recipe{{
+					Reward: Reward{Vnum: 1, Count: 1},
+					MaterialOptions: [][]Material{
+						{{Vnum: 27002, Count: 2}},
+						{},
+					},
+					Percent: 100,
+				}},
+			}}},
+		},
+		{
+			name: "materials disagree with first option",
+			snapshot: Snapshot{NPCs: []NPCRecipes{{
+				NPCVnum: 20022,
+				Recipes: []Recipe{{
+					Reward:    Reward{Vnum: 1, Count: 1},
+					Materials: []Material{{Vnum: 27002, Count: 2}},
+					MaterialOptions: [][]Material{
+						{{Vnum: 27003, Count: 1}},
+						{{Vnum: 27004, Count: 1}},
+					},
+					Percent: 100,
+				}},
+			}}},
+		},
+		{
 			name: "duplicate npc",
 			snapshot: Snapshot{NPCs: []NPCRecipes{
 				{NPCVnum: 20022, Recipes: []Recipe{{Reward: Reward{Vnum: 1, Count: 1}, Materials: []Material{}, Percent: 100}}},
@@ -280,6 +322,29 @@ func TestFormatRecipeMaterialInfoTextJoinsMaterialsAndOmitsZeroGold(t *testing.T
 	}
 }
 
+func TestFormatRecipeMaterialInfoTextJoinsORMaterialOptions(t *testing.T) {
+	text, ok := FormatRecipeMaterialInfoText(orMaterialPotionRecipe())
+	if !ok {
+		t.Fatal("expected OR-material recipe to encode")
+	}
+	if text != "27002,2|27003,1/100" {
+		t.Fatalf("unexpected OR-material infoText: %q", text)
+	}
+	text, ok = FormatRecipeMaterialInfoText(Recipe{
+		Reward: Reward{Vnum: 1, Count: 1},
+		MaterialOptions: [][]Material{
+			{{Vnum: 10, Count: 1}, {Vnum: 11, Count: 2}},
+			{{Vnum: 12, Count: 3}},
+		},
+	})
+	if !ok {
+		t.Fatal("expected multi-AND OR-material recipe to encode")
+	}
+	if text != "10,1&11,2|12,3" {
+		t.Fatalf("unexpected multi-AND OR-material infoText: %q", text)
+	}
+}
+
 func TestFormatMaterialInfoCommandMatchesBootstrapFixture(t *testing.T) {
 	message, ok := FormatMaterialInfoCommand(0, 1, BootstrapSnapshot().NPCs[0].Recipes)
 	if !ok {
@@ -287,6 +352,16 @@ func TestFormatMaterialInfoCommandMatchesBootstrapFixture(t *testing.T) {
 	}
 	if message != "cube m_info 0 1 27002,2/100" {
 		t.Fatalf("unexpected m_info command: %q", message)
+	}
+}
+
+func TestFormatMaterialInfoCommandEncodesORMaterialOptions(t *testing.T) {
+	message, ok := FormatMaterialInfoCommand(0, 1, []Recipe{orMaterialPotionRecipe()})
+	if !ok {
+		t.Fatal("expected OR-material m_info to encode")
+	}
+	if message != "cube m_info 0 1 27002,2|27003,1/100" {
+		t.Fatalf("unexpected OR-material m_info command: %q", message)
 	}
 }
 
@@ -398,6 +473,145 @@ func TestMatchSimpleRecipeReturnsBootstrapPercent100(t *testing.T) {
 	recipe, ok = MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 4}})
 	if !ok || recipe.Percent != 100 {
 		t.Fatalf("expected surplus materials to cover bootstrap recipe, got ok=%v recipe=%+v", ok, recipe)
+	}
+}
+
+func TestMatchSimpleRecipeCoversFirstORMaterialAlternative(t *testing.T) {
+	recipes := []Recipe{orMaterialPotionRecipe()}
+	recipe, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 2}})
+	if !ok {
+		t.Fatal("expected first OR-material alternative to match")
+	}
+	if recipe.Reward.Vnum != 27001 || recipe.Gold != 100 || recipe.Percent != 100 {
+		t.Fatalf("unexpected matched OR-material recipe: %+v", recipe)
+	}
+	if len(recipe.Materials) != 1 || recipe.Materials[0].Vnum != 27002 || recipe.Materials[0].Count != 2 {
+		t.Fatalf("expected covering first alternative in Materials, got %+v", recipe.Materials)
+	}
+}
+
+func TestMatchSimpleRecipeCoversSecondORMaterialAlternativeAndRejectsPartial(t *testing.T) {
+	recipes := []Recipe{orMaterialPotionRecipe()}
+	recipe, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27003, Count: 1}})
+	if !ok {
+		t.Fatal("expected second OR-material alternative to match")
+	}
+	if len(recipe.Materials) != 1 || recipe.Materials[0].Vnum != 27003 || recipe.Materials[0].Count != 1 {
+		t.Fatalf("expected covering second alternative in Materials, got %+v", recipe.Materials)
+	}
+	gold, ok := MatchSimpleRecipeGold(recipes, []BoundMaterial{{Vnum: 27003, Count: 1}})
+	if !ok || gold != 100 {
+		t.Fatalf("expected second alternative gold 100, got gold=%d ok=%v", gold, ok)
+	}
+	if _, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27002, Count: 1}}); ok {
+		t.Fatal("expected partial first alternative to fail closed")
+	}
+	if _, ok := MatchSimpleRecipe(recipes, []BoundMaterial{{Vnum: 27004, Count: 1}}); ok {
+		t.Fatal("expected unrelated bound vnum to fail closed")
+	}
+}
+
+func TestFileStoreSaveThenLoadRoundTripsORMaterialOptions(t *testing.T) {
+	restore := DisableDurableSyncForTest()
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "state", "cube-recipes.json")
+	store := NewFileStore(path)
+	want := Snapshot{NPCs: []NPCRecipes{{
+		NPCVnum: BootstrapDefaultNPCVnum,
+		Recipes: []Recipe{orMaterialPotionRecipe()},
+	}}}
+	if err := store.Save(want); err != nil {
+		t.Fatalf("save OR-material snapshot: %v", err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatalf("load OR-material snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected OR-material snapshot:\n got: %#v\nwant: %#v", got, want)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read OR-material snapshot: %v", err)
+	}
+	if !strings.Contains(string(raw), `"material_options"`) {
+		t.Fatalf("expected material_options to persist, got:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), `"vnum": 27003`) {
+		t.Fatalf("expected second OR-material vnum to persist, got:\n%s", raw)
+	}
+}
+
+func TestFileStoreLoadCopiesFirstMaterialOptionWhenMaterialsOmitted(t *testing.T) {
+	restore := DisableDurableSyncForTest()
+	defer restore()
+
+	path := filepath.Join(t.TempDir(), "state", "cube-recipes.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir for omitted-materials OR fixture: %v", err)
+	}
+	raw := `{
+  "npcs": [
+    {
+      "npc_vnum": 20022,
+      "recipes": [
+        {
+          "reward": {
+            "vnum": 27001,
+            "count": 1
+          },
+          "material_options": [
+            [
+              {
+                "vnum": 27002,
+                "count": 2
+              }
+            ],
+            [
+              {
+                "vnum": 27003,
+                "count": 1
+              }
+            ]
+          ],
+          "gold": 100,
+          "percent": 100
+        }
+      ]
+    }
+  ]
+}
+`
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatalf("write omitted-materials OR fixture: %v", err)
+	}
+	got, err := NewFileStore(path).Load()
+	if err != nil {
+		t.Fatalf("load omitted-materials OR snapshot: %v", err)
+	}
+	if len(got.NPCs) != 1 || len(got.NPCs[0].Recipes) != 1 {
+		t.Fatalf("unexpected omitted-materials OR snapshot shape: %+v", got)
+	}
+	recipe := got.NPCs[0].Recipes[0]
+	if len(recipe.Materials) != 1 || recipe.Materials[0].Vnum != 27002 || recipe.Materials[0].Count != 2 {
+		t.Fatalf("expected omitted materials to copy first option, got %+v", recipe.Materials)
+	}
+	if len(recipe.MaterialOptions) != 2 {
+		t.Fatalf("expected two material options, got %+v", recipe.MaterialOptions)
+	}
+}
+
+func orMaterialPotionRecipe() Recipe {
+	return Recipe{
+		Reward:    Reward{Vnum: 27001, Count: 1},
+		Materials: []Material{{Vnum: 27002, Count: 2}},
+		MaterialOptions: [][]Material{
+			{{Vnum: 27002, Count: 2}},
+			{{Vnum: 27003, Count: 1}},
+		},
+		Gold:    100,
+		Percent: 100,
 	}
 }
 

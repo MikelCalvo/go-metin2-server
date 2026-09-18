@@ -24,8 +24,12 @@ The goal is deliberately conservative:
   `/cube make` / `/cube make all`
 - own `/cube list` bound-slot INFO dump and `/cube cancel` / `/cube close` as
   aliases of the owned `/close_cube` presentation close
-- keep complicated OR-materials / binary cube headers deferred until a later
-  cube slice owns those semantics
+- own one authored **OR-material** companion (`material_options` of two or more
+  AND-groups) beside already-owned `r_info` / `m_info` / `add` / `make`:
+  `cube m_info` joins groups with `|`, and `cube info` / `/cube make` consume
+  the first covering alternative
+- keep binary cube headers, name-level merge of alternate recipes into one
+  result row, and full `cube.txt` complicated-material parity deferred
 
 This is not a completed cube / craft system.
 
@@ -113,8 +117,10 @@ While the cube presentation is open:
 | server → client | `cube m_info <startIndex> <requestCount> <infoText[@...]>` | self-only; echoes parsed args; no inventory/gold/slot mutation |
 
 Bootstrap simple-recipe `infoText` is `vnum,count[&vnum,count...][/gold]`
-(gold appended only when authored gold is non-zero). Multiple recipes in the
-requested window join with `@` and no trailing `@`.
+(gold appended only when authored gold is non-zero). Authored OR-material
+recipes encode each AND-group the same way and join groups with `|` before
+the optional gold suffix (`vnum,count[&...]|vnum,count[&...][/gold]`).
+Multiple recipes in the requested window join with `@` and no trailing `@`.
 
 Fail-closed (no frames / no mutation):
 
@@ -155,8 +161,10 @@ While the cube presentation is open:
 | server → client | `cube info <gold> 0 0` | self-only gold hint after successful add/del; no inventory/gold mutation |
 
 Gold resolution aggregates currently bound live `(vnum,count)` cells and
-covers one authored simple recipe for `activeCubeNPCVnum` (oracle-shaped `bound >= need` per required vnum)
-(order-insensitive). Otherwise `gold = 0`. Close / lifecycle / floor / transfer
+covers one authored simple recipe **or** the first covering OR-material
+AND-group for `activeCubeNPCVnum` (oracle-shaped `bound >= need` per required
+vnum, order-insensitive). Recipe gold is authored once for the whole row,
+not per alternative. Otherwise `gold = 0`. Close / lifecycle / floor / transfer
 clear all bindings with the busy flag / remembered NPC vnum.
 
 Fail-closed (no frames / no binding change unless noted):
@@ -183,7 +191,8 @@ See `docs/plans/2026-08-25-cube-add-del-slot-binding-contract-freeze.md` and
 ## Owned `/cube make` / `/cube make all` (`percent = 100`, injected-roll `1..99`, always-fail `0`)
 
 While the cube presentation is open and craft slots cover one authored
-simple recipe for `activeCubeNPCVnum` (oracle-shaped `bound >= need`):
+simple recipe **or** the first covering OR-material AND-group for
+`activeCubeNPCVnum` (oracle-shaped `bound >= need`):
 
 | Direction | Command chat | Policy |
 | --- | --- | --- |
@@ -211,7 +220,8 @@ Fail-closed:
   pre-mutation reject (including unmatched / insufficient gold / inventory-full),
   concatenating each attempt's owned frames; other `/cube make` extra args stay
   silent recognized consume
-- bindings that do not cover any authored simple recipe → self-only `CHAT_TYPE_INFO`
+- bindings that do not cover any authored simple recipe or OR-material
+  AND-group → self-only `CHAT_TYPE_INFO`
   `You do not have enough materials.`
 - insufficient gold → self-only `CHAT_TYPE_INFO`
   `Not enough Yang or the item is not in place.`
@@ -274,10 +284,33 @@ consume, matching `/close_cube`.
 
 See `docs/plans/2026-08-26-cube-list-cancel.md`.
 
-### Still deferred
+## Frozen authored OR-material companion
 
-- complicated OR-material text (`vnum,count|...`) / name-level merge of
-  alternate recipes into one result row
+Authored `cubestore` recipes may carry `material_options`: two or more
+AND-groups for one reward row. This is the first OR-material seam beside
+already-owned `r_info` / `m_info` / `add` / `make`.
+
+- each inner group is the same `vnum,count` AND-list already owned by simple
+  recipes; groups join with `|` in `cube m_info` `infoText`
+- gold stays one recipe-level amount (appended once after the last group)
+- `/cube add` / `/cube make` match the first covering group (`bound >= need`
+  per required vnum, order-insensitive); extra bound vnums are allowed
+- make consumes only that covering group from currently bound live cells
+- store validation fail-closes a single empty option, a one-group
+  `material_options` list, a null option, or `materials` that disagree with
+  `material_options[0]`
+- omitted `materials` with valid `material_options` copies the first group
+  into `materials` on normalize so older simple-recipe consumers still see
+  an AND-list
+- bootstrap NPC `20022` stays the simple `{27002,2}` recipe; OR-materials
+  are an authored companion, not a bootstrap default
+
+Fail-closed (no frames / no mutation) stays the owned silent / materials-info
+policy: a bound set that covers none of the groups is unmatched.
+
+## Still deferred
+
+- name-level merge of alternate recipes into one result row
 - binary cube packet headers
 - full `cube.txt` complicated-material parity
 

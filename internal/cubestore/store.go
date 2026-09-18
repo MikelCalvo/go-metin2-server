@@ -53,10 +53,15 @@ type Material struct {
 // Recipe is one NPC craftable result. Materials/gold drive cube m_info text;
 // Reward drives cube r_list. Percent gates /cube make (bootstrap owns
 // deterministic 100, injected-roll 1..99, and store-accepted always-fail 0).
+// MaterialOptions authors OR-alternatives (two or more AND-groups); matching
+// and make consume the first covering group and leave unused alternatives.
 type Recipe struct {
 	Reward    Reward     `json:"reward"`
 	Materials []Material `json:"materials,omitempty"`
-	Gold      uint64     `json:"gold,omitempty"`
+	// MaterialOptions is the authored OR-material companion: each inner
+	// slice is one AND-group, groups join with `|` in cube m_info.
+	MaterialOptions [][]Material `json:"material_options,omitempty"`
+	Gold            uint64       `json:"gold,omitempty"`
 	// Percent is persisted explicitly (including 0) so authored always-fail
 	// recipes round-trip instead of collapsing through omitempty.
 	Percent uint8 `json:"percent"`
@@ -149,22 +154,42 @@ func FormatResultListCommand(npcVnum uint32, recipes []Recipe) (string, bool) {
 	return fmt.Sprintf("cube r_list %d %d %s", npcVnum, len(recipes), entryText), true
 }
 
-// FormatRecipeMaterialInfoText encodes one simple (non-complicated) recipe's
-// materials+gold as `vnum,count[&vnum,count...][/gold]`.
-// ok is false when there are no materials (empty infoText).
+// FormatRecipeMaterialInfoText encodes one recipe's materials+gold as
+// `vnum,count[&vnum,count...][|vnum,count[&...]][/gold]`.
+// OR-material recipes join AND-groups with `|`. Gold appends once at the end
+// when authored gold is non-zero. ok is false when there are no materials.
 func FormatRecipeMaterialInfoText(recipe Recipe) (string, bool) {
-	if len(recipe.Materials) == 0 {
+	sets := recipeMaterialSets(recipe)
+	if len(sets) == 0 {
 		return "", false
 	}
-	parts := make([]string, 0, len(recipe.Materials))
-	for _, material := range recipe.Materials {
-		parts = append(parts, fmt.Sprintf("%d,%d", material.Vnum, material.Count))
+	encoded := make([]string, 0, len(sets))
+	for _, set := range sets {
+		text, ok := formatMaterialSetText(set)
+		if !ok {
+			return "", false
+		}
+		encoded = append(encoded, text)
 	}
-	text := strings.Join(parts, "&")
+	text := strings.Join(encoded, "|")
 	if recipe.Gold > 0 {
 		text += fmt.Sprintf("/%d", recipe.Gold)
 	}
 	return text, true
+}
+
+func formatMaterialSetText(materials []Material) (string, bool) {
+	if len(materials) == 0 {
+		return "", false
+	}
+	parts := make([]string, 0, len(materials))
+	for _, material := range materials {
+		if material.Vnum == 0 || material.Count == 0 {
+			return "", false
+		}
+		parts = append(parts, fmt.Sprintf("%d,%d", material.Vnum, material.Count))
+	}
+	return strings.Join(parts, "&"), true
 }
 
 // FormatMaterialInfoCommand builds the self-only CHAT_TYPE_COMMAND payload
@@ -204,40 +229,64 @@ type BoundMaterial struct {
 	Count uint16
 }
 
-// MatchSimpleRecipe returns the first simple recipe whose required materials
-// are covered by the bound live cells (order-insensitive, aggregated by vnum,
+// MatchSimpleRecipe returns the first recipe whose required materials are
+// covered by the bound live cells (order-insensitive, aggregated by vnum,
 // oracle-shaped `count >= need` per required vnum). Extra bound vnums are
-// allowed. ok is false when no recipe is covered.
+// allowed. OR-material recipes match the first covering AND-group; the
+// returned recipe.Materials is that covering group so make consumes only it.
+// ok is false when no recipe is covered.
 func MatchSimpleRecipe(recipes []Recipe, bound []BoundMaterial) (Recipe, bool) {
 	boundCounts := aggregateMaterialCounts(bound)
 	if len(boundCounts) == 0 {
 		return Recipe{}, false
 	}
 	for _, recipe := range recipes {
-		if len(recipe.Materials) == 0 {
-			continue
-		}
-		needCounts := make(map[uint32]uint32, len(recipe.Materials))
-		for _, material := range recipe.Materials {
-			if material.Vnum == 0 || material.Count == 0 {
-				needCounts = nil
-				break
+		for _, set := range recipeMaterialSets(recipe) {
+			needCounts := materialSetNeedCounts(set)
+			if len(needCounts) == 0 {
+				continue
 			}
-			needCounts[material.Vnum] += uint32(material.Count)
-		}
-		if needCounts == nil || len(needCounts) == 0 {
-			continue
-		}
-		if materialCountsCover(boundCounts, needCounts) {
-			return recipe, true
+			if materialCountsCover(boundCounts, needCounts) {
+				matched := recipe
+				matched.Materials = cloneMaterials(set)
+				matched.MaterialOptions = cloneMaterialOptions(recipe.MaterialOptions)
+				return matched, true
+			}
 		}
 	}
 	return Recipe{}, false
 }
 
-// MatchSimpleRecipeGold returns the authored gold for the first simple recipe
-// whose required materials are covered by the bound live cells
-// (order-insensitive, aggregated by vnum). ok is false when no recipe matches.
+func recipeMaterialSets(recipe Recipe) [][]Material {
+	if len(recipe.MaterialOptions) > 0 {
+		sets := make([][]Material, 0, len(recipe.MaterialOptions))
+		sets = append(sets, recipe.MaterialOptions...)
+		return sets
+	}
+	if len(recipe.Materials) == 0 {
+		return nil
+	}
+	return [][]Material{recipe.Materials}
+}
+
+func materialSetNeedCounts(materials []Material) map[uint32]uint32 {
+	needCounts := make(map[uint32]uint32, len(materials))
+	for _, material := range materials {
+		if material.Vnum == 0 || material.Count == 0 {
+			return nil
+		}
+		needCounts[material.Vnum] += uint32(material.Count)
+	}
+	if len(needCounts) == 0 {
+		return nil
+	}
+	return needCounts
+}
+
+// MatchSimpleRecipeGold returns the authored gold for the first recipe whose
+// required materials (simple AND-list or first covering OR-group) are covered
+// by the bound live cells (order-insensitive, aggregated by vnum). ok is false
+// when no recipe matches.
 func MatchSimpleRecipeGold(recipes []Recipe, bound []BoundMaterial) (uint64, bool) {
 	recipe, ok := MatchSimpleRecipe(recipes, bound)
 	if !ok {
@@ -328,9 +377,22 @@ func normalizeSnapshot(snapshot Snapshot) Snapshot {
 			normalized.NPCs[i].Recipes = []Recipe{}
 		}
 		for j := range normalized.NPCs[i].Recipes {
-			normalized.NPCs[i].Recipes[j].Materials = cloneMaterials(normalized.NPCs[i].Recipes[j].Materials)
-			if normalized.NPCs[i].Recipes[j].Materials == nil {
-				normalized.NPCs[i].Recipes[j].Materials = []Material{}
+			recipe := &normalized.NPCs[i].Recipes[j]
+			recipe.Materials = cloneMaterials(recipe.Materials)
+			if recipe.Materials == nil {
+				recipe.Materials = []Material{}
+			}
+			recipe.MaterialOptions = cloneMaterialOptions(recipe.MaterialOptions)
+			for k := range recipe.MaterialOptions {
+				if recipe.MaterialOptions[k] == nil {
+					recipe.MaterialOptions[k] = []Material{}
+				}
+			}
+			if len(recipe.MaterialOptions) > 0 && len(recipe.Materials) == 0 {
+				recipe.Materials = cloneMaterials(recipe.MaterialOptions[0])
+				if recipe.Materials == nil {
+					recipe.Materials = []Material{}
+				}
 			}
 		}
 	}
@@ -374,6 +436,9 @@ func validateSnapshot(snapshot Snapshot) error {
 					return fmt.Errorf("%w: recipe[%d] materials[%d].count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, i, j, npc.NPCVnum)
 				}
 			}
+			if err := validateRecipeMaterialOptions(recipe, i, npc.NPCVnum); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -399,8 +464,61 @@ func cloneRecipes(recipes []Recipe) []Recipe {
 	copy(cloned, recipes)
 	for i := range cloned {
 		cloned[i].Materials = cloneMaterials(cloned[i].Materials)
+		cloned[i].MaterialOptions = cloneMaterialOptions(cloned[i].MaterialOptions)
 	}
 	return cloned
+}
+
+func cloneMaterialOptions(options [][]Material) [][]Material {
+	if options == nil {
+		return nil
+	}
+	cloned := make([][]Material, len(options))
+	for i := range options {
+		cloned[i] = cloneMaterials(options[i])
+	}
+	return cloned
+}
+
+func materialSlicesEqual(left, right []Material) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i].Vnum != right[i].Vnum || left[i].Count != right[i].Count {
+			return false
+		}
+	}
+	return true
+}
+
+func validateRecipeMaterialOptions(recipe Recipe, recipeIndex int, npcVnum uint32) error {
+	if len(recipe.MaterialOptions) == 0 {
+		return nil
+	}
+	if len(recipe.MaterialOptions) < 2 {
+		return fmt.Errorf("%w: recipe[%d] material_options must have at least two alternatives for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, npcVnum)
+	}
+	for optionIndex, option := range recipe.MaterialOptions {
+		if option == nil {
+			return fmt.Errorf("%w: recipe[%d] material_options[%d] must not be null for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, optionIndex, npcVnum)
+		}
+		if len(option) == 0 {
+			return fmt.Errorf("%w: recipe[%d] material_options[%d] must not be empty for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, optionIndex, npcVnum)
+		}
+		for materialIndex, material := range option {
+			if material.Vnum == 0 {
+				return fmt.Errorf("%w: recipe[%d] material_options[%d][%d].vnum must be non-zero for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, optionIndex, materialIndex, npcVnum)
+			}
+			if material.Count == 0 {
+				return fmt.Errorf("%w: recipe[%d] material_options[%d][%d].count must be non-zero for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, optionIndex, materialIndex, npcVnum)
+			}
+		}
+	}
+	if len(recipe.Materials) > 0 && !materialSlicesEqual(recipe.Materials, recipe.MaterialOptions[0]) {
+		return fmt.Errorf("%w: recipe[%d] materials must match material_options[0] for npc_vnum %d", ErrInvalidSnapshot, recipeIndex, npcVnum)
+	}
+	return nil
 }
 
 func cloneMaterials(materials []Material) []Material {
