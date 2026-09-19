@@ -1,6 +1,7 @@
 package minimal
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -11,8 +12,11 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	loginproto "github.com/MikelCalvo/go-metin2-server/internal/proto/login"
 	quickslotproto "github.com/MikelCalvo/go-metin2-server/internal/proto/quickslot"
 	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
+	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
 )
 
@@ -3529,5 +3533,327 @@ func TestGameRuntimeMallItemUseWhileOpenFailsClosedWithoutMutation(t *testing.T)
 	}
 	if reopenSet.Position != itemproto.MallPosition(0) || reopenSet.Vnum != 27001 || reopenSet.Count != 2 {
 		t.Fatalf("unexpected reopen MALL_SET after mall item-use: %+v", reopenSet)
+	}
+}
+
+func TestGameRuntimeMallCellsSurviveProcessRestartRematerializeOnOpen(t *testing.T) {
+	defer safeboxstore.DisableDurableSyncForTest()()
+
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	mallPath := safeboxstore.MallStorePathBesideSafebox(safeboxPath)
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	owner := peerVisibilityCharacter("MallDurableRestart", 0x010309d1, 0x020409d1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 6161
+	owner.Inventory = []inventory.ItemInstance{{ID: 1812, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "mall-durable-restart"
+	const loginKey uint32 = 0x80808101
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed durable mall restart owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable mall restart runtime error: %v", err)
+	}
+	zeroSockets := inventory.SocketValues{}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1912, Vnum: 27001, Count: 2, Slot: 0},
+		2: {ID: 1913, Vnum: 27001, Count: 1, Slot: 2, Sockets: &zeroSockets},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before process restart: %v", err)
+	}
+	if len(openOut) != 3 {
+		t.Fatalf("expected /open_mall before process restart to emit MALL_OPEN plus two MALL_SET frames, got %d", len(openOut))
+	}
+	first, err := itemproto.DecodeMallSet(decodeSingleFrame(t, openOut[1]))
+	if err != nil {
+		t.Fatalf("decode first MALL_SET before process restart: %v", err)
+	}
+	if first.Position != itemproto.MallPosition(0) || first.Vnum != 27001 || first.Count != 2 {
+		t.Fatalf("unexpected first MALL_SET before process restart: %+v", first)
+	}
+	second, err := itemproto.DecodeMallSet(decodeSingleFrame(t, openOut[2]))
+	if err != nil {
+		t.Fatalf("decode second MALL_SET before process restart: %v", err)
+	}
+	if second.Position != itemproto.MallPosition(2) || second.Vnum != 27001 || second.Count != 1 {
+		t.Fatalf("unexpected second MALL_SET before process restart: %+v", second)
+	}
+	closeSessionFlow(t, flow)
+
+	persisted, err := safeboxstore.NewMallFileStore(mallPath).Load()
+	if err != nil {
+		t.Fatalf("load durable mall snapshot after seed: %v", err)
+	}
+	cells := safeboxstore.MallCharacterCells(persisted, login, owner.ID)
+	if cells[0].ID != 1912 || cells[2].ID != 1913 || len(cells) != 2 {
+		t.Fatalf("unexpected durable mall cells after seed: %#v", cells)
+	}
+	if filepath.Dir(mallPath) == filepath.Dir(safeboxPath) {
+		t.Fatal("mall FileStore must sit beside the safebox store directory")
+	}
+
+	const postRestartLoginKey uint32 = 0x80808111
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, owner)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, []itemcatalog.Template{template})
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, reloadedTickets, reloadedAccounts, nil, nil, reloadedItems, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after durable mall process restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	reopenOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall after process restart: %v", err)
+	}
+	if len(reopenOut) != 3 {
+		t.Fatalf("expected MALL_OPEN plus two remembered MALL_SET after process restart, got %d", len(reopenOut))
+	}
+	reopenFirst, err := itemproto.DecodeMallSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode first MALL_SET after process restart: %v", err)
+	}
+	if reopenFirst.Position != first.Position || reopenFirst.Vnum != first.Vnum || reopenFirst.Count != first.Count {
+		t.Fatalf("unexpected first MALL_SET after process restart: %+v want %+v", reopenFirst, first)
+	}
+	reopenSecond, err := itemproto.DecodeMallSet(decodeSingleFrame(t, reopenOut[2]))
+	if err != nil {
+		t.Fatalf("decode second MALL_SET after process restart: %v", err)
+	}
+	if reopenSecond.Position != second.Position || reopenSecond.Vnum != second.Vnum || reopenSecond.Count != second.Count {
+		t.Fatalf("unexpected second MALL_SET after process restart: %+v want %+v", reopenSecond, second)
+	}
+	if reopenSecond.Sockets != [itemproto.ItemSocketCount]int32{} {
+		t.Fatalf("expected rematerialize MALL_SET to keep explicit-zero sockets, got %+v", reopenSecond.Sockets)
+	}
+}
+
+func TestGameRuntimeMallCheckoutSurvivesProcessRestartWithoutRematerialize(t *testing.T) {
+	defer safeboxstore.DisableDurableSyncForTest()()
+
+	root := t.TempDir()
+	ticketDir := filepath.Join(root, "tickets")
+	accountDir := filepath.Join(root, "accounts")
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	ticketStore := loginticket.NewFileStore(ticketDir)
+	accounts := accountstore.NewFileStore(accountDir)
+	owner := peerVisibilityCharacter("MallDurableCheckout", 0x010309d2, 0x020409d2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 1813, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "mall-durable-checkout"
+	const loginKey uint32 = 0x80808102
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed durable mall checkout owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable mall checkout runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1914, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	_ = flushServerFrames(t, flow)
+
+	if _, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	}))); err != nil {
+		t.Fatalf("unexpected /open_mall before durable mall checkout: %v", err)
+	}
+	checkoutOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMallCheckout(itemproto.ClientMallCheckoutPacket{
+		MallSlot: 0,
+		Position: itemproto.InventoryPosition(9),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected durable mall checkout error: %v", err)
+	}
+	if len(checkoutOut) != 2 {
+		t.Fatalf("expected durable mall checkout to emit MALL_DEL and ITEM_SET, got %d", len(checkoutOut))
+	}
+	closeSessionFlow(t, flow)
+
+	const postRestartLoginKey uint32 = 0x80808112
+	reloadedTickets := loginticket.NewFileStore(ticketDir)
+	issuePeerTicket(t, reloadedTickets, login, postRestartLoginKey, owner)
+	reloadedAccounts := accountstore.NewFileStore(accountDir)
+	reloadedItems := newItemTemplateStore(t, []itemcatalog.Template{template})
+	reloaded, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, reloadedTickets, reloadedAccounts, nil, nil, reloadedItems, nil)
+	if err != nil {
+		t.Fatalf("reload runtime after durable mall checkout restart: %v", err)
+	}
+	restartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, postRestartLoginKey)
+	defer closeSessionFlow(t, restartFlow)
+	_ = flushServerFrames(t, restartFlow)
+
+	reopenOut, err := restartFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall after durable mall checkout restart: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected /open_mall after durable mall checkout restart to emit only MALL_OPEN, got %d", len(reopenOut))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode /open_mall after durable mall checkout restart: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected /open_mall after durable mall checkout restart: %+v", open)
+	}
+}
+
+func TestGameRuntimeMallDoesNotLeakForeignCharacterRowsOnSameAccount(t *testing.T) {
+	defer safeboxstore.DisableDurableSyncForTest()()
+
+	root := t.TempDir()
+	safeboxPath := filepath.Join(root, "safebox", "safebox.json")
+	ticketStore := loginticket.NewFileStore(filepath.Join(root, "tickets"))
+	accounts := accountstore.NewFileStore(filepath.Join(root, "accounts"))
+	charA := peerVisibilityCharacter("MallLeakA", 0x010309d3, 0x020409d3, 1100, 2100, 0, 101, 201)
+	charA.Gold = 100
+	charA.Inventory = []inventory.ItemInstance{{ID: 1814, Vnum: 27001, Count: 1, Slot: 5}}
+	charB := peerVisibilityCharacter("MallLeakB", 0x010309d4, 0x020409d4, 1200, 2200, 0, 102, 202)
+	charB.Gold = 200
+	login := "mall-durable-leak"
+	const loginKey uint32 = 0x80808103
+	if err := ticketStore.Issue(loginticket.Ticket{
+		Login:      login,
+		LoginKey:   loginKey,
+		Empire:     charA.Empire,
+		Characters: cloneCharacters([]loginticket.Character{charA, charB}),
+	}); err != nil {
+		t.Fatalf("issue multi-character mall ticket: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{
+		Login:      login,
+		Empire:     charA.Empire,
+		Characters: cloneCharacters([]loginticket.Character{charA, charB}),
+	}); err != nil {
+		t.Fatalf("seed multi-character mall account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	cfg := config.Service{
+		LegacyAddr:       ":13000",
+		PublicAddr:       "127.0.0.1",
+		SafeboxStorePath: safeboxPath,
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected durable mall leak runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, charA.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1915, Vnum: 27001, Count: 2, Slot: 0},
+	})
+
+	flowA := runtime.SessionFactory()()
+	_ = mustCompleteSecureHandshake(t, flowA)
+	login2Raw, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: login, LoginKey: loginKey})
+	if err != nil {
+		t.Fatalf("encode login2 for mall char A: %v", err)
+	}
+	if _, err := flowA.HandleClientFrame(decodeSingleFrame(t, login2Raw)); err != nil {
+		t.Fatalf("login mall char A: %v", err)
+	}
+	if _, err := flowA.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 0}))); err != nil {
+		t.Fatalf("select mall char A: %v", err)
+	}
+	if _, err := flowA.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("enter mall char A: %v", err)
+	}
+	_ = flushServerFrames(t, flowA)
+	openA, err := flowA.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("open mall on char A: %v", err)
+	}
+	if len(openA) != 2 {
+		t.Fatalf("expected MALL_OPEN plus one MALL_SET on char A, got %d", len(openA))
+	}
+	closeSessionFlow(t, flowA)
+
+	const loginKeyB uint32 = 0x80808104
+	if err := ticketStore.Issue(loginticket.Ticket{
+		Login:      login,
+		LoginKey:   loginKeyB,
+		Empire:     charA.Empire,
+		Characters: cloneCharacters([]loginticket.Character{charA, charB}),
+	}); err != nil {
+		t.Fatalf("reissue ticket for mall char B: %v", err)
+	}
+
+	flowB := runtime.SessionFactory()()
+	defer closeSessionFlow(t, flowB)
+	_ = mustCompleteSecureHandshake(t, flowB)
+	login2RawB, err := loginproto.EncodeLogin2(loginproto.Login2Packet{Login: login, LoginKey: loginKeyB})
+	if err != nil {
+		t.Fatalf("encode login2 for mall char B: %v", err)
+	}
+	if _, err := flowB.HandleClientFrame(decodeSingleFrame(t, login2RawB)); err != nil {
+		t.Fatalf("login mall char B: %v", err)
+	}
+	if _, err := flowB.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeCharacterSelect(worldproto.CharacterSelectPacket{Index: 1}))); err != nil {
+		t.Fatalf("select mall char B: %v", err)
+	}
+	if _, err := flowB.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeEnterGame())); err != nil {
+		t.Fatalf("enter mall char B: %v", err)
+	}
+	_ = flushServerFrames(t, flowB)
+
+	openB, err := flowB.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("open mall on char B: %v", err)
+	}
+	if len(openB) != 1 {
+		t.Fatalf("expected only MALL_OPEN on char B (no leaked MALL_SET from char A), got %d frames", len(openB))
+	}
+	open, err := itemproto.DecodeMallOpen(decodeSingleFrame(t, openB[0]))
+	if err != nil {
+		t.Fatalf("decode char B MALL_OPEN: %v", err)
+	}
+	if open != (itemproto.MallOpenPacket{Size: 1}) {
+		t.Fatalf("unexpected char B MALL_OPEN: %+v", open)
 	}
 }

@@ -590,6 +590,8 @@ type gameRuntime struct {
 	groundItemPersistMu     sync.Mutex
 	safeboxStore            safeboxstore.Store
 	safeboxPersistMu        sync.Mutex
+	mallStore               safeboxstore.MallStore
+	mallPersistMu           sync.Mutex
 	mallSeedMu              sync.Mutex
 	mallSeedCells           map[string]map[uint8]inventory.ItemInstance
 	cubeStore               cubestore.Store
@@ -697,28 +699,52 @@ func cloneMallCells(cells map[uint8]inventory.ItemInstance) map[uint8]inventory.
 
 // SeedMallCellsForTest installs same-account mall cells for lab /open_mall
 // rematerialize, accepted MALL_CHECKOUT, and same-window mall ITEM_MOVE.
-// This bootstrap slice does not invent cash-shop purchase, durable mall
-// FileStore, or mall money.
+// When a durable mall FileStore is present the seed is written there so a later
+// process restart rematerializes the same login + character id; cash-shop
+// purchase, mall money, NPC mall open, and mall password change stay deferred.
 func (r *gameRuntime) SeedMallCellsForTest(login string, characterID uint32, cells map[uint8]inventory.ItemInstance) {
 	if r == nil {
 		return
 	}
+	cloned := cloneMallCells(cells)
 	r.mallSeedMu.Lock()
-	defer r.mallSeedMu.Unlock()
 	if r.mallSeedCells == nil {
 		r.mallSeedCells = make(map[string]map[uint8]inventory.ItemInstance)
 	}
 	key := mallCharacterKey(login, characterID)
-	if len(cells) == 0 {
+	if len(cloned) == 0 {
 		delete(r.mallSeedCells, key)
+	} else {
+		r.mallSeedCells[key] = cloned
+	}
+	r.mallSeedMu.Unlock()
+	if r.mallStore == nil {
 		return
 	}
-	r.mallSeedCells[key] = cloneMallCells(cells)
+	r.mallPersistMu.Lock()
+	defer r.mallPersistMu.Unlock()
+	snapshot, err := safeboxstore.LoadMallOrEmpty(r.mallStore)
+	if err != nil {
+		return
+	}
+	next, err := safeboxstore.ReplaceMallCharacterCells(snapshot, login, characterID, cloned)
+	if err != nil {
+		return
+	}
+	_ = r.mallStore.Save(next)
 }
 
 func (r *gameRuntime) mallCellsForCharacter(login string, characterID uint32) map[uint8]inventory.ItemInstance {
 	if r == nil {
 		return make(map[uint8]inventory.ItemInstance)
+	}
+	if r.mallStore != nil {
+		r.mallPersistMu.Lock()
+		snapshot, err := safeboxstore.LoadMallOrEmpty(r.mallStore)
+		r.mallPersistMu.Unlock()
+		if err == nil {
+			return cloneMallCells(safeboxstore.MallCharacterCells(snapshot, login, characterID))
+		}
 	}
 	r.mallSeedMu.Lock()
 	defer r.mallSeedMu.Unlock()
@@ -4671,6 +4697,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
 	}
 	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
+	mallPath := safeboxstore.MallStorePathBesideSafebox(safeboxPath)
+	mallItems := safeboxstore.NewMallFileStore(mallPath)
 	cubeRecipePath := serviceCubeRecipeStorePath(cfg)
 	if strings.TrimSpace(cfg.CubeRecipeStorePath) == "" {
 		// Hermetic constructors that omit an explicit path must not share the
@@ -4691,6 +4719,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		questStateStore:        questState,
 		groundItemStore:        groundItems,
 		safeboxStore:           safeboxItems,
+		mallStore:              mallItems,
 		mallSeedCells:          make(map[string]map[uint8]inventory.ItemInstance),
 		cubeStore:              cubeRecipes,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
@@ -4995,16 +5024,53 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				activeMallItems = make(map[uint8]inventory.ItemInstance)
 				return
 			}
+			if runtime != nil && runtime.mallStore != nil {
+				runtime.mallPersistMu.Lock()
+				snapshot, err := safeboxstore.LoadMallOrEmpty(runtime.mallStore)
+				runtime.mallPersistMu.Unlock()
+				if err == nil {
+					activeMallItems = safeboxstore.MallCharacterCells(snapshot, sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
+					if activeMallItems == nil {
+						activeMallItems = make(map[uint8]inventory.ItemInstance)
+					}
+					return
+				}
+			}
 			activeMallItems = runtime.mallCellsForCharacter(sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
 		}
 		cloneActiveMallItems := func() map[uint8]inventory.ItemInstance {
 			return cloneMallCells(activeMallItems)
 		}
-		persistActiveMallCells := func(selected *player.Runtime) {
+		persistActiveMallCells := func(selected *player.Runtime) error {
 			if runtime == nil || !hasTicket || selected == nil {
-				return
+				return nil
 			}
-			runtime.SeedMallCellsForTest(sessionTicket.Login, selected.LiveCharacter().ID, activeMallItems)
+			cloned := cloneMallCells(activeMallItems)
+			runtime.mallSeedMu.Lock()
+			if runtime.mallSeedCells == nil {
+				runtime.mallSeedCells = make(map[string]map[uint8]inventory.ItemInstance)
+			}
+			key := mallCharacterKey(sessionTicket.Login, selected.LiveCharacter().ID)
+			if len(cloned) == 0 {
+				delete(runtime.mallSeedCells, key)
+			} else {
+				runtime.mallSeedCells[key] = cloned
+			}
+			runtime.mallSeedMu.Unlock()
+			if runtime.mallStore == nil {
+				return nil
+			}
+			runtime.mallPersistMu.Lock()
+			defer runtime.mallPersistMu.Unlock()
+			snapshot, err := safeboxstore.LoadMallOrEmpty(runtime.mallStore)
+			if err != nil {
+				return err
+			}
+			next, err := safeboxstore.ReplaceMallCharacterCells(snapshot, sessionTicket.Login, selected.LiveCharacter().ID, cloned)
+			if err != nil {
+				return err
+			}
+			return runtime.mallStore.Save(next)
 		}
 		executeOpenMallWindowItemMove := func(packet itemproto.ClientMovePacket, selectedPlayer *player.Runtime) gameflow.ItemMoveResult {
 			if selectedPlayer == nil || !hasActiveMallOpen {
@@ -5059,7 +5125,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			delete(activeMallItems, sourceSlot)
 			activeMallItems[destinationSlot] = resultItem
-			persistActiveMallCells(selectedPlayer)
+			if err := persistActiveMallCells(selectedPlayer); err != nil {
+				delete(activeMallItems, destinationSlot)
+				activeMallItems[sourceSlot] = sourceItem
+				_ = persistActiveMallCells(selectedPlayer)
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
 			return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
 		}
 		encodeActiveMallSetFrames := func() [][]byte {
@@ -8913,11 +8984,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					previousMallItems := cloneActiveMallItems()
 					delete(activeMallItems, packet.MallSlot)
-					persistActiveMallCells(selectedPlayer)
+					if err := persistActiveMallCells(selectedPlayer); err != nil {
+						selectedPlayer.ApplyPersistedSnapshot(previousSelected)
+						refreshLiveCharacterRegistration()
+						activeMallItems = previousMallItems
+						_ = persistActiveMallCells(selectedPlayer)
+						return gameflow.MallCheckoutResult{Accepted: false}
+					}
 					frames, ok = commitSelectedNonPointItemMutationFrames(selectedPlayer, previousSelected, frames, nil)
 					if !ok {
 						activeMallItems = previousMallItems
-						persistActiveMallCells(selectedPlayer)
+						_ = persistActiveMallCells(selectedPlayer)
 						return gameflow.MallCheckoutResult{Accepted: false}
 					}
 					return gameflow.MallCheckoutResult{Accepted: true, Frames: frames}
