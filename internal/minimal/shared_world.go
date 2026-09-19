@@ -56,6 +56,7 @@ type sharedWorldRegistry struct {
 	syncRespawnPrefixes               map[string]struct{}
 	sharedHPPrefixes                  map[string]struct{}
 	regenRespawnDelayMs               map[string]int64
+	regenFacingAngle                  map[string]float32
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
@@ -438,6 +439,7 @@ func newSharedWorldRegistryWithTopology(topology worldruntime.BootstrapTopology)
 		syncRespawnPrefixes:                make(map[string]struct{}),
 		sharedHPPrefixes:                   make(map[string]struct{}),
 		regenRespawnDelayMs:                make(map[string]int64),
+		regenFacingAngle:                   make(map[string]float32),
 		staticActorCombatSnapshot:          make(map[uint64]uint64),
 		staticActorCombatEngagedBy:         make(map[uint64]uint64),
 		staticActorProximityAggroSuppress:  make(map[uint64]map[uint64]struct{}),
@@ -2191,6 +2193,17 @@ func cloneInt64Map(in map[string]int64) map[string]int64 {
 	return out
 }
 
+func cloneFloat32Map(in map[string]float32) map[string]float32 {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]float32, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func cloneStaticActorDeathRewardMap(in map[uint64]worldruntime.StaticActorDeathReward) map[uint64]worldruntime.StaticActorDeathReward {
 	if len(in) == 0 {
 		return nil
@@ -2551,6 +2564,35 @@ func (r *sharedWorldRegistry) optInRegenRespawnDelayLocked(spawnGroupRef string)
 	return worldruntime.StaticActorCombatProfileRespawnDelay(delayMs)
 }
 
+func (r *sharedWorldRegistry) replaceRegenFacingAngle(angles map[string]float32) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.regenFacingAngle = cloneFloat32Map(angles)
+}
+
+func (r *sharedWorldRegistry) regenFacingAngleSnapshot() map[string]float32 {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneFloat32Map(r.regenFacingAngle)
+}
+
+func (r *sharedWorldRegistry) optInRegenFacingAngleLocked(spawnGroupRef string) (float32, bool) {
+	if r == nil || spawnGroupRef == "" || len(r.regenFacingAngle) == 0 {
+		return 0, false
+	}
+	angle, ok := r.regenFacingAngle[spawnGroupRef]
+	if !ok || angle == 0 {
+		return 0, false
+	}
+	return angle, true
+}
+
 // alignOptInPackSyncRespawnLocked keeps one-count refs and live siblings on
 // their own clocks. When two or more already-dead same-prefix members opted
 // into sync_respawn, they share the latest pending ReadyAt. No pack object,
@@ -2886,7 +2928,7 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 	if !encodable {
 		return false
 	}
-	addFrames := encodeStaticActorVisibilityFrames(respawnActor)
+	addFrames := r.encodeStaticActorVisibilityFramesLocked(respawnActor)
 	if len(addFrames) == 0 {
 		return false
 	}
@@ -5669,7 +5711,7 @@ func (r *sharedWorldRegistry) registerStaticActorWithSpawnHomeAndKillQuestCredit
 		return StaticActorSnapshot{}, false
 	}
 	if !r.suppressStaticActorFanout {
-		frames := encodeStaticActorVisibilityFrames(registered)
+		frames := r.encodeStaticActorVisibilityFramesLocked(registered)
 		if len(frames) > 0 {
 			for _, target := range r.scopesLocked().VisibleTargetsForStaticActor(registered) {
 				if characterAtBootstrapHPFloor(target.Character) {
@@ -7488,6 +7530,20 @@ func exchangeItemDisplayAttributes(attributes itemcatalog.AttributeValues) [item
 }
 
 func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte {
+	return encodeStaticActorVisibilityFramesWithAngle(actor, 0)
+}
+
+func (r *sharedWorldRegistry) encodeStaticActorVisibilityFramesLocked(actor worldruntime.StaticEntity) [][]byte {
+	angle := float32(0)
+	if r != nil {
+		if overlay, ok := r.optInRegenFacingAngleLocked(actor.SpawnGroupRef); ok {
+			angle = overlay
+		}
+	}
+	return encodeStaticActorVisibilityFramesWithAngle(actor, angle)
+}
+
+func encodeStaticActorVisibilityFramesWithAngle(actor worldruntime.StaticEntity, angle float32) [][]byte {
 	vid, ok := staticActorVisibilityVID(actor)
 	if !ok {
 		return nil
@@ -7497,14 +7553,14 @@ func encodeStaticActorVisibilityFrames(actor worldruntime.StaticEntity) [][]byte
 		return nil
 	}
 	return [][]byte{
-		worldproto.EncodeCharacterAdd(staticActorCharacterAddPacket(actor, vid)),
+		worldproto.EncodeCharacterAdd(staticActorCharacterAddPacketWithAngle(actor, vid, angle)),
 		infoRaw,
 		worldproto.EncodeCharacterUpdate(staticActorCharacterUpdatePacket(actor, vid)),
 	}
 }
 
 func (r *sharedWorldRegistry) encodeStaticActorVisibilityStateFramesLocked(actor worldruntime.StaticEntity) [][]byte {
-	frames := encodeStaticActorVisibilityFrames(actor)
+	frames := r.encodeStaticActorVisibilityFramesLocked(actor)
 	if r == nil || len(frames) == 0 {
 		return frames
 	}
@@ -7579,9 +7635,13 @@ func staticActorVisibilityVID(actor worldruntime.StaticEntity) (uint32, bool) {
 }
 
 func staticActorCharacterAddPacket(actor worldruntime.StaticEntity, vid uint32) worldproto.CharacterAddPacket {
+	return staticActorCharacterAddPacketWithAngle(actor, vid, 0)
+}
+
+func staticActorCharacterAddPacketWithAngle(actor worldruntime.StaticEntity, vid uint32, angle float32) worldproto.CharacterAddPacket {
 	return worldproto.CharacterAddPacket{
 		VID:         vid,
-		Angle:       0,
+		Angle:       angle,
 		X:           actor.Position.X,
 		Y:           actor.Position.Y,
 		Z:           0,

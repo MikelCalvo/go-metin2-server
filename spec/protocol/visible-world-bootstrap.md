@@ -99,6 +99,8 @@ The bootstrap runtime currently uses deterministic values for the visible insert
 - a fixed self-insert type `6` (`CHAR_TYPE_PC`) for player characters
 - combat-profile static actors (`training_dummy`, `practice_mob`, and registered combat profiles) insert as type `0` (`CHAR_TYPE_MONSTER`)
 - ordinary interaction/static actors without a resolved combat profile insert as type `1` (`CHAR_TYPE_NPC`)
+- static-actor `CHARACTER_ADD.angle` stays `0` unless an authored `regen_spawns[]` row opts in with `direction` / `facing` / `angle`; a finite non-zero overlay copies onto that expanded spawn (one-count keeps the authored ref; multi-count copies onto every `{ref}.mNN` member). Default regen rows, `spawn_groups` without the overlay, and ordinary static actors stay at `0`
+- player self-insert currently uses a deterministic non-zero bootstrap `angle` (`90.5`)
 - deterministic movement/attack speed values
 - deterministic state bootstrap
 - selected character coordinates, race, empire, level, visible parts, self-update state, and one self-only point refresh

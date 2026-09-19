@@ -124,7 +124,7 @@ rows are later companions, not part of this placement freeze.
 - pack-wide synchronized respawn unless a multi-count regen row opts in with `sync_respawn` (default packs and live siblings stay independent)
 - shared HP unless a multi-count regen row opts in with `shared_hp` (default packs and live one-count refs stay independent)
 - pack aggro / assist / multi-mob linkage
-- direction, or applying a timer overlay to every regen row by default
+- applying a timer overlay or facing overlay to every regen row by default
 - roaming, pathing, or group formations beyond the deterministic grid offsets
 - changing built-in one-count fixtures to synthesize `.m01` suffixes
 - weighted/random loot
@@ -172,7 +172,7 @@ onto other live same-prefix siblings. Canonical JSON still strips `regen_spawns`
 Pack AI assist, MOVE, and a pack object stay deferred.
 The first one-count random-rectangle GREEN now samples a deterministic FNV cell
 inside authored `sx` × `sy` at canonicalize time and writes that cell onto the
-expanded `spawn_groups` home. Direction, live RNG, and per-respawn re-rolls stay
+expanded `spawn_groups` home. Live RNG and per-respawn re-rolls stay
 deferred. The first opt-in legacy regen-timer companion now lives on
 `regen_spawns[].time` / `regen_time_ms` / `respawn_delay_ms`: omitted/zero keeps
 the combat-profile delay, and a positive delay that fits
@@ -180,3 +180,10 @@ the combat-profile delay, and a positive delay that fits
 expanded spawn (one-count keeps the authored ref; multi-count copies onto every
 `{ref}.mNN` member). Canonical JSON still strips `regen_spawns`. Default regen
 rows plus `spawn_groups` without the overlay stay on the profile clock.
+The first opt-in regen facing companion now lives on
+`regen_spawns[].direction` / `facing` / `angle`: omitted/zero keeps
+CHARACTER_ADD `angle=0`, and a finite non-zero angle copies onto that expanded
+spawn (one-count keeps the authored ref; multi-count copies onto every
+`{ref}.mNN` member). Canonical JSON still strips `regen_spawns`. Default regen
+rows plus `spawn_groups` without the overlay stay at `angle=0`. Pack AI, MOVE
+rotation, and a pack object stay deferred.

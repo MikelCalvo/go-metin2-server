@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -5003,6 +5004,134 @@ func TestCanonicalizeRejectsInvalidRegenRespawnDelayMs(t *testing.T) {
 	}}})
 	if !errors.Is(err, ErrInvalidBundle) {
 		t.Fatalf("expected ErrInvalidBundle for invalid regen respawn_delay_ms, got %v", err)
+	}
+}
+
+func TestRegenFacingAngleStayAuthoringOnlyOnOneCountRef(t *testing.T) {
+	authored := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:      "practice.regen_facing",
+		Name:     "RegenFacing",
+		MapIndex: 42,
+		X:        1700,
+		Y:        2800,
+		RaceNum:  20350,
+		Count:    1,
+		Angle:    90.5,
+	}}}
+	overlay := RegenFacingAngleBySpawnGroupRef(authored)
+	if overlay["practice.regen_facing"] != 90.5 || len(overlay) != 1 {
+		t.Fatalf("expected authored overlay on practice.regen_facing, got %#v", overlay)
+	}
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize opt-in one-count regen facing: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to stay authoring-only after canonicalize, got %+v", canonical.RegenSpawns)
+	}
+	if got := RegenFacingAngleBySpawnGroupRef(canonical); len(got) != 0 {
+		t.Fatalf("expected canonical bundle to drop regen facing overlay, got %#v", got)
+	}
+	if len(canonical.SpawnGroups) != 1 || canonical.SpawnGroups[0].Ref != "practice.regen_facing" {
+		t.Fatalf("expected one-count overlay to keep authored ref, got %+v", canonical.SpawnGroups)
+	}
+}
+
+func TestRegenFacingAngleCopiesOntoEveryMultiCountMember(t *testing.T) {
+	authored := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:         "practice.regen_facing_pack",
+		Name:        "RegenFacingPack",
+		MapIndex:    42,
+		X:           1700,
+		Y:           2800,
+		RaceNum:     20350,
+		Count:       2,
+		PackSpacing: 100,
+		Facing:      180,
+	}}}
+	overlay := RegenFacingAngleBySpawnGroupRef(authored)
+	if overlay["practice.regen_facing_pack.m01"] != 180 || overlay["practice.regen_facing_pack.m02"] != 180 || len(overlay) != 2 {
+		t.Fatalf("expected overlay copied onto every {ref}.mNN member, got %#v", overlay)
+	}
+	if _, ok := overlay["practice.regen_facing_pack"]; ok {
+		t.Fatalf("expected multi-count overlay not to keep the unsuffixed pack prefix, got %#v", overlay)
+	}
+	canonical, err := Canonicalize(authored)
+	if err != nil {
+		t.Fatalf("canonicalize opt-in multi-count regen facing: %v", err)
+	}
+	if len(canonical.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to stay authoring-only after canonicalize, got %+v", canonical.RegenSpawns)
+	}
+	if got := RegenFacingAngleBySpawnGroupRef(canonical); len(got) != 0 {
+		t.Fatalf("expected canonical bundle to drop regen facing overlay, got %#v", got)
+	}
+}
+
+func TestRegenFacingAngleAcceptsAgreeingAliasesAndOmitsZero(t *testing.T) {
+	agreeing := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:       "practice.regen_facing_alias",
+		Name:      "RegenFacingAlias",
+		MapIndex:  42,
+		X:         1700,
+		Y:         2800,
+		RaceNum:   20350,
+		Count:     1,
+		Direction: 45,
+		Facing:    45,
+		Angle:     45,
+	}}}
+	overlay := RegenFacingAngleBySpawnGroupRef(agreeing)
+	if overlay["practice.regen_facing_alias"] != 45 || len(overlay) != 1 {
+		t.Fatalf("expected agreeing facing aliases to share one overlay angle, got %#v", overlay)
+	}
+	if _, err := Canonicalize(agreeing); err != nil {
+		t.Fatalf("canonicalize agreeing regen facing aliases: %v", err)
+	}
+	omitted := Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:      "practice.regen_facing_zero",
+		Name:     "RegenFacingZero",
+		MapIndex: 42,
+		X:        1700,
+		Y:        2800,
+		RaceNum:  20350,
+		Count:    1,
+	}}}
+	if got := RegenFacingAngleBySpawnGroupRef(omitted); len(got) != 0 {
+		t.Fatalf("expected omitted/zero overlay to keep CHARACTER_ADD angle=0, got %#v", got)
+	}
+}
+
+func TestCanonicalizeRejectsConflictingRegenFacingAliases(t *testing.T) {
+	_, err := Canonicalize(Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:       "practice.regen_facing_conflict",
+		Name:      "RegenFacingConflict",
+		MapIndex:  42,
+		X:         1700,
+		Y:         2800,
+		RaceNum:   20350,
+		Count:     1,
+		Direction: 90,
+		Angle:     180,
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for conflicting regen facing aliases, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsNonFiniteRegenFacingAngle(t *testing.T) {
+	_, err := Canonicalize(Bundle{RegenSpawns: []RegenSpawn{{
+		Ref:      "practice.regen_facing_nan",
+		Name:     "RegenFacingNaN",
+		MapIndex: 42,
+		X:        1700,
+		Y:        2800,
+		RaceNum:  20350,
+		Count:    1,
+		Angle:    float32(math.NaN()),
+	}}})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for non-finite regen facing, got %v", err)
 	}
 }
 

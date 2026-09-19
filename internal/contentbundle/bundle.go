@@ -75,6 +75,9 @@ type RegenSpawn struct {
 	Time               int64    `json:"time,omitempty"`
 	RegenTimeMs        int64    `json:"regen_time_ms,omitempty"`
 	RespawnDelayMs     int64    `json:"respawn_delay_ms,omitempty"`
+	Direction          float32  `json:"direction,omitempty"`
+	Facing             float32  `json:"facing,omitempty"`
+	Angle              float32  `json:"angle,omitempty"`
 	Sx                 int32    `json:"sx,omitempty"`
 	Sy                 int32    `json:"sy,omitempty"`
 	RewardExperience   uint64   `json:"reward_experience,omitempty"`
@@ -1225,6 +1228,66 @@ func regenSpawnOverlayRespawnDelayMs(regenSpawn RegenSpawn) (int64, bool) {
 		return 0, false
 	}
 	return delay, true
+}
+
+// RegenFacingAngleBySpawnGroupRef returns the authored regen overlay that
+// copies CHARACTER_ADD angle for expanded spawn refs. Omitted/zero keeps
+// angle=0. One-count keeps the authored ref; multi-count copies onto every
+// {ref}.mNN member. Canonical JSON still strips regen_spawns, so this overlay
+// is process-local like time / regen_time_ms / respawn_delay_ms, sync_respawn,
+// shared_hp, and weighted entries.
+func RegenFacingAngleBySpawnGroupRef(bundle Bundle) map[string]float32 {
+	if len(bundle.RegenSpawns) == 0 {
+		return nil
+	}
+	overlay := make(map[string]float32)
+	for _, regenSpawn := range bundle.RegenSpawns {
+		angle, ok := regenSpawnOverlayFacingAngle(regenSpawn)
+		if !ok || angle == 0 {
+			continue
+		}
+		count := regenSpawn.Count
+		if count == 0 || count > maxRegenSpawnCount {
+			return nil
+		}
+		ref := strings.TrimSpace(regenSpawn.Ref)
+		if ref == "" {
+			continue
+		}
+		if count == 1 {
+			overlay[ref] = angle
+			continue
+		}
+		for member := uint16(1); member <= count; member++ {
+			overlay[fmt.Sprintf("%s.m%02d", ref, member)] = angle
+		}
+	}
+	if len(overlay) == 0 {
+		return nil
+	}
+	return overlay
+}
+
+func regenSpawnOverlayFacingAngle(regenSpawn RegenSpawn) (float32, bool) {
+	seen := false
+	var angle float32
+	for _, candidate := range []float32{regenSpawn.Direction, regenSpawn.Facing, regenSpawn.Angle} {
+		if candidate == 0 {
+			continue
+		}
+		if math.IsNaN(float64(candidate)) || math.IsInf(float64(candidate), 0) {
+			return 0, false
+		}
+		if seen && candidate != angle {
+			return 0, false
+		}
+		angle = candidate
+		seen = true
+	}
+	if !seen {
+		return 0, true
+	}
+	return angle, true
 }
 
 func WeightedDropEntriesBySpawnGroupRef(bundle Bundle) map[string][]DropTableEntry {
@@ -4995,6 +5058,9 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 	spawnGroups := make([]SpawnGroup, 0, len(regenSpawns))
 	for _, regenSpawn := range regenSpawns {
 		if _, ok := regenSpawnOverlayRespawnDelayMs(regenSpawn); !ok {
+			return nil, false
+		}
+		if _, ok := regenSpawnOverlayFacingAngle(regenSpawn); !ok {
 			return nil, false
 		}
 		count := regenSpawn.Count

@@ -14689,6 +14689,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 		r.replaceSharedHPPrefixes(contentbundle.SharedHPPackPrefixes(bundle))
 		r.replaceRegenRespawnDelayMs(contentbundle.RegenRespawnDelayMsBySpawnGroupRef(bundle))
+		r.replaceRegenFacingAngle(contentbundle.RegenFacingAngleBySpawnGroupRef(bundle))
 		r.pruneSpawnGroupReturnStepSchedules()
 		r.pruneSpawnGroupChaseStepSchedules()
 		r.pruneSpawnGroupHomewardStepSchedules()
@@ -14699,6 +14700,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	previousSyncRespawnPrefixes := r.syncRespawnPrefixesSnapshot()
 	previousSharedHPPrefixes := r.sharedHPPrefixesSnapshot()
 	previousRegenRespawnDelayMs := r.regenRespawnDelayMsSnapshot()
+	previousRegenFacingAngle := r.regenFacingAngleSnapshot()
 	previousSpawnReturnStepDueAt := r.spawnGroupReturnStepDueAtSnapshot()
 	previousSpawnChaseStepDueAt := r.spawnGroupChaseStepDueAtSnapshot()
 	previousSpawnHomewardStepDueAt := r.spawnGroupHomewardStepDueAtSnapshot()
@@ -14747,6 +14749,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		r.replaceSyncRespawnPrefixes(previousSyncRespawnPrefixes)
 		r.replaceSharedHPPrefixes(previousSharedHPPrefixes)
 		r.replaceRegenRespawnDelayMs(previousRegenRespawnDelayMs)
+		r.replaceRegenFacingAngle(previousRegenFacingAngle)
 		rollbackErr = errors.Join(rollbackErr, r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: previousBundle.QuestState}))
 		if r.sharedWorld != nil {
 			for _, actor := range previousActors {
@@ -14781,13 +14784,14 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
 	r.pruneSpawnGroupHomewardStepSchedules()
-	if r.sharedWorld != nil {
-		r.sharedWorld.flushStaticActorImportFanout()
-	}
 	r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 	r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 	r.replaceSharedHPPrefixes(contentbundle.SharedHPPackPrefixes(bundle))
 	r.replaceRegenRespawnDelayMs(contentbundle.RegenRespawnDelayMsBySpawnGroupRef(bundle))
+	r.replaceRegenFacingAngle(contentbundle.RegenFacingAngleBySpawnGroupRef(bundle))
+	if r.sharedWorld != nil {
+		r.sharedWorld.flushStaticActorImportFanout()
+	}
 	if !r.persistStaticActorSnapshot(r.StaticActors()) {
 		return contentbundle.Bundle{}, ErrContentBundleUnavailable
 	}
@@ -15473,6 +15477,20 @@ func (r *gameRuntime) regenRespawnDelayMsSnapshot() map[string]int64 {
 		return nil
 	}
 	return r.sharedWorld.regenRespawnDelayMsSnapshot()
+}
+
+func (r *gameRuntime) replaceRegenFacingAngle(angles map[string]float32) {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.sharedWorld.replaceRegenFacingAngle(angles)
+}
+
+func (r *gameRuntime) regenFacingAngleSnapshot() map[string]float32 {
+	if r == nil || r.sharedWorld == nil {
+		return nil
+	}
+	return r.sharedWorld.regenFacingAngleSnapshot()
 }
 
 func cloneWeightedDropEntries(entries map[string][]contentbundle.DropTableEntry) map[string][]contentbundle.DropTableEntry {
