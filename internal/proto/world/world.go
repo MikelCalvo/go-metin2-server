@@ -32,7 +32,8 @@ const (
 	HeaderChangeSpeed             uint16 = 0x0218
 
 	// BootstrapCharacterMovingSpeed is the already-owned CHARACTER_ADD /
-	// CHARACTER_UPDATE default reused by the first GC CHANGE_SPEED emit.
+	// CHARACTER_UPDATE default reused by GC CHANGE_SPEED emits, including the
+	// first chase-step companion. It is not a sit/walk table or chase formula.
 	BootstrapCharacterMovingSpeed uint16 = 150
 
 	CharacterNameFieldSize      = 65

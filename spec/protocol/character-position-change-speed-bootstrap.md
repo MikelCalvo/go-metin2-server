@@ -41,7 +41,7 @@ The server `CHARACTER_POSITION` packet in this note is deliberately separate fro
 - client -> server `CHARACTER_POSITION` uses header `0x0A60` and a one-byte position payload,
 - server -> client `CHARACTER_POSITION` uses header `0x020B` and names the visible actor `vid` plus the position byte.
 
-`CHANGE_SPEED` is likewise a compact presentation refresh for one visible actor's moving speed. The current movement path remains owned by `MOVE`, `SYNC_POSITION`, `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`. This first GREEN reuses that already-owned bootstrap `moving_speed` on the sit/stand presentation seam and does not invent a second movement simulation.
+`CHANGE_SPEED` is likewise a compact presentation refresh for one visible actor's moving speed. The current movement path remains owned by `MOVE`, `SYNC_POSITION`, `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`. Sit/stand still reuses that already-owned bootstrap `moving_speed` on the stance presentation seam. One successful same-map chase step now also reuses that same default on a retained-viewer companion; this is still not a second movement simulation, sit/walk table, or chase-speed formula.
 
 ## Current runtime rule
 
@@ -53,7 +53,9 @@ The current Go runtime accepts only the smallest legacy-compatible stance presen
 
 When accepted in `GAME`, the socket must still own its live shared-world session, and the selected live character must exist and be above the bootstrap `0`-HP floor. The runtime emits exactly one self `GC CHARACTER_POSITION(selected_vid, position)` frame and queues the same frame to currently visible live peers through the existing shared-world visibility seam. Chair and ground-sit requests both publish `position = 4` because the first clean-room server-owned rendering policy deliberately avoids chair placement/chair-object semantics and reuses the already-visible ground-sit carrier.
 
-The same accepted stance transition also emits one self-only `GC CHANGE_SPEED(selected_vid, moving_speed)` using the already-owned bootstrap `CHARACTER_ADD` / `CHARACTER_UPDATE` default `moving_speed = 150`. That companion is a presentation refresh of the speed the client already received on enter-game, not a sit/walk table, buff, stun, knockdown, skill, equipment, or AI chase formula. Visible peers keep the existing `CHARACTER_POSITION`-only fanout in this first GREEN; chase or homeward `CHANGE_SPEED` stays a later slice.
+The same accepted stance transition also emits one self-only `GC CHANGE_SPEED(selected_vid, moving_speed)` using the already-owned bootstrap `CHARACTER_ADD` / `CHARACTER_UPDATE` default `moving_speed = 150`. That companion is a presentation refresh of the speed the client already received on enter-game, not a sit/walk table, buff, stun, knockdown, skill, equipment, or chase-speed formula. Visible peers keep the existing `CHARACTER_POSITION`-only fanout on that stance seam.
+
+One successful same-map pending-frame chase step that already queues retained-viewer `MOVE` now also queues one `GC CHANGE_SPEED(actor_vid, moving_speed=150)` to those same retained live viewers, using the already-owned static-actor `CHARACTER_ADD` / `CHARACTER_UPDATE` default. The companion is delivered on that same pending-frame flush after the chase `MOVE` (and after any same-flush delayed-retaliation frames), does not invent a second scheduler, pathfinding, pack AI, or cross-map `MOVE` / `GC WARP`, and does not change engagement / selected-target ownership. Homeward, return-step, and operator/runtime position `MOVE` still do not emit `CHANGE_SPEED`. Viewers already at the bootstrap `0`-HP floor stay skipped.
 
 The session starts in the general/standing presentation state. A request that repeats the already active presentation state is accepted as a no-op and emits no self or peer frames, including no `CHANGE_SPEED`. This mirrors the observed standup/sitdown guard shape from the behavior oracle and avoids stale duplicate stance spam while still letting a later opposite transition publish the expected update.
 
@@ -64,7 +66,7 @@ This is presentation-only for now:
 - movement and sync continue to use the existing move/sync acknowledgement and peer fanout families,
 - player death/restart and non-player death/respawn do not add extra stance packets unless a later slice freezes that companion.
 
-Unsupported battle-mode, speed-buff, slow, haste, stun, knockdown, skill, or AI chase/leash speed effects stay out of scope until later tests freeze a concrete runtime policy. `MOVE`, `SYNC_POSITION`, combat hits, death, restart, respawn, skill, and item/equipment paths still do not emit `CHANGE_SPEED`.
+Unsupported battle-mode, speed-buff, slow, haste, stun, knockdown, skill, equipment, sit/walk tables, or authored chase-speed formulas stay out of scope. `MOVE`, `SYNC_POSITION`, combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step paths still do not emit `CHANGE_SPEED`; the only chase exception is the retained-viewer companion on one successful same-map chase step above.
 
 ## Non-goals
 
@@ -72,7 +74,7 @@ This slice does not freeze:
 - the semantic meaning of every `position` byte beyond `0`, `3`, and `4`,
 - persisted stance state,
 - battle-mode transitions,
-- speed formulas, buffs, debuffs, equipment speed effects, or mob chase/leash speed behavior,
+- speed formulas, buffs, debuffs, equipment speed effects, sit/walk tables, or authored mob chase/leash speed values beyond the bootstrap default,
 - compatibility-grade choreography around stun, knockdown, skills, or projectile combat.
 
 ## Success definition
@@ -87,5 +89,6 @@ After this slice:
 - duplicate stand/sit requests are accepted no-ops with no repeated presentation frame and no `CHANGE_SPEED`,
 - selected owners already at the bootstrap `0`-HP floor fail closed before any self or peer stance presentation frame and before any `CHANGE_SPEED`,
 - unsupported position bytes still fail closed through the existing combat/targeting ingress guard,
-- `MOVE`, combat hits, death, restart, respawn, skill, item/equipment, and AI chase/homeward still do not emit `CHANGE_SPEED`,
+- `MOVE`, combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step still do not emit `CHANGE_SPEED`,
+- one successful same-map chase `MOVE` also emits one retained-viewer `GC CHANGE_SPEED(actor_vid, moving_speed=150)` using the already-owned static-actor default,
 - later movement/combat presentation slices can start from tested packet shapes rather than guessing these layouts.

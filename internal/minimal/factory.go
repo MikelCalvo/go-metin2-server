@@ -613,7 +613,14 @@ type gameRuntime struct {
 	spawnChaseStepDueAt     map[uint64]time.Time
 	spawnHomewardMu         sync.Mutex
 	spawnHomewardStepDueAt  map[uint64]time.Time
+	chaseSpeedMu            sync.Mutex
+	chaseSpeeds             []spawnGroupChaseChangeSpeedDelivery
 	now                     func() time.Time
+}
+
+type spawnGroupChaseChangeSpeedDelivery struct {
+	entityID uint64
+	frame    []byte
 }
 
 type liveCharacterStateSnapshot struct {
@@ -3179,19 +3186,25 @@ func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSn
 }
 
 func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool) {
+	snapshot, ok, speedDeliveries := r.applySpawnGroupChaseStepPlanLocked(entityID, plan)
+	r.queueSpawnGroupChaseChangeSpeed(speedDeliveries)
+	return snapshot, ok
+}
+
+func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool, []spawnGroupChaseChangeSpeedDelivery) {
 	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 || !plan.Next.Valid() {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	world := r.sharedWorld
 	world.mu.Lock()
 	defer world.mu.Unlock()
 	actor, ok := world.entities.StaticActor(entityID)
 	if !ok || actor.SpawnGroupRef == "" {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	currentHP, ok := world.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok || currentHP == 0 {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	snapshotFor := func(updated worldruntime.StaticEntity, complete bool) SpawnGroupReturnStepSnapshot {
 		return SpawnGroupReturnStepSnapshot{
@@ -3204,24 +3217,36 @@ func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldru
 		}
 	}
 	if plan.Complete && plan.Next.Equal(actor.Position) {
-		return snapshotFor(actor, true), true
+		return snapshotFor(actor, true), true, nil
 	}
 	if !plan.Next.SameMap(actor.Position) {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	steppedActor := actor
 	steppedActor.Position = plan.Next
 	targetDiff := world.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
 	updated, ok := world.entities.UpdateStaticActor(steppedActor)
 	if !ok {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
+	var speedDeliveries []spawnGroupChaseChangeSpeedDelivery
 	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
 		for _, target := range targetDiff.RetainedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
 				continue
 			}
 			world.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+		}
+		if speedRaw, speedEncodable := encodeStaticActorChangeSpeedFrame(updated); speedEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				speedDeliveries = append(speedDeliveries, spawnGroupChaseChangeSpeedDelivery{
+					entityID: target.Entity.ID,
+					frame:    append([]byte(nil), speedRaw...),
+				})
+			}
 		}
 	}
 	if deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor); deleteEncodable {
@@ -3240,7 +3265,47 @@ func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldru
 			world.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	return snapshotFor(updated, plan.Complete), true
+	return snapshotFor(updated, plan.Complete), true, speedDeliveries
+}
+
+func encodeStaticActorChangeSpeedFrame(actor worldruntime.StaticEntity) ([]byte, bool) {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok {
+		return nil, false
+	}
+	return worldproto.EncodeChangeSpeed(worldproto.ChangeSpeedPacket{
+		VID:         vid,
+		MovingSpeed: worldproto.BootstrapCharacterMovingSpeed,
+	}), true
+}
+
+func (r *gameRuntime) queueSpawnGroupChaseChangeSpeed(deliveries []spawnGroupChaseChangeSpeedDelivery) {
+	if r == nil || len(deliveries) == 0 {
+		return
+	}
+	r.chaseSpeedMu.Lock()
+	defer r.chaseSpeedMu.Unlock()
+	r.chaseSpeeds = append(r.chaseSpeeds, deliveries...)
+}
+
+func (r *gameRuntime) flushPendingSpawnGroupChaseChangeSpeed() {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.chaseSpeedMu.Lock()
+	deliveries := r.chaseSpeeds
+	r.chaseSpeeds = nil
+	r.chaseSpeedMu.Unlock()
+	for _, delivery := range deliveries {
+		if delivery.entityID == 0 || len(delivery.frame) == 0 {
+			continue
+		}
+		owner, ok := r.sharedWorld.playerCharacter(delivery.entityID)
+		if !ok || characterAtBootstrapHPFloor(owner) {
+			continue
+		}
+		r.sharedWorld.EnqueueToEntity(delivery.entityID, [][]byte{delivery.frame})
+	}
 }
 
 func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
@@ -5728,6 +5793,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						runtime.flushDueSpawnGroupReturnSteps()
 						runtime.flushDueSpawnGroupHomewardSteps()
 						runtime.flushDueSpawnGroupChaseSteps()
+						runtime.flushPendingSpawnGroupChaseChangeSpeed()
 						runtime.flushProximitySpawnGroupAggroAcquisition()
 						bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(updatedLive, runtime.itemTemplates)
 						if err != nil {
@@ -6892,6 +6958,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					runtime.flushDueSpawnGroupReturnSteps()
 					runtime.flushDueSpawnGroupHomewardSteps()
 					runtime.flushDueSpawnGroupChaseSteps()
+					runtime.flushPendingSpawnGroupChaseChangeSpeed()
 					runtime.flushProximitySpawnGroupAggroAcquisition()
 
 					stateMu.Lock()
@@ -7933,6 +8000,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
+							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
@@ -7995,6 +8063,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
+							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
 							bootstrapFrames, err := worldentry.BuildBootstrapFramesWithTemplates(restartedSelected, runtime.itemTemplates)
 							if err != nil {
@@ -10423,6 +10492,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			defer stateMu.Unlock()
 			armPracticeMobServerOriginRetaliationFromProximityEngagement()
 			flushPendingPracticeMobServerOriginRetaliation(pending)
+			runtime.flushPendingSpawnGroupChaseChangeSpeed()
 		}, func() {
 			stateMu.Lock()
 			leaveID := sharedWorldID

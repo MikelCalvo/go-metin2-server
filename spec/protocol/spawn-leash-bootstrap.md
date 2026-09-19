@@ -165,8 +165,8 @@ Arming rules:
 - return-step ownership always wins: if an actor becomes `return_required`, clear any pending chase deadline and leave recovery to the already-owned return-step executor
 
 Execution rules:
-- each `FlushServerFrames()` pass keeps the owned order of due respawns, then due return steps, then due homeward steps, then due chase steps, then proximity acquisition / session-local delayed retaliation
-- a due chase step resolves the current engaged owner's live position, plans with fixed bootstrap `max_step = 100` and the default leash radius, persists the stepped materialized position before mutating runtime, and fans visibility with retained-viewer `MOVE` replication while remove/add membership still uses the ordinary static-actor delete/bootstrap helpers
+- each `FlushServerFrames()` pass keeps the owned order of due respawns, then due return steps, then due homeward steps, then due chase steps, then proximity acquisition / session-local delayed retaliation, then the retained-viewer chase `CHANGE_SPEED` companion when that chase step queued a `MOVE`
+- a due chase step resolves the current engaged owner's live position, plans with fixed bootstrap `max_step = 100` and the default leash radius, persists the stepped materialized position before mutating runtime, and fans visibility with retained-viewer `MOVE` replication while remove/add membership still uses the ordinary static-actor delete/bootstrap helpers; that same successful retained-viewer chase `MOVE` now also queues one `GC CHANGE_SPEED(actor_vid, moving_speed=150)` using the already-owned static-actor `CHARACTER_ADD` / `CHARACTER_UPDATE` default (`TestGameRuntimeFlushServerFramesEmitsChangeSpeedOnDueSpawnGroupChaseStep`). Homeward, return-step, operator/runtime position `MOVE`, pathfinding, pack AI, and cross-map `MOVE` / `GC WARP` stay unchanged.
 - focused coverage now also freezes that live-owner replan when the engaged owner moves between chase arm and the first due flush: the due retained-viewer `MOVE` plans toward the post-move owner coords rather than an arm-time snapshot, while engagement / selected-target ownership stay preserved (`TestGameRuntimeFlushServerFramesReplansSpawnGroupChaseTowardOwnerMovedBetweenArmAndDue`)
 - unlike return-step recovery, a successful chase step preserves current practice-mob engagement and does not clear selected combat targets solely because the actor moved; stale delayed retaliation remains governed by the already-owned engagement/reset seams
 - if planning fails closed (lost owner, cross-map owner, return-required, dead, invalid actor), clear the pending chase deadline without mutating position
@@ -226,7 +226,7 @@ Current implementation status:
 - the pending-frame chase executor is now live in `internal/minimal`
 - accepted non-lethal content practice-mob hits arm the `5s` chase deadline
 - proximity aggro-radius acquisition that newly establishes engagement also arms that same `5s` chase deadline without inventing selected-target ownership; when the deadline becomes due, the executor applies the owned chase MOVE choreography for retained viewers while still preserving engagement and still inventing no selected combat target
-- due chase steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), preserve engagement / selected-target ownership, and re-arm while the actor remains eligible
+- due chase steps persist position, queue retained-viewer `MOVE` replication (with remove/add visibility still using delete/bootstrap), preserve engagement / selected-target ownership, and re-arm while the actor remains eligible; that same retained-viewer chase `MOVE` now also queues one `GC CHANGE_SPEED(actor_vid, moving_speed=150)` using the already-owned bootstrap default (`TestGameRuntimeFlushServerFramesEmitsChangeSpeedOnDueSpawnGroupChaseStep`)
 - focused live-owner replan coverage now freezes owner movement between chase arm and the first due flush: the due retained-viewer `MOVE` plans toward the live post-move owner coords rather than an arm-time snapshot (`TestGameRuntimeFlushServerFramesReplansSpawnGroupChaseTowardOwnerMovedBetweenArmAndDue`)
 - leash-clamped complete chase steps that stop on the effective leash boundary now have focused live coverage: the pending chase deadline clears even when the owner was not reached, engagement / selected-target stay preserved, no automatic follow-up fires while cleared, a later same-engagement accepted hit re-arms the owned `5s` deadline, and after the owner walks inward so the actor is again safely inside leash the re-armed due chase applies another retained-viewer `MOVE` (`TestGameRuntimeFlushServerFramesClearsLeashClampedSpawnGroupChaseStepAndRearmsOnHit`)
 - one occupancy-avoiding chase detour is now owned beside that straight-line planner: when the planned same-map `next` is occupied by another live static actor, the due chase / pending inspection sidestep to one in-leash axis-aligned cell instead of landing on that occupied cell (`TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep`)
@@ -285,7 +285,7 @@ Question frozen here:
 Contract for the first chase MOVE choreography:
 - reuse the already-owned server `MOVE` / `MOVE_ACK` wire shape (`0x0302`) from `move-peer-fanout.md` rather than inventing a dedicated chase packet family
 - apply only to a successful pending-frame chase step that actually changes the materialized actor position while the actor remains live, engaged by the same owner, same-map, and still `at_home` / `within_radius`
-- retained viewers that already had the actor visible before and after the step receive one queued `MOVE` replication for the actor's visible `VID` at the planned `next` coordinates instead of the current delete-plus-readd refresh
+- retained viewers that already had the actor visible before and after the step receive one queued `MOVE` replication for the actor's visible `VID` at the planned `next` coordinates instead of the current delete-plus-readd refresh, plus one `GC CHANGE_SPEED(actor_vid, moving_speed=150)` companion using the already-owned static-actor default
 - viewers that lose visibility across the step still receive `CHARACTER_DEL`
 - viewers that newly gain visibility across the step still receive the ordinary `CHARACTER_ADD` + `CHAR_ADDITIONAL_INFO` + `CHARACTER_UPDATE` bootstrap burst
 - chase MOVE fanout does **not** clear selected combat targets, does **not** release aggro-lite engagement, and does **not** invent selected-target ownership for proximity-armed chase
@@ -295,6 +295,7 @@ Contract for the first chase MOVE choreography:
 
 Current implementation status:
 - this chase MOVE choreography is now live for retained viewers of a successful pending-frame chase step
+- that same retained-viewer chase `MOVE` now also queues one `GC CHANGE_SPEED(actor_vid, moving_speed=150)` using the already-owned static-actor default; homeward / return-step / operator position MOVE still omit `CHANGE_SPEED`
 - remove/add visibility membership across the same step still uses the ordinary `CHARACTER_DEL` / add-info-update bootstrap path
 - same-map return-step / return-home retained-viewer MOVE and same-map live operator/runtime position MOVE later landed as separate seams; presentation refreshes, respawn rebuild, content-bundle replacement, and cross-map return-home remain on delete/readd
 
@@ -303,6 +304,8 @@ Explicit non-goals for this chase MOVE freeze alone:
 - pathfinding, navmesh, patrol, or continuous interpolation beyond one discrete planned step
 - cross-map chase or chase while `return_required`
 - a dedicated chase packet family distinct from `MOVE`
+- a chase-speed formula, sit/walk table, or authored moving_speed other than the bootstrap `CHARACTER_ADD` / `CHARACTER_UPDATE` default
+- homeward / return-step / operator-position `CHANGE_SPEED` companions
 - operator POST chase-step triggers
 
 ## First owned return-step MOVE packet choreography seam
