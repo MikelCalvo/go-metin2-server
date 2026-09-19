@@ -1172,3 +1172,194 @@ func TestGameRuntimeItemGiveAntiGiveRejectTextRequiresValidRequestedCountWithout
 		})
 	}
 }
+
+func TestGameRuntimeItemGiveOfDisplayedExchangeStackFailsClosedWithBusyWindowChat(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveDispExchOwner", 0x01030db0, 0x02040db0, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1820, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("GiveDispExchPeer", 0x01030db1, 0x02040db1, 1120, 2120, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 1821, Vnum: 27002, Count: 1, Slot: 6}}
+	ownerLogin := "item-give-disp-exch-owner"
+	peerLogin := "item-give-disp-exch-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707db0, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707db1, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed displayed-exchange item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed displayed-exchange item-give peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange item-give runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707db0)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707db1)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange item-give start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected displayed-exchange item-give start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "displayed-exchange item-give owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected displayed-exchange item-give peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "displayed-exchange item-give peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange item-give item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected displayed-exchange item-give item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected displayed-exchange item-give peer item-add frame, got %d", len(queuedItemAdd))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: peer.VID, Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange ITEM_GIVE packet error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected displayed-exchange ITEM_GIVE to emit one busy-window info-chat frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode displayed-exchange ITEM_GIVE busy-window info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected displayed-exchange ITEM_GIVE busy-window chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra queued owner frames after displayed-exchange ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected displayed-exchange ITEM_GIVE to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "displayed-exchange ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "displayed-exchange ITEM_GIVE peer")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "displayed-exchange ITEM_GIVE live owner")
+	assertExchangeLiveStateUnchanged(t, runtime, peer, "displayed-exchange ITEM_GIVE live peer")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected displayed-exchange cancel after busy ITEM_GIVE: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected displayed-exchange shell to remain cancellable after busy ITEM_GIVE, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "displayed-exchange busy ITEM_GIVE owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected displayed-exchange busy ITEM_GIVE peer cancel END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "displayed-exchange busy ITEM_GIVE peer cancel")
+}
+
+func TestGameRuntimeItemGiveWhileOpenExchangeOfNonDisplayedStackFailsClosedWithBusyWindowChat(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveOpenExchOwner", 0x01030db2, 0x02040db2, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{
+		{ID: 1822, Vnum: 27001, Count: 3, Slot: 5},
+		{ID: 1823, Vnum: 27001, Count: 2, Slot: 8},
+	}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 8}}
+	peer := peerVisibilityCharacter("GiveOpenExchPeer", 0x01030db3, 0x02040db3, 1120, 2120, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 1824, Vnum: 27002, Count: 1, Slot: 6}}
+	ownerLogin := "item-give-open-exch-owner"
+	peerLogin := "item-give-open-exch-peer"
+	issuePeerTicket(t, ticketStore, ownerLogin, 0x70707db2, owner)
+	issuePeerTicket(t, ticketStore, peerLogin, 0x70707db3, peer)
+	if err := accounts.Save(accountstore.Account{Login: ownerLogin, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-exchange item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: peerLogin, Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed open-exchange item-give peer account: %v", err)
+	}
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-exchange item-give runtime error: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), ownerLogin, 0x70707db2)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), peerLogin, 0x70707db3)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected open-exchange item-give start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected open-exchange item-give start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "open-exchange item-give owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected open-exchange item-give peer start frame, got %d", len(queuedStart))
+	}
+	assertExchangeStartFrame(t, queuedStart[0], owner.VID, "open-exchange item-give peer start")
+
+	itemAddOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderItemAdd, Arg2: 7, Position: itemproto.InventoryPosition(5)})))
+	if err != nil {
+		t.Fatalf("unexpected open-exchange item-give item-add error: %v", err)
+	}
+	if len(itemAddOut) != 1 {
+		t.Fatalf("expected open-exchange item-give item-add to emit one owner frame, got %d", len(itemAddOut))
+	}
+	queuedItemAdd := flushServerFrames(t, peerFlow)
+	if len(queuedItemAdd) != 1 {
+		t.Fatalf("expected open-exchange item-give peer item-add frame, got %d", len(queuedItemAdd))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: peer.VID, Position: itemproto.InventoryPosition(8), Count: 2})))
+	if err != nil {
+		t.Fatalf("unexpected open-exchange non-displayed ITEM_GIVE packet error: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("expected open-exchange non-displayed ITEM_GIVE to emit one busy-window info-chat frame, got %d", len(out))
+	}
+	delivery, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode open-exchange ITEM_GIVE busy-window info chat: %v", err)
+	}
+	if delivery.Type != chatproto.ChatTypeInfo || delivery.VID != 0 || delivery.Message != exchangeRequesterMerchantBusyInfoMessage {
+		t.Fatalf("unexpected open-exchange ITEM_GIVE busy-window chat: %+v", delivery)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra queued owner frames after open-exchange ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected open-exchange ITEM_GIVE to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, ownerLogin, owner, "open-exchange ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, peerLogin, peer, "open-exchange ITEM_GIVE peer")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected open-exchange cancel after busy ITEM_GIVE: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected open-exchange shell to remain cancellable after busy ITEM_GIVE, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "open-exchange busy ITEM_GIVE owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected open-exchange busy ITEM_GIVE peer cancel END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "open-exchange busy ITEM_GIVE peer cancel")
+}
