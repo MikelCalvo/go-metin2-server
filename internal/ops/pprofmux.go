@@ -200,6 +200,19 @@ const (
 	maxLocalCharacterSafeboxStateQuarantineBodyBytes     = 1 << 20
 )
 
+// LocalDBMigrations*Path freeze the loopback migration ops surface.
+// Apply/rollback stay CLI-only: these mutating paths are named so tests can
+// prove they remain unregistered, not so daemons can grow a remote apply.
+const (
+	LocalDBMigrationsCatalogPath                = "/local/db/migrations/catalog"
+	LocalDBMigrationsStatusPath                 = "/local/db/migrations/status"
+	LocalDBMigrationsPlanPath                   = "/local/db/migrations/plan"
+	LocalDBMigrationsLedgerSnapshotPath         = "/local/db/migrations/ledger-snapshot"
+	LocalDBMigrationsPlanFromLedgerSnapshotPath = "/local/db/migrations/plan-from-ledger-snapshot"
+	LocalDBMigrationsApplyPath                  = "/local/db/migrations/apply"
+	LocalDBMigrationsRollbackPath               = "/local/db/migrations/rollback"
+)
+
 func NewPprofMux(serviceName string) *http.ServeMux {
 	return NewPprofMuxWithLocalRuntimeIntrospection(serviceName, nil, nil, nil, nil, nil, nil, nil)
 }
@@ -1899,12 +1912,35 @@ func RegisterLocalSQLDriversEndpoint(mux *http.ServeMux, drivers func() []string
 	return mux
 }
 
+// LocalDBMigrationReadOnlyPaths is the closed loopback migration ops set.
+// Catalog, status, target-plan, ledger-snapshot, and offline snapshot planning
+// stay metadata-only. Mutating apply/rollback are not on this list.
+func LocalDBMigrationReadOnlyPaths() []string {
+	return []string{
+		LocalDBMigrationsCatalogPath,
+		LocalDBMigrationsStatusPath,
+		LocalDBMigrationsPlanPath,
+		LocalDBMigrationsLedgerSnapshotPath,
+		LocalDBMigrationsPlanFromLedgerSnapshotPath,
+	}
+}
+
+// LocalDBMigrationMutatingPaths names the apply/rollback routes that shipped
+// daemons deliberately do not register. Schema mutation stays on
+// `metin2-migrate apply` (with `--allow-rollback` for down plans).
+func LocalDBMigrationMutatingPaths() []string {
+	return []string{
+		LocalDBMigrationsApplyPath,
+		LocalDBMigrationsRollbackPath,
+	}
+}
+
 func RegisterLocalMigrationCatalogEndpoint(mux *http.ServeMux, migrationCatalog func() (dbmigrations.CatalogSummaryPayload, error)) *http.ServeMux {
 	if mux == nil || migrationCatalog == nil {
 		return mux
 	}
 
-	mux.HandleFunc("/local/db/migrations/catalog", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(LocalDBMigrationsCatalogPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -1929,7 +1965,7 @@ func RegisterLocalMigrationStatusEndpoint(mux *http.ServeMux, planMigrationStatu
 		return mux
 	}
 
-	mux.HandleFunc("/local/db/migrations/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(LocalDBMigrationsStatusPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -1954,7 +1990,7 @@ func RegisterLocalMigrationPlanEndpoint(mux *http.ServeMux, planMigrationTarget 
 		return mux
 	}
 
-	mux.HandleFunc("/local/db/migrations/plan", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(LocalDBMigrationsPlanPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -1984,7 +2020,7 @@ func RegisterLocalMigrationLedgerSnapshotEndpoint(mux *http.ServeMux, snapshotMi
 		return mux
 	}
 
-	mux.HandleFunc("/local/db/migrations/ledger-snapshot", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(LocalDBMigrationsLedgerSnapshotPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -2009,7 +2045,7 @@ func RegisterLocalMigrationLedgerSnapshotPlanEndpoint(mux *http.ServeMux, planMi
 		return mux
 	}
 
-	mux.HandleFunc("/local/db/migrations/plan-from-ledger-snapshot", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(LocalDBMigrationsPlanFromLedgerSnapshotPath, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return

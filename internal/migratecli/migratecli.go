@@ -42,7 +42,7 @@ const (
 // apply-preflight, apply-preflight-status, apply-lock-status, apply-lock-aside-status, apply-audit-status,
 // import-export-status, export-tree-status, export-tree-status-status, quarantine-export, synthesize-wipe-export,
 // synthesize-wipe-export-status, export-quarantine-drill,
-// backup-restore-drill, backup-tree-status, backup-tree-status-status, persistence-status-status, migration-run-retention, and artifact-retention-gc
+// backup-restore-drill, backup-tree-status, backup-tree-status-status, persistence-status-status, apply-boundary, migration-run-retention, and artifact-retention-gc
 // commands are read-only/print-only.
 // artifact-gc-aside-purge is a confirmation-gated print-only companion that emits
 // a shell script for deleting aged .gc-aside-* trees; the CLI still never executes
@@ -122,6 +122,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runLedgerSnapshotStatus(args[1:], stdout, stderr)
 	case "apply":
 		return runApply(args[1:], stdin, stdout, stderr)
+	case "apply-boundary":
+		return runApplyBoundary(args[1:], stdout, stderr)
 	case "quarantine-export":
 		return runQuarantineExport(args[1:], stdin, stdout, stderr)
 	case "synthesize-wipe-export":
@@ -2188,6 +2190,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-lock-aside-status inspect a retained apply-lock-aside artifact without mutating it")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
+	fmt.Fprintln(w, "  apply-boundary         print the CLI-only apply/rollback vs read-only loopback ops contract")
 	fmt.Fprintln(w, "  quarantine-export      validate and canonicalize a retained migration-shaped export offline")
 	fmt.Fprintln(w, "  synthesize-wipe-export synthesize a wipe-scope export for character-FK tip kinds from retained quarantine/export JSON")
 	fmt.Fprintln(w, "  synthesize-wipe-export-status inspect a retained synthesize-wipe-export artifact without mutating it")
@@ -2241,6 +2244,8 @@ func printUsage(w io.Writer) {
 	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyUsage(w)
+	fmt.Fprintln(w, "")
+	printApplyBoundaryUsage(w)
 	fmt.Fprintln(w, "")
 	printQuarantineExportUsage(w)
 	fmt.Fprintln(w, "")

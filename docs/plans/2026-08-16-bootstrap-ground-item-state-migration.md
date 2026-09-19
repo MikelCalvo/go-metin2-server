@@ -86,9 +86,21 @@ A later persistence-lane slice added loopback-only quarantine for retained `0010
 
 It validates and canonicalizes retained export JSON without opening a database, mutating live ground handles, or emitting SQL. See `docs/plans/2026-08-19-bootstrap-ground-item-state-quarantine.md`.
 
+## CLI-only apply/rollback boundary
+
+A later persistence-lane slice froze the operator-visible apply/rollback vs loopback-ops split without inventing production-admin daemon mutation or remote apply:
+
+- `metin2-migrate apply-boundary` prints metadata-only `go-metin2-migration-apply-boundary-v1`
+- the mutating schema surface stays CLI-only: `metin2-migrate apply` plus `--allow-rollback` for down plans
+- loopback ops stay the closed read-only set: `GET /local/db/migrations/catalog`, `GET /local/db/migrations/status`, `GET /local/db/migrations/plan`, `GET /local/db/migrations/ledger-snapshot`, and `POST /local/db/migrations/plan-from-ledger-snapshot`
+- `/local/db/migrations/apply` and `/local/db/migrations/rollback` stay unregistered (`daemon_ops_mutating_registered: false`)
+- the inspector never opens a database, never curls the daemon, never emits DSNs or executable SQL, and does not register a stock production driver
+
+See [debugging and profiling](../debugging-and-profiling.md) and [development](../development.md). A future production-admin design must not silently rewrite this boundary in place.
+
 ## Follow-up options
 
 1. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
 2. Add import/backfill execution tooling only after operators have a closed quarantine/validation policy for retained exports.
 3. Additive `0030_bootstrap_ground_item_ownership_timer` now projects FileStore exclusive-ownership / public-release / despawn timers onto `bootstrap_ground_items` while export identity stays tip-`0010`. Live DB rematerialize and a stock production driver remain out of scope.
-4. Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.
+4. ~~Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.~~ Done — `metin2-migrate apply-boundary` restates the CLI-only apply/rollback contract against the closed read-only loopback ops set; `/local/db/migrations/apply` and `/local/db/migrations/rollback` stay unregistered.
