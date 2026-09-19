@@ -9469,6 +9469,26 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
 					}
+					if ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID) {
+						slot := inventory.SlotIndex(packet.Position.Cell)
+						count := uint16(packet.Count)
+						source, ok := carriedInventoryItemForSlot(selectedPlayer.LiveCharacter(), slot)
+						if ok && count != 0 && count <= source.Count && source.Count <= template.MaxCount &&
+							!(count < source.Count && !template.Stackable) &&
+							!template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell && !template.AntiStack &&
+							template.EquipSlot == "" && selectedPlayer.CanUseTemplate(template) {
+							return gameflow.ItemGiveResult{
+								Accepted: true,
+								Frames: [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{
+									Type:    chatproto.ChatTypeInfo,
+									VID:     0,
+									Empire:  0,
+									Message: exchangeRequesterMerchantBusyInfoMessage,
+								})},
+							}
+						}
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
 					frames, ok := applyVisiblePlayerItemGive(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, packet, template)
 					if !ok {
 						return gameflow.ItemGiveResult{Accepted: false}
