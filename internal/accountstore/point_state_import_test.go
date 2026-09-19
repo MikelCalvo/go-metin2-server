@@ -100,6 +100,106 @@ func TestQuarantineCharacterPointStateExportMergesDeclaredCharacterIDs(t *testin
 	}
 }
 
+func TestCharacterPointStateProjectedHPKeepsAboveFloorDeathFloorAndRestartMaxHPOnTip0011(t *testing.T) {
+	cases := []struct {
+		name string
+		hp   int32
+	}{
+		{name: "above-floor partial HP", hp: 748},
+		{name: "death-floor zero", hp: 0},
+		{name: "restart MaxHP", hp: 750},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			character := rosterExportCharacter(11, "AlphaWar")
+			character.Points[CharacterPointStateHPIndex] = tc.hp
+			export, err := ExportCharacterPointState([]Account{
+				{
+					Login:      "Alpha",
+					Empire:     1,
+					Characters: []loginticket.Character{character},
+				},
+			})
+			if err != nil {
+				t.Fatalf("export character point state: %v", err)
+			}
+			if export.MigrationVersion != CharacterPointStateMigrationVersion || export.MigrationName != CharacterPointStateMigrationName {
+				t.Fatalf("invented point-state tip identity: version=%d name=%q", export.MigrationVersion, export.MigrationName)
+			}
+
+			got, present, err := CharacterPointStateProjectedHP(export, 11)
+			if err != nil {
+				t.Fatalf("CharacterPointStateProjectedHP: %v", err)
+			}
+			if !present || got != tc.hp {
+				t.Fatalf("projected HP present=%v value=%d, want present value %d", present, got, tc.hp)
+			}
+
+			canonical, summary, err := QuarantineCharacterPointStateExport(export)
+			if err != nil {
+				t.Fatalf("quarantine character point-state export: %v", err)
+			}
+			if canonical.MigrationVersion != CharacterPointStateMigrationVersion || canonical.MigrationName != CharacterPointStateMigrationName {
+				t.Fatalf("quarantine invented tip identity: version=%d name=%q", canonical.MigrationVersion, canonical.MigrationName)
+			}
+			if summary.CharacterCount != 1 || summary.PointRowCount != characterPointStatePointCount {
+				t.Fatalf("unexpected quarantine summary: %#v", summary)
+			}
+			if int(CharacterPointStateHPIndex) >= len(canonical.Points) {
+				t.Fatalf("canonical export missing HP slot: %d points", len(canonical.Points))
+			}
+			hpRow := canonical.Points[CharacterPointStateHPIndex]
+			if hpRow.CharacterID != 11 || hpRow.PointIndex != CharacterPointStateHPIndex || hpRow.Value != tc.hp {
+				t.Fatalf("quarantine HP row = %#v, want character 11 index %d value %d", hpRow, CharacterPointStateHPIndex, tc.hp)
+			}
+		})
+	}
+}
+
+func TestCharacterPointStateProjectedHPReportsAbsentHPForDeclaredWipe(t *testing.T) {
+	export := CharacterPointStateExport{
+		MigrationVersion: CharacterPointStateMigrationVersion,
+		MigrationName:    CharacterPointStateMigrationName,
+		CharacterIDs:     []uint32{11},
+		Points:           []CharacterPointRow{},
+	}
+	got, present, err := CharacterPointStateProjectedHP(export, 11)
+	if err != nil {
+		t.Fatalf("CharacterPointStateProjectedHP(wipe): %v", err)
+	}
+	if present || got != 0 {
+		t.Fatalf("wipe HP present=%v value=%d, want absent", present, got)
+	}
+}
+
+func TestCharacterPointStateProjectedHPRejectsInvalidExport(t *testing.T) {
+	_, _, err := CharacterPointStateProjectedHP(CharacterPointStateExport{
+		MigrationVersion: 99,
+		MigrationName:    "not-point-state",
+		Points:           []CharacterPointRow{},
+	}, 11)
+	if !errors.Is(err, ErrInvalidCharacterPointStateExport) {
+		t.Fatalf("CharacterPointStateProjectedHP(invalid) error = %v, want %v", err, ErrInvalidCharacterPointStateExport)
+	}
+
+	character := rosterExportCharacter(11, "AlphaWar")
+	character.Points[CharacterPointStateHPIndex] = 748
+	export, err := ExportCharacterPointState([]Account{
+		{
+			Login:      "Alpha",
+			Empire:     1,
+			Characters: []loginticket.Character{character},
+		},
+	})
+	if err != nil {
+		t.Fatalf("export character point state: %v", err)
+	}
+	_, _, err = CharacterPointStateProjectedHP(export, 0)
+	if !errors.Is(err, ErrInvalidCharacterPointStateExport) {
+		t.Fatalf("CharacterPointStateProjectedHP(zero id) error = %v, want %v", err, ErrInvalidCharacterPointStateExport)
+	}
+}
+
 func TestQuarantineCharacterPointStateExportRejectsInvalidDeclaredCharacterIDs(t *testing.T) {
 	base := CharacterPointStateExport{
 		MigrationVersion: CharacterPointStateMigrationVersion,

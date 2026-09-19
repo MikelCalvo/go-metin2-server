@@ -47,6 +47,33 @@ type ImportCharacterPointStateOptions struct {
 	Replace bool
 }
 
+// CharacterPointStateHPIndex is the bootstrap HP slot COMBAT-PARTIAL-HP-PERSIST
+// writes on the selected-character snapshot. Tip-0011 export/quarantine/import
+// project that same index as character_points.value; they do not invent a later
+// HP-only catalog identity and they do not clamp above-floor (partial) loss,
+// death-floor zero, or restart MaxHP.
+const CharacterPointStateHPIndex uint8 = 1
+
+// CharacterPointStateProjectedHP returns the unclamped bootstrap HP value that
+// ImportCharacterPointState will insert for characterID after the existing
+// tip-0011 quarantine contract. present is false when the character is in
+// replace/wipe scope with zero point rows. Invalid exports fail closed.
+func CharacterPointStateProjectedHP(export CharacterPointStateExport, characterID uint32) (int32, bool, error) {
+	if characterID == 0 {
+		return 0, false, fmt.Errorf("%w: character_id must be > 0", ErrInvalidCharacterPointStateExport)
+	}
+	canonical, _, err := QuarantineCharacterPointStateExport(export)
+	if err != nil {
+		return 0, false, err
+	}
+	for _, row := range canonical.Points {
+		if row.CharacterID == characterID && row.PointIndex == CharacterPointStateHPIndex {
+			return row.Value, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
 // ImportCharacterPointState validates a retained 0011 point-state export through
 // the existing quarantine contract and inserts the canonicalized rows into
 // character_points inside one transaction.
@@ -58,6 +85,10 @@ type ImportCharacterPointStateOptions struct {
 // upsert / merge policy: duplicate primary keys fail closed and roll the
 // transaction back. Pass ImportCharacterPointStateOptions{Replace: true} for the
 // opt-in scoped replace path frozen by the tip-0011 replace contract.
+//
+// Bootstrap HP at CharacterPointStateHPIndex is inserted as the quarantined
+// signed value. Above-floor partial HP, death-floor 0, and restart MaxHP stay
+// on tip-0011; import does not clamp them or retip the catalog.
 func ImportCharacterPointState(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export CharacterPointStateExport, opts ...ImportCharacterPointStateOptions) (CharacterPointStateImportResult, error) {
 	if pointStateImportExecutorIsNil(executor) {
 		return CharacterPointStateImportResult{}, ErrCharacterPointStateImportExecutorRequired

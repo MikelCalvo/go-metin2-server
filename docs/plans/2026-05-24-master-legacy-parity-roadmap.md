@@ -110,7 +110,7 @@ Exit criteria:
 Anti-goals:
 
 - do not jump to full skill/PvP formulas before the PvE baseline is stable,
-- do not persist runtime-only HP loss unless a dedicated persistence-policy slice owns it.
+- do not persist runtime-only HP loss unless a dedicated persistence-policy slice owns it. COMBAT-PARTIAL-HP-PERSIST now owns FileStore snapshot persist of above-floor retaliation HP; tip-`0011` `character-point-state` export/quarantine/import projects that same HP point (above-floor, death-floor `0`, restart MaxHP) without a new catalog tip.
 
 ## Track C — World runtime, AOI, maps, spawns, and transfer
 
