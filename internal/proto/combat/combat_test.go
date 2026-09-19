@@ -164,6 +164,26 @@ func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
 	}
 }
 
+func TestServerDamageInfoFlagNormalIsTheFirstOwnedPresentationBit(t *testing.T) {
+	if ServerDamageInfoFlagNone != 0 || ServerDamageInfoFlagNormal != 1<<0 {
+		t.Fatalf("unexpected DAMAGE_INFO presentation bits: none=%#02x normal=%#02x", ServerDamageInfoFlagNone, ServerDamageInfoFlagNormal)
+	}
+
+	raw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Flag: ServerDamageInfoFlagNormal, Damage: 1})
+	expected := frame.Encode(HeaderServerDamageInfo, []byte{0x07, 0x01, 0x04, 0x02, ServerDamageInfoFlagNormal, 0x01, 0x00, 0x00, 0x00})
+	if !bytes.Equal(raw, expected) {
+		t.Fatalf("unexpected server damage-info normal-flag encoding: got %x want %x", raw, expected)
+	}
+
+	decoded, err := DecodeServerDamageInfo(decodeSingleFrame(t, raw))
+	if err != nil {
+		t.Fatalf("decode server damage-info normal flag: %v", err)
+	}
+	if decoded.VID != 0x02040107 || decoded.Flag != ServerDamageInfoFlagNormal || decoded.Damage != 1 {
+		t.Fatalf("unexpected server damage-info normal-flag packet: %+v", decoded)
+	}
+}
+
 func TestEncodeServerDamageInfoUsesLegacyPayloadLayout(t *testing.T) {
 	raw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Flag: 0x02, Damage: 1234})
 	expected := frame.Encode(HeaderServerDamageInfo, []byte{0x07, 0x01, 0x04, 0x02, 0x02, 0xd2, 0x04, 0x00, 0x00})

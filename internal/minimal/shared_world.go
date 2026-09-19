@@ -6725,7 +6725,7 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		if staticActorKillingHitDamageInfoRuntimeEmissionOwned(staticActorSnapshot(r.topology, actor)) {
 			damageInfoRaw = combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
 				VID:    requestedTargetVID,
-				Flag:   0,
+				Flag:   combatproto.ServerDamageInfoFlagNone,
 				Damage: int32(damage),
 			})
 		}

@@ -24,7 +24,7 @@ The payload layout is:
 2. `uint8 flag`
 3. `int32 damage` (little-endian)
 
-The current client-side rendering surface treats `vid` as the actor receiving the visible damage effect. A non-negative `damage` value is eligible for the normal damage-effect display path. The first Go slice deliberately keeps `flag` as an owned raw byte: `0` means the plain bootstrap damage style, while critical, block, miss, poison, and other flag semantics remain future work until a dedicated slice freezes them.
+The current client-side rendering surface treats `vid` as the actor receiving the visible damage effect. A non-negative `damage` value is eligible for the normal damage-effect display path. The already-owned `DAMAGE_INFO` hit-effect carrier now freezes the first presentation bit as `DAMAGE_NORMAL = 1<<0` (`internal/proto/combat.ServerDamageInfoFlagNormal`) on one accepted standalone `practice_mob` seam. Runtime `flag = 0` (`ServerDamageInfoFlagNone`) remains the default plain bootstrap style. Critical, block, miss, poison, and other flag semantics stay later companions (`COMBAT-CRIT-FLAG` / `COMBAT-BLOCK-FLAG` / `COMBAT-MISS-FLAG` / `COMBAT-POISON-FLAG`) and are not owned here.
 
 ## Relationship to current attack flow
 
@@ -32,9 +32,9 @@ The current accepted normal-attack runtime still uses `GC TARGET(target_vid, hp_
 
 For standalone bootstrap combat-profile actors, an accepted non-lethal normal attack returns one self `DAMAGE_INFO` frame immediately after the authoritative self `GC TARGET(target_vid, hp_percent)` refresh:
 1. `GC TARGET(target_vid, updated_hp_percent)`
-2. `GC DAMAGE_INFO(vid = target_vid, flag = 0, damage = applied_bootstrap_damage)`
+2. `GC DAMAGE_INFO(vid = target_vid, flag, damage = applied_bootstrap_damage)`
 
-The same plain `DAMAGE_INFO` packet is also queued to currently visible live peer sessions for that standalone actor. This first peer path is intentionally smaller than a full combat-result fanout: peers receive only the hit-effect companion, not the attacker's self-only `TARGET` HP refresh, and connected recipients already at the bootstrap `0`-HP floor are skipped by the shared-world visibility gate. Focused shared-world coverage now freezes that same dead-recipient skip for continuing fights after owner-floor release: when a later living peer lands a non-lethal accepted hit (or a non-floor delayed retaliation beat fires) against a still-live practice mob, living observers still receive the owned `DAMAGE_INFO` companions while the already-dead former owner flushes none.
+That first owned non-zero presentation bit is emitted only on the already-owned standalone built-in `practice_mob` seam (`spawn_group_ref` empty, `combat_profile = practice_mob`): `flag = DAMAGE_NORMAL (1<<0)`. Standalone `training_dummy` hits, custom registered formula profiles, spawn-backed practice-mob hits, owner retaliation companions, killing-hit companions, and owner-floor companions keep `flag = 0`. The same `DAMAGE_INFO` packet is also queued to currently visible live peer sessions for that standalone actor. This first peer path is intentionally smaller than a full combat-result fanout: peers receive only the hit-effect companion, not the attacker's self-only `TARGET` HP refresh, and connected recipients already at the bootstrap `0`-HP floor are skipped by the shared-world visibility gate. Focused shared-world coverage now freezes that same dead-recipient skip for continuing fights after owner-floor release: when a later living peer lands a non-lethal accepted hit (or a non-floor delayed retaliation beat fires) against a still-live practice mob, living observers still receive the owned `DAMAGE_INFO` companions while the already-dead former owner flushes none.
 
 The `damage` value comes from the authoritative shared-world attack attempt, which already derives it from the same combat-profile formula that mutates runtime HP. The session/runtime layer must not recompute the number independently when encoding either the self hit-effect companion or the peer queued copy. The standalone emission set is intentionally bounded to actors with no `spawn_group_ref` whose `combat_profile` resolves through the bootstrap combat-profile registry: built-in `training_dummy`, built-in `practice_mob`, and custom registered formula profiles.
 
@@ -78,14 +78,14 @@ Currently visible live peers receive that same owner `DAMAGE_INFO` after their q
 That floor ordering also covers proximity-armed delayed beats that reach `0` HP without a selected combat target or accepted owner hit. The self `TARGET(0, 0)` companion still fires on that edge; non-floor proximity walk-away release outside aggro radius remains the silent path that does not invent clear-target frames. The immediate owner-floor accepted hit now emits the missing mob `DAMAGE_INFO` companion after that same death/clear prefix.
 
 The current client-visible response contract is therefore still conservative:
-- standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and carry one self hit-effect companion,
+- standalone bootstrap combat-profile non-lethal hits are authoritative through the selected-target HP refresh and carry one self hit-effect companion; the built-in standalone `practice_mob` companion uses `flag = DAMAGE_NORMAL (1<<0)` while standalone dummy / registered-formula hits stay `flag = 0`,
 - killing hits keep `DEAD(vid)` plus selected-session `TARGET(0, 0)` as the zero-HP edge and now append one self plus visible-peer plain mob `DAMAGE_INFO` companion after that death/clear prefix, before any owned reward frames; a combined last-hit that also floors the owner keeps those reward frames before the owner-floor suffix,
 - visible live peers now receive the same standalone or spawn-backed mob hit-effect companion through the queued server-frame path, including that killing-hit companion,
 - content-loaded spawn-backed practice mobs now append one owner self mob hit-effect companion plus one owner self retaliation hit-effect companion on accepted non-lethal owner-surviving hits after the existing target refresh plus retaliation point-change, and queue both companions to currently visible live peers,
 - non-floor delayed retaliation beats now also append one owner self retaliation hit-effect companion after their point-change and queue that same owner companion to currently visible live peers,
 - owner-floor immediate, delayed, and proximity-armed beats now append one owner self retaliation hit-effect companion after `DEAD(owner_vid)` plus `TARGET(0, 0)` and queue that same owner companion after the peer `DEAD(owner_vid)` fanout,
 - accepted immediate owner-floor hits now also append one self plus visible-peer plain mob `DAMAGE_INFO` after that death/clear prefix and before the owner companion, while delayed and proximity-armed floors still omit a synthetic mob companion,
-- no critical/miss flag policy or broader hit-result gameplay semantics are owned here.
+- no critical/miss/block/poison flag policy, chance formulas, PvP/duel runtime, knockdown, or skill projectiles are owned here.
 
 ## Non-goals
 
@@ -105,8 +105,8 @@ After this slice:
 - `internal/proto/combat` can encode and decode the exact fixed-width payload,
 - malformed or wrong-header frames fail closed at the codec layer,
 - the shared-world normal-attack attempt exposes the applied bootstrap damage amount as an internal descriptor,
-- accepted standalone bootstrap combat-profile non-lethal normal attacks append one self plain-flag `DAMAGE_INFO` frame after the `TARGET` HP refresh, using the authoritative attack/defense-derived damage descriptor for registered formula profiles,
-- currently visible live peers receive that same standalone plain-flag `DAMAGE_INFO` through the queued server-frame path without receiving the attacker's self-only target refresh,
+- accepted standalone bootstrap combat-profile non-lethal normal attacks append one self `DAMAGE_INFO` frame after the `TARGET` HP refresh, using the authoritative attack/defense-derived damage descriptor for registered formula profiles; built-in standalone `practice_mob` hits encode `flag = DAMAGE_NORMAL (1<<0)` while standalone dummy / registered-formula hits stay `flag = 0`,
+- currently visible live peers receive that same standalone `DAMAGE_INFO` through the queued server-frame path without receiving the attacker's self-only target refresh,
 - accepted spawn-backed practice-mob non-lethal normal attacks now append one owner self plain-flag mob `DAMAGE_INFO` after the existing immediate retaliation point-change when that owner remains alive, then one owner self plain-flag retaliation `DAMAGE_INFO(owner_vid, abs(delta))`, queue both the mob and owner retaliation plain-flag hit effects to currently visible live peers, and preserve that owner-side frame order over the plain legacy TCP listener,
 - non-floor delayed server-origin retaliation beats now append the same owner self plain-flag retaliation `DAMAGE_INFO` after their point-change and queue that same owner companion to currently visible live peers for both hit-armed and proximity-armed delayed cadences,
 - focused coverage now also freezes the shared-world `0`-HP recipient skip for those same spawn-backed peer `DAMAGE_INFO` paths: after immediate retaliation floors one owner and releases engagement, a later living peer's non-lethal accepted hit and that peer's later non-floor delayed retaliation beat still deliver mob/owner `DAMAGE_INFO` to living observers while the already-dead former owner receives none,

@@ -12719,7 +12719,7 @@ func encodePracticeMobOwnerRetaliationDamageInfoFrame(ownerVID uint32, result pl
 	}
 	return combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
 		VID:    ownerVID,
-		Flag:   0,
+		Flag:   combatproto.ServerDamageInfoFlagNone,
 		Damage: damage,
 	})
 }
@@ -15837,7 +15837,7 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 		if staticActorKillingHitDamageInfoRuntimeEmissionOwned(attempt.Actor) {
 			resolution.Frames = append(resolution.Frames, combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
 				VID:    activeTargetVID,
-				Flag:   0,
+				Flag:   combatproto.ServerDamageInfoFlagNone,
 				Damage: int32(attempt.Damage),
 			}))
 		}
@@ -15851,7 +15851,11 @@ func (r *gameRuntime) resolveSelectedStaticActorNormalAttack(subjectID uint64, a
 	}
 	packet := combatproto.ServerTargetPacket{TargetVID: activeTargetVID, HPPercent: attempt.HPPercent}
 	resolution.Packet = &packet
-	damageInfoFrame := combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{VID: activeTargetVID, Flag: 0, Damage: int32(attempt.Damage)})
+	damageInfoFrame := combatproto.EncodeServerDamageInfo(combatproto.ServerDamageInfoPacket{
+		VID:    activeTargetVID,
+		Flag:   staticActorNonLethalDamageInfoFlag(attempt.Actor),
+		Damage: int32(attempt.Damage),
+	})
 	if staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(attempt.Actor) {
 		resolution.Frames = [][]byte{
 			combatproto.EncodeServerTarget(packet),
@@ -15884,6 +15888,13 @@ func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 	}
 	_, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(actor.CombatProfile)
 	return ok
+}
+
+func staticActorNonLethalDamageInfoFlag(actor StaticActorSnapshot) uint8 {
+	if actor.SpawnGroupRef == "" && actor.CombatProfile == worldruntime.StaticActorCombatProfilePracticeMob {
+		return combatproto.ServerDamageInfoFlagNormal
+	}
+	return combatproto.ServerDamageInfoFlagNone
 }
 
 func staticActorKillingHitDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
