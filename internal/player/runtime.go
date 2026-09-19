@@ -1591,10 +1591,12 @@ func (r *Runtime) SafeboxCheckinRejectText(slot inventory.SlotIndex, template it
 }
 
 // SafeboxCheckinItem removes one whole carried stack for an accepted bootstrap
-// safebox check-in. Templates that author anti_safebox stay fail-closed here;
-// authored reject chat remains owned by SafeboxCheckinRejectText.
+// safebox check-in. Templates that author anti_safebox or anti_save stay
+// fail-closed here; authored anti_safebox reject chat remains owned by
+// SafeboxCheckinRejectText. anti_save is a silent mutation reject besides the
+// owned ITEM_SET.anti_flags projection.
 func (r *Runtime) SafeboxCheckinItem(slot inventory.SlotIndex, template itemcatalog.Template) (SafeboxCheckinItemResult, bool) {
-	if r == nil || template.AntiSafebox || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
+	if r == nil || template.AntiSafebox || template.AntiSave || slot >= inventory.CarriedInventorySlotCount || !itemcatalog.ValidTemplate(template) {
 		return SafeboxCheckinItemResult{}, false
 	}
 	if countInventorySlotOccupancy(r.liveInventory, slot) != 1 {

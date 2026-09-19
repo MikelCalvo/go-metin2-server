@@ -38,7 +38,7 @@ rejects.
 
 - no runtime / packet / test change
 - no OR-materials / binary cube headers
-- no anti_save / anti_pk_drop mutation policy beyond `ITEM_SET` projection
+- no anti_pk_drop mutation policy beyond `ITEM_SET` projection; open-presentation `anti_save` `SAFEBOX_CHECKIN` now silently rejects besides that projection
 - no refine catalysts / mall / TMP4 CG `SAFEBOX_MONEY`
 
 ## Validation

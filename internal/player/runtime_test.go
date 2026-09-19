@@ -3264,6 +3264,58 @@ func TestRuntimeSafeboxCheckinRejectTextRejectsMismatchedOrUnguardedTemplateWith
 	}
 }
 
+func TestRuntimeSafeboxCheckinRejectTextDoesNotTreatAntiSaveAsAuthoredChat(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030118,
+		VID:   0x02040118,
+		Name:  "PeerAntiSaveChat",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 118, Vnum: 71130, Count: 1, Slot: 8},
+		},
+		Quickslots: []loginticket.Quickslot{{Position: 4, Type: quickslotproto.TypeItem, Slot: 8}},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-anti-save-chat", CharacterIndex: 1})
+	template := itemcatalog.Template{
+		Vnum:      71130,
+		Name:      "Unsaved Storage Charm",
+		Stackable: false,
+		MaxCount:  1,
+		AntiSave:  true,
+	}
+
+	text, ok := runtime.SafeboxCheckinRejectText(8, template)
+	if ok || text != "" {
+		t.Fatalf("expected anti_save check-in to stay silent without authored chat, got %q ok=%v", text, ok)
+	}
+	live := runtime.LiveCharacter()
+	if !reflect.DeepEqual(live.Inventory, persisted.Inventory) {
+		t.Fatalf("anti_save reject-text probe mutated live inventory: got %#v want %#v", live.Inventory, persisted.Inventory)
+	}
+}
+
+func TestRuntimeSafeboxCheckinItemAllowsAntiPKDropWithoutAntiSave(t *testing.T) {
+	persisted := loginticket.Character{
+		ID:    0x01030119,
+		VID:   0x02040119,
+		Name:  "PeerAntiPKDrop",
+		Level: 1,
+		Inventory: []inventory.ItemInstance{
+			{ID: 119, Vnum: 71131, Count: 1, Slot: 5},
+		},
+	}
+	runtime := NewRuntime(persisted, SessionLink{Login: "peer-anti-pk-drop", CharacterIndex: 1})
+	template := itemcatalog.Template{Vnum: 71131, Name: "PK Bound Charm", Stackable: false, MaxCount: 1, AntiPKDrop: true}
+
+	result, ok := runtime.SafeboxCheckinItem(5, template)
+	if !ok {
+		t.Fatal("expected anti_pk_drop-only template to still check in; anti_pk_drop mutation stays deferred")
+	}
+	if result.Slot != 5 || result.Item.ID != 119 || result.Item.Vnum != 71131 {
+		t.Fatalf("unexpected anti_pk_drop check-in result: %+v", result)
+	}
+}
+
 func TestRuntimeSafeboxCheckinItemRemovesWholeStackWithoutAntiSafebox(t *testing.T) {
 	persisted := loginticket.Character{
 		ID:    0x0103010a,
@@ -3398,6 +3450,11 @@ func TestRuntimeSafeboxCheckinItemRejectsAntiSafeboxAndMalformedWithoutMutation(
 			name:      "anti safebox",
 			inventory: []inventory.ItemInstance{{ID: 112, Vnum: 71124, Count: 1, Slot: 8}},
 			template:  itemcatalog.Template{Vnum: 71124, Name: "Protected Storage Charm", Stackable: false, MaxCount: 1, AntiSafebox: true, SafeboxRejectText: "blocked"},
+		},
+		{
+			name:      "anti save",
+			inventory: []inventory.ItemInstance{{ID: 117, Vnum: 71130, Count: 1, Slot: 8}},
+			template:  itemcatalog.Template{Vnum: 71130, Name: "Unsaved Storage Charm", Stackable: false, MaxCount: 1, AntiSave: true},
 		},
 		{
 			name:      "mismatched vnum",
