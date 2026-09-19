@@ -224,6 +224,124 @@ func TestGameRuntimeSafeboxCheckinAntiSafeboxTemplateClosesActiveMerchantWindowW
 	assertExchangeAccountUnchanged(t, accounts, "storage-merchant-bound", owner, "storage merchant close")
 }
 
+func TestGameRuntimeSafeboxCheckinAntiSaveTemplateFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiSaveCheckinOwner", 0x01030830, 0x02040830, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 930, Vnum: 71130, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 1, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "anti-save-checkin-owner"
+	issuePeerTicket(t, ticketStore, login, 0x70708030, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed anti-save check-in owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 71130, Name: "Unsaved Storage Charm", Stackable: false, MaxCount: 1, AntiSave: true}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected anti-save check-in runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70708030)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_safebox",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_safebox before anti-save check-in error: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_safebox before anti-save check-in to emit SAFEBOX_SIZE plus money change, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected anti-save check-in packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected anti-save check-in to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after anti-save check-in rejection, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "anti-save check-in")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "anti-save check-in live")
+}
+
+func TestGameRuntimeSafeboxCheckinAntiSaveWithoutOpenFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AntiSaveClosedCheckin", 0x01030831, 0x02040831, 1100, 2100, 0, 101, 201)
+	owner.Gold = 1111
+	owner.Inventory = []inventory.ItemInstance{{ID: 931, Vnum: 71130, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	login := "anti-save-closed-checkin"
+	issuePeerTicket(t, ticketStore, login, 0x70708031, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed closed anti-save check-in owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 71130, Name: "Unsaved Storage Charm", Stackable: false, MaxCount: 1, AntiSave: true}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected closed anti-save check-in runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70708031)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed anti-save check-in error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected closed anti-save check-in to emit no frames, got %d", len(out))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "closed anti-save check-in")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "closed anti-save check-in live")
+}
+
+func TestGameRuntimeSafeboxCheckinAntiSaveFailsClosedOnDeathFloor(t *testing.T) {
+	login := "anti-save-death-floor"
+	loginKey := uint32(0x19191a90)
+	owner := peerVisibilityCharacter("DeadAntiSaveOwner", 0x01030832, 0x02040832, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 12345
+	owner.Inventory = []inventory.ItemInstance{{ID: 932, Vnum: 71130, Count: 1, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: 1, Slot: 5}}
+	template := itemcatalog.Template{Vnum: 71130, Name: "Unsaved Storage Charm", Stackable: false, MaxCount: 1, AntiSave: true}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, []itemcatalog.Template{template})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientSafeboxCheckin(itemproto.ClientSafeboxCheckinPacket{
+		SafeSlot: 0,
+		Position: itemproto.InventoryPosition(5),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected death-floor anti-save SAFEBOX_CHECKIN dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected death-floor anti-save SAFEBOX_CHECKIN to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected death-floor anti-save SAFEBOX_CHECKIN to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "death-floor anti-save SAFEBOX_CHECKIN")
+}
+
 func TestGameRuntimeOpenSafeboxEmitsSizeWithoutMutation(t *testing.T) {
 	ticketStore := loginticket.NewFileStore(t.TempDir())
 	accounts := accountstore.NewFileStore(t.TempDir())

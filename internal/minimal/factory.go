@@ -8510,6 +8510,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.SafeboxCheckinResult{Accepted: true, Frames: frames}
 					}
+					if template.AntiSave {
+						return gameflow.SafeboxCheckinResult{Accepted: false}
+					}
 					if !hasActiveSafeboxOpen {
 						return gameflow.SafeboxCheckinResult{Accepted: false}
 					}
