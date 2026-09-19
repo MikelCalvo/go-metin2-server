@@ -20,6 +20,7 @@ Rules:
 2. `authd` and `gamed` must share the same login-ticket and account-store directories.
 3. `PublicAddr` may advertise a LAN/VPN address to clients, but ops remain on loopback (SSH tunnel when needed).
 4. Mutating migration apply stays outside daemon ops surfaces; use `metin2-migrate` on the same host or an operator workstation that can reach the DB target.
+5. Host-local SQL dumps live **beside** `/var/metin2/{backups,migration-runs,exports}/`, never inside this repository and never with a DSN. Prove restoreability before `apply`. Preferred rollback is restore that dump; FileStores stay on the JSON backup/restore drill.
 
 ## Absolute store paths
 
@@ -163,6 +164,8 @@ Naming rules:
 2. `<commit12>` is the short commit from `GET /local/build-info` / `metin2-migrate version` (`commit` field).
 3. Never store DSNs, passwords, login keys, raw tickets, or executable SQL inside these trees.
 4. Deployment-specific DB engine dumps live beside these trees under a host-local policy; they are not owned by this repository.
+5. A dump that has never been restored on a scratch copy is not a backup. Preferred SQL rollback is restore that dump, then take a fresh `ledger-snapshot`; schema-down `--allow-rollback` is not a data restore. See [migration apply runbook](migration-apply-runbook.md#production-db-configuration-backup-and-rollback-policy).
+6. FileStores remain live rematerialize. Do not treat a SQL dump or a schema apply as a silent FileStore-to-SQL cutover of gamed stores.
 
 Default backup printer base is `/var/metin2/backups` via:
 
@@ -356,3 +359,7 @@ See
 - ~~`rm` / unlink of aside-renamed retention trees~~ Done for the confirmation-gated print-only `artifact-gc-aside-purge` surface (CLI still never auto-executes the printed purge) — see [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md). ~~Folding purge into scheduled print helpers~~ Done for env-gated print-only companions under `METIN2_PRINT_ARTIFACT_GC_ASIDE_PURGE=YES` — see [contrib artifact GC-aside purge print helper](../plans/2026-08-27-contrib-artifact-gc-aside-purge-print-helper.md). Automatic / scheduled *execution* of those printed purge scripts remains deferred.
 - remote log shipping / SIEM sinks (local `/var/log/metin2/` file capture is owned; exporters are not)
 - a claim that bootstrap file stores are the final production persistence layer
+- a silent FileStore-to-SQL cutover of live gamed stores
+- a stock production SQL engine in untagged `gamed` / `authd` / `metin2-migrate` (keep `drivers: []`; prove with `metin2-migrate drivers --require-empty-stock-release`)
+- treating `apply-preflight` or schema-down `--allow-rollback` as a host-local engine dump / data restore
+- remote admin APIs or token auth for `/local/*`

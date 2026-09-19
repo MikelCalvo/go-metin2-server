@@ -32,7 +32,7 @@ Keep these files together for each migration run:
 - `apply-lock-aside-status.json` — optional `go-metin2-migration-apply-lock-aside-status-v1` output from re-validating a retained aside JSON without opening a database or renaming another lock — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md);
 - `migration-apply-audit.json` — exclusive metadata-only audit output written after a successful non-empty apply;
 - `apply-audit-status.json` — optional `go-metin2-migration-apply-audit-status-v1` output from re-validating a retained apply audit during release evidence review or incident triage;
-- deployment-specific DB backup evidence, kept outside this repo.
+- deployment-specific DB backup evidence, kept outside this repo (host-local engine dump + restoreability proof; never the DSN, never executable SQL).
 
 `apply-preflight.json` reports both:
 
@@ -40,6 +40,41 @@ Keep these files together for each migration run:
 - `plan_sha256` — checksum over the exact reviewed dry-run plan bytes.
 
 Those two checksums let an operator correlate the preflight with the plan artifact and the later apply audit without storing executable SQL or DSNs in the audit trail. `migration-apply-audit.json` records `plan_sha256` for the exact plan applied, `ledger_snapshot_sha256` for the exact ledger snapshot supplied to `apply`, and `confirmed_plan_sha256` when the run used `--plan-sha256`, `--plan-artifact`, or `--apply-preflight`.
+
+## Production DB configuration, backup, and rollback policy
+
+This is the production-ops policy for an operator-managed `database/sql` apply target beside already-owned CLI `apply` and linked-driver discovery. It is **not** a live FileStore-to-SQL cutover of gamed stores, a stock engine choice, remote admin, or token auth.
+
+### Configuration
+
+1. Stock `gamed` / `authd` / `metin2-migrate` keep `drivers: []`. Prove the applying binary with `metin2-migrate drivers --require-empty-stock-release` (stock release) or `metin2-migrate drivers --require-driver "$DRIVER"` (deliberately linked lab/harness binary) **before** expanding `DSN`. Combining those flags is usage. See [CLI sql-drivers](../plans/2026-09-07-cli-sql-drivers-contract-freeze.md).
+2. Daemon read-only preflight stays optional: both `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER` and `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN` empty disables it; both set enables ledger-status reads; partial values fail startup. `/local/runtime-config` reports `database.configured`, `database.driver`, and `database.dsn_configured` only — never the DSN value.
+3. Mutating apply/rollback stays CLI-only through `metin2-migrate apply`. Do not invent `/local/db/migrations/apply`, daemon startup auto-migration, or remote admin.
+4. Export `DRIVER` and `DSN` in the operator shell for the printed DB-touching commands. Never commit them, never paste them into `/var/metin2/{backups,migration-runs,exports}` trees, tickets, notes, or git. Printed printers never embed a DSN.
+5. Lab SQL stays `//go:build sqlite_harness` (`sqlite` via `modernc.org/sqlite`). Choosing MySQL / Postgres / SQLite as a later stock default is a new ticket and must not rewrite this policy in place.
+
+### Backup (before mutate)
+
+`apply-preflight` proves the reviewed ledger snapshot, target, and plan still match. It is **not** a database backup.
+
+Before `apply` (forward or `--allow-rollback`):
+
+1. Take a host-local engine dump of the target with that engine's own tooling (for example `sqlite3 "$FILE" ".backup '$DUMP'"` on a harness file, or the operator's MySQL/Postgres dump once a later ticket links that engine). Keep the dump **beside** `/var/metin2/migration-runs/`, never inside this repository.
+2. Prove restoreability on a scratch copy of that dump **before** mutating the live target. A dump that has never been restored is not a backup.
+3. Record only metadata in `$RUN/notes.md`: dump path on the host, engine name (not DSN), UTC stamp, and binary `commit`. Do not paste credentials or SQL.
+4. Validate FileStores that matter to the window (`/local/*/validate` and `/local/*/backup/validate` when using a store backup). Combined JSON-store preservation uses [file-store backup/restore drill](file-store-backup-restore-drill.md); that drill does not dump SQL.
+5. Stop if restoreability is unproven, the linked-driver gate fails, or FileStore validation fails. Do not treat `apply-preflight` / `ledger-snapshot-status` as substitutes.
+
+### Rollback
+
+Preferred rollback is **restore the proven dump**, then take a fresh `ledger-snapshot` and re-plan. Schema-down `apply --allow-rollback` is a catalog walk, not a data restore: it cannot recover rows lost to a failed import or a dropped table.
+
+1. Restore the dump onto the target (or a replacement file/volume) using the engine's own tooling. Keep gamed FileStores on their FileStore restore path; do not silently switch live rematerialize to SQL.
+2. Export a new `ledger-snapshot.json` from the restored target and re-run catalog / plan / preflight against the restored ledger.
+3. Schema-down `--allow-rollback` is allowed only after step 1 is proven, with an explicit non-`latest` `--target-version`, reviewed plan confirmation, and `--allow-rollback` on both preflight and apply.
+4. Rollback to zero drops `schema_migrations`. Treat it as a destructive drill unless the dump restore in step 1 is already proven.
+5. If the database reports an unknown or drifted ledger row, do not edit `schema_migrations` by hand. Compare `migration-catalog.json`, the deployed binary, and the dump. Restore the dump rather than rewriting ledger rows.
+6. Failed `apply` rolls back the SQL **transaction** when the engine supports it. That is not a substitute for the dump. Keep stderr, the original ledger snapshot, the failed plan, and the failed preflight.
 
 ## Forward apply workflow
 
@@ -119,7 +154,7 @@ metin2-migrate apply-preflight-status \
   > apply-preflight-status.json
 ```
 
-Before applying, verify and retain deployment-specific backups outside the migration CLI. At minimum, validate that you can restore the target database from your backup system. For this bootstrap server, also validate any file-backed stores that matter to the deployment before running DB migrations:
+Before applying, follow [Production DB configuration, backup, and rollback policy](#production-db-configuration-backup-and-rollback-policy): retain a host-local engine dump outside this repo, prove restoreability on a scratch copy, then validate FileStores. `apply-preflight` is not that dump. For this bootstrap server, also validate any file-backed stores that matter to the deployment before running DB migrations:
 
 - account snapshots (`/local/account-store/validate`, `/local/account-store/backup/validate` when using a store backup);
 - login-ticket snapshots (`/local/login-tickets/validate`, `/local/login-tickets/backup/validate` when using a store backup);
@@ -130,7 +165,7 @@ Before applying, verify and retain deployment-specific backups outside the migra
 - pending ground item/gold handles (`/local/ground-item-store/validate`, `/local/ground-item-store/backup/validate` when using a store backup);
 - durable safebox cells + warehouse gold (`/local/safebox-store/validate`, `/local/safebox-store/backup/validate` when using a store backup; tip `0015_character_safebox_money`).
 
-When the window needs a combined multi-store file backup or a drained-session restore drill across the eight manifested stores, follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering.
+When the window needs a combined multi-store file backup or a drained-session restore drill across the manifested JSON stores (accounts, login tickets, item templates, interactions, static actors, quest state, ground items, safebox, plus cube recipes when that drill surface is in use), follow the detailed [file-store backup/restore drill](file-store-backup-restore-drill.md) instead of improvising per-store ordering. That drill does not replace the host-local SQL dump.
 
 Then run the mutating apply with an exclusive local lock and audit file:
 
@@ -196,7 +231,7 @@ metin2-migrate apply-preflight-status \
   > rollback-apply-preflight-status.json
 ```
 
-Only after backup restoreability is proven, execute the rollback:
+Only after the host-local dump restoreability is proven (preferred: restore that dump first), execute schema-down rollback:
 
 ```bash
 metin2-migrate apply \
@@ -210,7 +245,7 @@ metin2-migrate apply \
   --audit-file migration-rollback-audit.json
 ```
 
-Rollback to zero is allowed by the current primitive, but it drops the `schema_migrations` ledger. Treat it as a destructive drill unless the deployment has an explicit database restore plan.
+Rollback to zero is allowed by the current primitive, but it drops the `schema_migrations` ledger. Treat it as a destructive drill unless the host-local dump restore in the policy above is already proven. Schema-down is not a data restore.
 
 ## Failure handling
 
@@ -235,7 +270,10 @@ Do not use this runbook to justify:
 - treating `apply-audit-status` as proof that a database is currently migrated; it validates a retained metadata artifact only.
 - treating `ledger-snapshot-status` as proof that a live database still matches the retained snapshot; it validates a retained offline artifact against the embedded catalog only.
 - treating `catalog-status` as proof that a live database is migrated; it validates a retained catalog JSON against the inspecting binary only.
-- treating `apply --apply-preflight` as a substitute for deployment-specific DB/file-store backup validation or transaction-local ledger verification.
+- treating `apply --apply-preflight` as a substitute for the host-local engine dump, dump restoreability proof, FileStore backup validation, or transaction-local ledger verification;
+- treating schema-down `--allow-rollback` as a substitute for restoring the proven dump;
+- a silent FileStore-to-SQL cutover of live gamed stores;
+- remote admin, token auth, or committing DSNs / secrets to git.
 
 ## Related: quarantined export SQL import
 
