@@ -10949,7 +10949,11 @@ func applyVisiblePlayerItemGive(
 		return nil, false
 	}
 	source, ok := carriedInventoryItemForSlot(previousGiver, slot)
-	if !ok || source.ID == 0 || source.Vnum != template.Vnum || source.Count != count || source.Count == 0 || source.Count > template.MaxCount {
+	if !ok || source.ID == 0 || source.Vnum != template.Vnum || count == 0 || count > source.Count || source.Count == 0 || source.Count > template.MaxCount {
+		return nil, false
+	}
+	partial := count < source.Count
+	if partial && !template.Stackable {
 		return nil, false
 	}
 	if !selectedPlayer.CanUseTemplate(template) {
@@ -10979,12 +10983,18 @@ func applyVisiblePlayerItemGive(
 	if normalizeLiveCharacterName(peerCharacter.Name) != normalizeLiveCharacterName(target.Character.Name) {
 		return nil, false
 	}
-	transferred, ok := droppedInventoryItem(previousGiver, slot, count)
+	var transferred inventory.ItemInstance
+	if partial {
+		nextID := nextGiveSplitItemID(selectedPlayer, peerCharacter)
+		transferred, ok = partialDroppedGroundItem(source, nextID, count)
+	} else {
+		transferred, ok = droppedInventoryItem(previousGiver, slot, count)
+	}
 	if !ok {
 		return nil, false
 	}
 	dropResult, ok := selectedPlayer.DropInventoryItemWithTemplate(slot, count, template)
-	if !ok || !dropResult.Changed || dropResult.FromOccupied {
+	if !ok || !dropResult.Changed || dropResult.FromOccupied != partial {
 		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
 		return nil, false
 	}
@@ -11007,13 +11017,15 @@ func applyVisiblePlayerItemGive(
 		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
 		return nil, false
 	}
-	quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
-	if !ok {
-		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
-		return nil, false
-	}
-	if len(quickslotFrames) != 0 {
-		giverFrames = append(giverFrames, quickslotFrames...)
+	if !dropResult.FromOccupied {
+		quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
+		if !ok {
+			selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+			return nil, false
+		}
+		if len(quickslotFrames) != 0 {
+			giverFrames = append(giverFrames, quickslotFrames...)
+		}
 	}
 	peerItemFrames, ok := encodeBootstrapGroundPickupInventoryFrames(pickupResult, runtime.itemTemplates)
 	if !ok {
@@ -13231,6 +13243,35 @@ func carriedInventoryItemForSlot(character loginticket.Character, slot inventory
 		return item, true
 	}
 	return inventory.ItemInstance{}, false
+}
+
+// nextGiveSplitItemID allocates a fresh identity for a partial ITEM_GIVE
+// clone. It sits above both the giver live bag/equipment and the recipient
+// live bag/equipment so PickupGroundItem cannot collide with either side.
+func nextGiveSplitItemID(selectedPlayer *player.Runtime, peer loginticket.Character) uint64 {
+	nextID := nextCarriedSplitItemID(selectedPlayer)
+	if nextID == 0 {
+		return 0
+	}
+	raise := func(id uint64) {
+		if id == 0 || nextID == 0 {
+			return
+		}
+		if id >= nextID {
+			if id == ^uint64(0) {
+				nextID = 0
+				return
+			}
+			nextID = id + 1
+		}
+	}
+	for _, item := range peer.Inventory {
+		raise(item.ID)
+	}
+	for _, item := range peer.Equipment {
+		raise(item.ID)
+	}
+	return nextID
 }
 
 // nextCarriedSplitItemID allocates the next item identity from the selected

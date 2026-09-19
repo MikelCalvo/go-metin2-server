@@ -6,8 +6,8 @@ The goal is intentionally conservative:
 
 - own the client packet layout and `GAME` dispatch seam
 - keep the owned template-authored `anti_give` self-only reject path
-- accept one player-to-player whole-stack transfer onto a currently visible live peer
-- leave NPC-target give, exchange/trade window choreography, partial-stack transfer, and two-party rollback/audit policy deferred
+- accept one player-to-player whole-stack or partial-stack transfer onto a currently visible live peer
+- leave NPC-target give, exchange/trade window choreography, and two-party rollback/audit policy deferred
 
 This is not a completed item-give, exchange, trade, or NPC handoff system.
 
@@ -27,7 +27,7 @@ Payload size is 8 bytes:
 | 4 | `item_pos` | packed `TItemPos` | `window_type uint8`, `cell uint16 LE` |
 | 7 | `count` | `uint8` | requested stack count |
 
-The layout is frozen from the TMP4-compatible client packet struct shape in project-owned terms. The repository owns the byte layout, the `anti_give` guard, and the first whole-stack player-to-player transfer.
+The layout is frozen from the TMP4-compatible client packet struct shape in project-owned terms. The repository owns the byte layout, the `anti_give` guard, and the first whole-stack plus partial-stack player-to-player transfer.
 
 ## Current runtime contract
 
@@ -64,31 +64,33 @@ Zero-target, unknown/invisible-target, zero-count, or oversized-count give attem
 
 Once the selected owner has reached the retaliation-owned bootstrap zero-HP floor frozen in `player-death-bootstrap.md`, `ITEM_GIVE` fails closed before this `anti_give` feedback path. The dead-owner attempt emits no self chat, queues no peer frames, and still performs no inventory, equipment, quickslot, ground-handle, or persistence mutation.
 
-### First owned player-to-player whole-stack transfer
+### First owned player-to-player whole-stack and partial-stack transfer
 
-When the `anti_give` guard does not apply, the shipped runtime accepts one player-to-player whole-stack transfer when all of these are true:
+When the `anti_give` guard does not apply, the shipped runtime accepts one player-to-player transfer when all of these are true:
 
 - the selected giver is already in `GAME`, owns a live shared-world session, and is above the bootstrap zero-HP floor
 - `target_vid` names a currently connected visible live player other than the giver, also above the bootstrap zero-HP floor
 - the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
 - the source cell holds one unlocked, unequipped, well-formed stack whose template resolves, validates, matches the live `vnum`, and is not transfer-guarded (`anti_get` / `anti_drop` / `anti_give` / `anti_sell` / `anti_stack`) or equipment-shaped
 - both giver and recipient satisfy selected-character job/sex/empire/`min_level` use of that template
-- the requested `count` equals the live source stack count (whole stack only)
+- the requested `count` is non-zero and does not exceed the live source stack count
+- a count smaller than the live source stack is accepted only for a stackable template (matching counted `ITEM_DROP2` remainder)
 - the live source count does not exceed `template.max_count`
 - the giver is not currently paired in a bootstrap exchange shell
-- the recipient has room to place that stack through the already-owned ground-pickup placement helper (merge into a compatible carried stack, otherwise first free cell preferring the source cell)
+- the recipient has room to place that count through the already-owned ground-pickup placement helper (merge into a compatible carried stack, otherwise first free cell preferring the source cell)
 
 On success the runtime:
 
-- removes the giver's whole source stack and syncs source item quickslots
-- places the same instance identity onto the recipient through already-owned `PickupGroundItem` (no new `internal/player` API), cloning the live recipient character so presence-aware sockets/attributes on the rest of that bag and equipment stay intact (including explicit zero; omitted keeps template-fallback encode)
+- for a whole-stack count (`count` equals the live source count): removes the giver's whole source stack and syncs source item quickslots, then places the same instance identity onto the recipient
+- for a partial-stack count (`count` smaller than the live source count): decrements the giver remainder in place (same instance identity, independent presence clone) and places a fresh-identity clone of that count onto the recipient, allocated above both giver and recipient live inventory/equipment identities so pickup cannot collide; source item quickslots stay on the still-occupied cell
+- places the transferred instance through already-owned `PickupGroundItem` (no new `internal/player` API), cloning the live recipient character so presence-aware sockets/attributes on the rest of that bag and equipment stay intact (including explicit zero; omitted keeps template-fallback encode). The transferred clone also carries an independent presence copy so it cannot alias the giver remainder
 - persists both selected-character account snapshots
 - applies the recipient live snapshot and updates both shared-world characters
-- returns self-only giver inventory refresh (`ITEM_DEL` for a whole-stack removal) plus any source `GC::QUICKSLOT_DEL`
-- queues recipient inventory refresh (`ITEM_SET` for a newly created cell, or `ITEM_UPDATE` when the stack merges) plus one `GC::ITEM_GET` notice (`arg = 0`)
+- returns self-only giver inventory refresh (`ITEM_DEL` for a whole-stack removal, or remainder `ITEM_UPDATE` for a partial count) plus any source `GC::QUICKSLOT_DEL` only when the source cell is fully removed
+- queues recipient inventory refresh (`ITEM_SET` for a newly created cell, or `ITEM_UPDATE` when the stack merges) plus one `GC::ITEM_GET` notice (`arg = 0`) for the given count
 - closes an active same-socket giver exchange shell, when present, before those giver frames, matching other owned carried mutations; an active exchange still fails closed before mutation because exchange-window give choreography stays deferred
 
-If the recipient cannot place the stack, the source is not a whole matching stack, the target is not a visible live player, the giver is dead, the giver has an open private shop, or any persist/apply step fails, the request stays fail-closed: no frames, no giver or recipient inventory/quickslot mutation, and no persistence change. There is no owned two-party rollback/audit policy beyond restoring the giver live snapshot when a later step fails before both accounts are committed.
+If the recipient cannot place the count, the requested count is zero or larger than the live stack, a partial count targets a non-stackable template, the target is not a visible live player, the giver is dead, the giver has an open private shop, or any persist/apply step fails, the request stays fail-closed: no frames, no giver or recipient inventory/quickslot mutation, and no persistence change. There is no owned two-party rollback/audit policy beyond restoring the giver live snapshot when a later step fails before both accounts are committed.
 
 ## Deferred behavior
 
@@ -96,7 +98,6 @@ Later slices must write a new contract before broadening this packet. In particu
 
 - NPC-target give semantics
 - exchange/trade window choreography, including giving an item that is currently displayed in an open exchange shell
-- partial-stack transfer behavior
 - recipient-facing rejection text, give-success chat, or richer `ITEM_GET` party arguments
 - durable two-party rollback/audit policy after both accounts have been committed
 
@@ -106,4 +107,4 @@ Later slices must write a new contract before broadening this packet. In particu
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid with one owned exchange-display / give rejection guard (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, job/sex/empire anti flags, or `min_level`) and rejects embedded NUL bytes.
 - `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
-- `internal/minimal` freezes the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket merchant-window and exchange-shell teardown before that authored rejection feedback, the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run, plus the first accepted whole-stack player-to-player transfer onto a visible live peer with dual persistence, giver `ITEM_DEL` / source quickslot clear, queued recipient `ITEM_SET` or `ITEM_UPDATE` plus `ITEM_GET`, and presence-aware sockets/attributes kept on the transferred stack and on the rest of the recipient bag/equipment.
+- `internal/minimal` freezes the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket merchant-window and exchange-shell teardown before that authored rejection feedback, the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run, plus the first accepted whole-stack and partial-stack player-to-player transfers onto a visible live peer with dual persistence, giver `ITEM_DEL` / source quickslot clear for a whole stack or remainder `ITEM_UPDATE` without clearing still-occupied source item quickslots for a smaller count, queued recipient `ITEM_SET` or `ITEM_UPDATE` plus `ITEM_GET`, a fresh transferred identity on partial counts, and presence-aware sockets/attributes kept on the remainder, the transferred clone, and the rest of the recipient bag/equipment.
