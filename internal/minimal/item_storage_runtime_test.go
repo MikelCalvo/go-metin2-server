@@ -3459,3 +3459,75 @@ func TestGameRuntimeMallItemMoveFailsClosedAtDeathFloorWithoutMutation(t *testin
 		t.Fatalf("expected post-floor mall ITEM_MOVE not to occupy destination cell 3, got %+v", cells)
 	}
 }
+
+func TestGameRuntimeMallItemUseWhileOpenFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenMallUse", 0x010309ca, 0x020409ca, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4444
+	owner.Inventory = []inventory.ItemInstance{{ID: 1811, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-mall-use"
+	issuePeerTicket(t, ticketStore, login, 0x707079ca, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-mall item-use owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-mall item-use runtime error: %v", err)
+	}
+	runtime.SeedMallCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 1911, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x707079ca)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall before mall item-use: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_mall before mall item-use to emit MALL_OPEN plus one MALL_SET, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{
+		Position: itemproto.MallPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected mall ITEM_USE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected mall ITEM_USE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected mall ITEM_USE to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "mall ITEM_USE owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "mall ITEM_USE live owner")
+	cells := runtime.mallCellsForCharacter(login, owner.ID)
+	if item, ok := cells[0]; !ok || item.ID != 1911 || item.Count != 2 {
+		t.Fatalf("expected mall ITEM_USE to leave seeded cell 0 unchanged, got %+v", cells)
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_mall",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_mall reopen after mall item-use error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_mall reopen after mall item-use to emit MALL_OPEN plus remembered MALL_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeMallSet(decodeSingleFrame(t, reopenOut[1]))
+	if err != nil {
+		t.Fatalf("decode reopen MALL_SET after mall item-use: %v", err)
+	}
+	if reopenSet.Position != itemproto.MallPosition(0) || reopenSet.Vnum != 27001 || reopenSet.Count != 2 {
+		t.Fatalf("unexpected reopen MALL_SET after mall item-use: %+v", reopenSet)
+	}
+}
