@@ -94,6 +94,33 @@ func TestDecodeSetReturnsExpectedInventoryFields(t *testing.T) {
 	}
 }
 
+func TestEncodeSetBuildsABeltInventoryFrame(t *testing.T) {
+	packet := sampleBeltSetPacket()
+	got := EncodeSet(packet)
+	decoded, err := DecodeSet(decodeSingleFrame(t, got))
+	if err != nil {
+		t.Fatalf("unexpected belt item set decode error: %v", err)
+	}
+	if decoded != packet {
+		t.Fatalf("unexpected belt item set packet: %+v", decoded)
+	}
+	if decoded.Position.WindowType != WindowBeltInventory || decoded.Position.Cell != 3 {
+		t.Fatalf("unexpected belt item set position: %+v", decoded.Position)
+	}
+}
+
+func TestEncodeDelBuildsABeltInventoryFrame(t *testing.T) {
+	packet := DelPacket{Position: BeltPosition(0)}
+	got := EncodeDel(packet)
+	decoded, err := DecodeDel(decodeSingleFrame(t, got))
+	if err != nil {
+		t.Fatalf("unexpected belt item del decode error: %v", err)
+	}
+	if decoded != packet {
+		t.Fatalf("unexpected belt item del packet: %+v", decoded)
+	}
+}
+
 func TestEncodeSetBuildsAnEquipmentFrameInTheLegacyCombinedCellNamespace(t *testing.T) {
 	want := loadHexFixture(t, "item-set-equipment-frame.hex")
 	got := EncodeSet(sampleEquipmentSetPacket())
@@ -143,6 +170,26 @@ func TestItemUseCarriedInventoryPositionRejectsOutOfRangeCell(t *testing.T) {
 	_, err := CarriedInventoryPosition(InventoryMaxCell)
 	if err == nil {
 		t.Fatal("expected out-of-range carried inventory cell to fail")
+	}
+}
+
+func TestBeltPositionBuildsTheBeltInventoryWindow(t *testing.T) {
+	if BeltPosition(3) != (Position{WindowType: WindowBeltInventory, Cell: 3}) {
+		t.Fatalf("unexpected belt position: %+v", BeltPosition(3))
+	}
+	position, err := CarriedBeltInventoryPosition(3)
+	if err != nil {
+		t.Fatalf("unexpected carried belt inventory position error: %v", err)
+	}
+	if position != (Position{WindowType: WindowBeltInventory, Cell: 3}) {
+		t.Fatalf("unexpected carried belt inventory position: %+v", position)
+	}
+}
+
+func TestCarriedBeltInventoryPositionRejectsOutOfRangeCell(t *testing.T) {
+	_, err := CarriedBeltInventoryPosition(BeltInventoryMaxCell)
+	if !errors.Is(err, ErrBeltInventoryCellRange) {
+		t.Fatalf("expected out-of-range belt inventory cell to fail with ErrBeltInventoryCellRange, got %v", err)
 	}
 }
 
@@ -274,6 +321,32 @@ func TestDecodeClientMoveReturnsExpectedFields(t *testing.T) {
 	}
 	if packet != (ClientMovePacket{Source: Position{WindowType: WindowInventory, Cell: 5}, Destination: Position{WindowType: WindowInventory, Cell: 6}, Count: 3}) {
 		t.Fatalf("unexpected item-move packet: %+v", packet)
+	}
+}
+
+func TestEncodeClientMoveBuildsABeltWindowFrame(t *testing.T) {
+	from, err := CarriedBeltInventoryPosition(0)
+	if err != nil {
+		t.Fatalf("unexpected belt source position error: %v", err)
+	}
+	to, err := CarriedBeltInventoryPosition(3)
+	if err != nil {
+		t.Fatalf("unexpected belt destination position error: %v", err)
+	}
+	want := frame.Encode(HeaderClientMove, []byte{WindowBeltInventory, 0, 0, WindowBeltInventory, 3, 0, 0})
+	got := EncodeClientMove(ClientMovePacket{Source: from, Destination: to, Count: 0})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected belt item move frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientMoveReturnsBeltWindowFields(t *testing.T) {
+	packet, err := DecodeClientMove(decodeSingleFrame(t, frame.Encode(HeaderClientMove, []byte{WindowBeltInventory, 0, 0, WindowBeltInventory, 3, 0, 2})))
+	if err != nil {
+		t.Fatalf("unexpected belt item-move decode error: %v", err)
+	}
+	if packet != (ClientMovePacket{Source: Position{WindowType: WindowBeltInventory, Cell: 0}, Destination: Position{WindowType: WindowBeltInventory, Cell: 3}, Count: 2}) {
+		t.Fatalf("unexpected belt item-move packet: %+v", packet)
 	}
 }
 
@@ -1266,6 +1339,14 @@ func sampleInventorySetPacket() SetPacket {
 			{Type: 7, Value: -1234},
 		},
 	}
+}
+
+func sampleBeltSetPacket() SetPacket {
+	packet := sampleInventorySetPacket()
+	packet.Position = Position{WindowType: WindowBeltInventory, Cell: 3}
+	packet.Vnum = 0x27001
+	packet.Count = 2
+	return packet
 }
 
 func sampleEquipmentSetPacket() SetPacket {

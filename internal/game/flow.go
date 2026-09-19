@@ -697,6 +697,10 @@ func (f *Flow) HandleClientFrame(in frame.Frame) ([][]byte, error) {
 		}
 		return result.Frames, nil
 	case itemproto.HeaderClientMove:
+		// Same CG::ITEM_MOVE header and packed TItemPos payload for carried,
+		// mall, and belt windows. WindowBeltInventory (window = 6) does not
+		// invent a dedicated belt opcode; the runtime fail-closes closed-belt
+		// and death-floor attempts.
 		packet, err := itemproto.DecodeClientMove(in)
 		if err != nil {
 			return nil, err
