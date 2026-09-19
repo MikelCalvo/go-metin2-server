@@ -2282,6 +2282,7 @@ func printVersionUsage(w io.Writer) {
 func printDriversUsage(w io.Writer) {
 	fmt.Fprintln(w, "drivers usage:")
 	fmt.Fprintln(w, "  metin2-migrate drivers [--require-driver <database/sql-driver-name>]")
+	fmt.Fprintln(w, "  metin2-migrate drivers --require-empty-stock-release")
 }
 
 func printEmptyLedgerSnapshotUsage(w io.Writer) {

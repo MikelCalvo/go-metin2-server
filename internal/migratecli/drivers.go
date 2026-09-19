@@ -20,7 +20,9 @@ func runDrivers(args []string, stdout io.Writer, stderr io.Writer) int {
 	flags := flag.NewFlagSet("drivers", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	var requireDriver string
+	var requireEmptyStockRelease bool
 	flags.StringVar(&requireDriver, "require-driver", "", "fail unless this database/sql driver is linked into the binary")
+	flags.BoolVar(&requireEmptyStockRelease, "require-empty-stock-release", false, "fail unless this binary links no database/sql driver (stock release policy)")
 	flags.Usage = func() { printDriversUsage(stderr) }
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
@@ -32,11 +34,23 @@ func runDrivers(args []string, stdout io.Writer, stderr io.Writer) int {
 	}
 	var requireDriverSet bool
 	flags.Visit(func(flag *flag.Flag) {
-		requireDriverSet = flag.Name == "require-driver"
+		if flag.Name == "require-driver" {
+			requireDriverSet = true
+		}
 	})
+	if requireDriverSet && requireEmptyStockRelease {
+		printDriversUsage(stderr)
+		return exitUsage
+	}
 	if requireDriverSet && strings.TrimSpace(requireDriver) == "" {
 		printDriversUsage(stderr)
 		return exitUsage
+	}
+	if requireEmptyStockRelease {
+		if linked := config.RegisteredDatabaseDrivers(); len(linked) != 0 {
+			fmt.Fprintf(stderr, "drivers: stock release must not register a production database driver\n")
+			return exitError
+		}
 	}
 	if requireDriverSet {
 		if err := config.RequireRegisteredDatabaseDriver(requireDriver); err != nil {

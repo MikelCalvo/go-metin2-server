@@ -64,6 +64,7 @@ Working CLI (inspect the current binary after GREEN):
 ```bash
 metin2-migrate drivers
 metin2-migrate drivers --require-driver "$DRIVER"
+metin2-migrate drivers --require-empty-stock-release
 ```
 
 Working loopback (gamed only, after GREEN):
@@ -104,6 +105,7 @@ harness binaries.
 
 ```bash
 metin2-migrate drivers [--require-driver <database/sql-driver-name>]
+metin2-migrate drivers --require-empty-stock-release
 ```
 
 Rules:
@@ -122,12 +124,23 @@ Rules:
 7. `--require-driver` with a linked name → exit `0` and the **full**
    sorted list (not a one-element filter).
 8. Usage text lists `drivers` beside `status` / `version` /
-   `migration-run-retention` and lists `--require-driver`.
+   `migration-run-retention` and lists `--require-driver` plus
+   `--require-empty-stock-release`.
 9. Performs no database open, SQL execution, HTTP, apply, rollback, lock
    reservation, FileStore walk, or daemon mutation.
 10. Never emits DSNs or executable SQL.
 11. Redact any accidental DSN substring if a future helper is reused;
     this command has no `--dsn` flag.
+12. `--require-empty-stock-release` is independently opt-in (default
+    unset). Combining it with `--require-driver` is usage exit `2`.
+13. `--require-empty-stock-release` with a nonempty linked list → exit
+    `1`, short stderr that names `stock release must not register a
+    production database driver`, **no** stdout JSON. This is the
+    operator-visible no-stock-driver release policy: stock
+    `gamed` / `authd` / `metin2-migrate` stay empty, and a later engine
+    choice must not silently rewrite that policy.
+14. `--require-empty-stock-release` with an empty linked list → exit `0`
+    and the same empty `go-metin2-sql-drivers-v1` envelope.
 
 ### C. Successful CLI / loopback envelope
 
@@ -341,6 +354,12 @@ Focused untagged coverage:
   still no DSN open
 - `--require-driver` matching a registered test driver → exit `0`
 - `--require-driver go_metin2_missing_driver` → exit `1`, empty stdout
+- `--require-empty-stock-release` after a test driver is linked → exit `1`,
+  empty stdout, stderr names the no-stock-driver policy
+- `--require-empty-stock-release` plus `--require-driver` → usage exit `2`
+- untagged stock `go build ./cmd/metin2-migrate` then
+  `drivers --require-empty-stock-release` → empty envelope; the same
+  binary fails `--require-driver sqlite`
 - `--require-driver` empty / extra args / unknown flag → exit `2`
 - usage / unknown-command text lists `drivers`
 - `migration-run-retention` forward + rollback printers emit gated
@@ -390,12 +409,19 @@ GREEN on `lane/persistence` in `c19e5565` (`feat(persistence): inspect linked SQ
 - Focused config/CLI/ops/minimal coverage, tagged SQLite hermetic retention,
   touched-package tests, vet, formatting, and direct stock/tagged CLI runs
   are GREEN.
-- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
+- Upsert / auto-run / cascade-delete remain deferred.
+- Stock production driver remains an explicit **no**: release `gamed` /
+  `authd` / `metin2-migrate` keep `drivers: []`. Operators prove that
+  with `metin2-migrate drivers --require-empty-stock-release`. Lab SQL
+  stays `//go:build sqlite_harness` (`sqlite` via `modernc.org/sqlite`).
+  FileStores remain live rematerialize; there is no silent FileStore-to-SQL
+  cutover. Choosing MySQL / Postgres / SQLite as a later stock default
+  is a new ticket that must not rewrite this policy in place.
 
-Follow-up owned separately after GREEN: choose and document a production
-DB engine/driver only when repository or migrator work needs a stock
-default; keep advisory-lock coverage and SQL-backed runtime stores
-deferred until that choice exists.
+Follow-up owned separately after GREEN: production DB backup/rollback
+policy and CLI-only apply-boundary restatements stay later cards; keep
+advisory-lock coverage and SQL-backed runtime stores deferred until an
+approved ticket chooses a stock engine instead of this no-stock policy.
 
 The next operator-runbook GREEN is print-only
 `export-quarantine-drill` post-quarantine

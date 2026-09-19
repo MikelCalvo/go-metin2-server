@@ -1872,6 +1872,9 @@ type localSQLDriversResponse struct {
 
 // RegisterLocalSQLDriversEndpoint exposes metadata-only database/sql driver
 // discovery to loopback callers. The callback must not open a database target.
+// Stock gamed release binaries keep this list empty; sqlite remains opt-in
+// sqlite_harness. The endpoint never registers a production driver and never
+// silently cuts live FileStores over to SQL.
 func RegisterLocalSQLDriversEndpoint(mux *http.ServeMux, drivers func() []string) *http.ServeMux {
 	if mux == nil || drivers == nil {
 		return mux
