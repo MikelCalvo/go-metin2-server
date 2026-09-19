@@ -3858,3 +3858,357 @@ func TestGameRuntimeItemMoveEquipSaveFailureRollsBackLiveMutation(t *testing.T) 
 		t.Fatalf("expected save-failed equip to leave persisted points unchanged, got %d", persisted.Characters[0].Points[1])
 	}
 }
+
+func TestGameRuntimeBeltItemMoveWhileOpenRelocatesWholeStack(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenBeltMove", 0x01030be1, 0x02040be1, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4242
+	owner.Inventory = []inventory.ItemInstance{{ID: 2808, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-belt-move"
+	issuePeerTicket(t, ticketStore, login, 0x70707be1, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-belt item-move owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-belt item-move runtime error: %v", err)
+	}
+	runtime.SeedBeltCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 2907, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707be1)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt before belt item-move: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_belt before belt item-move to emit one ITEM_SET, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.BeltPosition(0),
+		Destination: itemproto.BeltPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected accepted belt item-move error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected accepted belt item-move to emit ITEM_DEL and ITEM_SET, got %d", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode belt item-move ITEM_DEL: %v", err)
+	}
+	if del.Position != itemproto.BeltPosition(0) {
+		t.Fatalf("unexpected belt item-move ITEM_DEL: %+v", del.Position)
+	}
+	set, err := itemproto.DecodeSet(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode belt item-move ITEM_SET: %v", err)
+	}
+	if set.Position != itemproto.BeltPosition(3) || set.Vnum != 27001 || set.Count != 2 {
+		t.Fatalf("unexpected belt item-move ITEM_SET: %+v", set)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected accepted belt item-move to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "accepted belt item-move owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "accepted belt item-move live owner")
+	cells := runtime.beltCellsForCharacter(login, owner.ID)
+	if item, ok := cells[3]; !ok || item.ID != 2907 || item.Count != 2 || item.Slot != 3 {
+		t.Fatalf("expected accepted belt item-move to occupy destination cell 3, got %+v", cells)
+	}
+	if _, occupied := cells[0]; occupied {
+		t.Fatalf("expected accepted belt item-move to clear source cell 0, got %+v", cells)
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt reopen after belt item-move error: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected /open_belt reopen after belt item-move to emit remembered ITEM_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeSet(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode reopen ITEM_SET after belt item-move: %v", err)
+	}
+	if reopenSet != set {
+		t.Fatalf("unexpected reopen ITEM_SET after belt item-move: %+v want %+v", reopenSet, set)
+	}
+}
+
+func TestGameRuntimeBeltItemMoveWithoutOpenOrBadCellsFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("ClosedBeltMove", 0x01030be2, 0x02040be2, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4343
+	owner.Inventory = []inventory.ItemInstance{{ID: 2809, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "closed-belt-move"
+	issuePeerTicket(t, ticketStore, login, 0x70707be2, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed closed belt item-move owner account: %v", err)
+	}
+	templates := []itemcatalog.Template{
+		{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200},
+		{Vnum: 27002, Name: "Small Blue Potion", Stackable: true, MaxCount: 200},
+	}
+	itemStore := newItemTemplateStore(t, templates)
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected closed belt item-move runtime error: %v", err)
+	}
+	runtime.SeedBeltCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 2908, Vnum: 27001, Count: 2, Slot: 0},
+		1: {ID: 2909, Vnum: 27002, Count: 1, Slot: 1},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707be2)
+	defer closeSessionFlow(t, flow)
+
+	closedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.BeltPosition(0),
+		Destination: itemproto.BeltPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected closed belt item-move error: %v", err)
+	}
+	if len(closedOut) != 0 {
+		t.Fatalf("expected closed belt item-move to emit no frames, got %d", len(closedOut))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "closed belt item-move")
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt before bad belt item-move error: %v", err)
+	}
+	if len(openOut) != 2 {
+		t.Fatalf("expected /open_belt before bad belt item-move to emit two ITEM_SET rows, got %d", len(openOut))
+	}
+
+	cases := []struct {
+		name   string
+		packet itemproto.ClientMovePacket
+	}{
+		{
+			name: "inventory windows",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.InventoryPosition(5),
+				Destination: itemproto.BeltPosition(3),
+				Count:       0,
+			},
+		},
+		{
+			name: "mixed belt and inventory windows",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.BeltPosition(0),
+				Destination: itemproto.InventoryPosition(9),
+				Count:       0,
+			},
+		},
+		{
+			name: "same cell",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.BeltPosition(0),
+				Destination: itemproto.BeltPosition(0),
+				Count:       0,
+			},
+		},
+		{
+			name: "out of range",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.BeltPosition(0),
+				Destination: itemproto.BeltPosition(itemproto.BeltInventoryMaxCell),
+				Count:       0,
+			},
+		},
+		{
+			name: "oversize count",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.BeltPosition(0),
+				Destination: itemproto.BeltPosition(3),
+				Count:       3,
+			},
+		},
+		{
+			name: "occupied destination",
+			packet: itemproto.ClientMovePacket{
+				Source:      itemproto.BeltPosition(0),
+				Destination: itemproto.BeltPosition(1),
+				Count:       0,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(tc.packet)))
+			if err != nil {
+				t.Fatalf("unexpected %s belt item-move error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s belt item-move to emit no frames, got %d", tc.name, len(out))
+			}
+			assertExchangeAccountUnchanged(t, accounts, login, owner, tc.name+" belt item-move")
+		})
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt reopen after bad belt item-move error: %v", err)
+	}
+	if len(reopenOut) != 2 {
+		t.Fatalf("expected /open_belt reopen after bad belt item-move to emit two ITEM_SET rows, got %d", len(reopenOut))
+	}
+	cells := runtime.beltCellsForCharacter(login, owner.ID)
+	if item, ok := cells[0]; !ok || item.ID != 2908 || item.Count != 2 {
+		t.Fatalf("expected failed belt item-move to leave seeded cell 0 unchanged, got %+v", cells)
+	}
+	if item, ok := cells[1]; !ok || item.ID != 2909 || item.Count != 1 {
+		t.Fatalf("expected failed belt item-move to leave seeded cell 1 unchanged, got %+v", cells)
+	}
+	if _, occupied := cells[3]; occupied {
+		t.Fatalf("expected failed belt item-move not to occupy destination cell 3, got %+v", cells)
+	}
+}
+
+func TestGameRuntimeBeltItemMoveFailsClosedAtDeathFloorWithoutMutation(t *testing.T) {
+	login := "post-floor-belt-move"
+	loginKey := uint32(0x19191be3)
+	owner := peerVisibilityCharacter("DeadBeltMoveOwner", 0x01030be3, 0x02040be3, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 1
+	owner.Gold = 5151
+	owner.Inventory = []inventory.ItemInstance{{ID: 2810, Vnum: 27001, Count: 2, Slot: 5}}
+	templates := []itemcatalog.Template{{Vnum: 27001, Name: "Post Floor Belt Potion", Stackable: true, MaxCount: 200}}
+	runtime, accounts, targetVID := newPostFloorItemGuardRuntime(t, login, loginKey, owner, templates)
+	runtime.SeedBeltCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 2910, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt before post-floor belt item-move: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_belt before post-floor belt item-move to emit one ITEM_SET, got %d", len(openOut))
+	}
+
+	drivePracticeMobOwnerToBootstrapHPFloor(t, flow, owner, targetVID)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientMove(itemproto.ClientMovePacket{
+		Source:      itemproto.BeltPosition(0),
+		Destination: itemproto.BeltPosition(3),
+		Count:       0,
+	})))
+	if err != nil {
+		t.Fatalf("unexpected post-floor belt ITEM_MOVE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected post-floor belt ITEM_MOVE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected post-floor belt ITEM_MOVE to queue no frames, got %d", len(queued))
+	}
+	assertPostFloorItemGuardAccountUnchanged(t, accounts, login, owner, "post-floor belt ITEM_MOVE")
+	cells := runtime.beltCellsForCharacter(login, owner.ID)
+	if item, ok := cells[0]; !ok || item.ID != 2910 || item.Count != 2 {
+		t.Fatalf("expected post-floor belt ITEM_MOVE to leave seeded cell 0 unchanged, got %+v", cells)
+	}
+	if _, occupied := cells[3]; occupied {
+		t.Fatalf("expected post-floor belt ITEM_MOVE not to occupy destination cell 3, got %+v", cells)
+	}
+}
+
+func TestGameRuntimeBeltItemUseWhileOpenFailsClosedWithoutMutation(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("OpenBeltUse", 0x01030be4, 0x02040be4, 1100, 2100, 0, 101, 201)
+	owner.Gold = 4444
+	owner.Inventory = []inventory.ItemInstance{{ID: 2811, Vnum: 27001, Count: 2, Slot: 5}}
+	login := "open-belt-use"
+	issuePeerTicket(t, ticketStore, login, 0x70707be4, owner)
+	if err := accounts.Save(accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed open-belt item-use owner account: %v", err)
+	}
+	template := itemcatalog.Template{Vnum: 27001, Name: "Small Red Potion", Stackable: true, MaxCount: 200}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, nil, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected open-belt item-use runtime error: %v", err)
+	}
+	runtime.SeedBeltCellsForTest(login, owner.ID, map[uint8]inventory.ItemInstance{
+		0: {ID: 2911, Vnum: 27001, Count: 2, Slot: 0},
+	})
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, 0x70707be4)
+	defer closeSessionFlow(t, flow)
+
+	openOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt before belt item-use: %v", err)
+	}
+	if len(openOut) != 1 {
+		t.Fatalf("expected /open_belt before belt item-use to emit one ITEM_SET, got %d", len(openOut))
+	}
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientUse(itemproto.ClientUsePacket{
+		Position: itemproto.BeltPosition(0),
+	})))
+	if err != nil {
+		t.Fatalf("unexpected belt ITEM_USE dispatch error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected belt ITEM_USE to fail closed with no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected belt ITEM_USE to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, login, owner, "belt ITEM_USE owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "belt ITEM_USE live owner")
+	cells := runtime.beltCellsForCharacter(login, owner.ID)
+	if item, ok := cells[0]; !ok || item.ID != 2911 || item.Count != 2 {
+		t.Fatalf("expected belt ITEM_USE to leave seeded cell 0 unchanged, got %+v", cells)
+	}
+
+	reopenOut, err := flow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
+		Type:    chatproto.ChatTypeTalking,
+		Message: "/open_belt",
+	})))
+	if err != nil {
+		t.Fatalf("unexpected /open_belt reopen after belt item-use error: %v", err)
+	}
+	if len(reopenOut) != 1 {
+		t.Fatalf("expected /open_belt reopen after belt item-use to emit remembered ITEM_SET, got %d", len(reopenOut))
+	}
+	reopenSet, err := itemproto.DecodeSet(decodeSingleFrame(t, reopenOut[0]))
+	if err != nil {
+		t.Fatalf("decode reopen ITEM_SET after belt item-use: %v", err)
+	}
+	if reopenSet.Position != itemproto.BeltPosition(0) || reopenSet.Vnum != 27001 || reopenSet.Count != 2 {
+		t.Fatalf("unexpected reopen ITEM_SET after belt item-use: %+v", reopenSet)
+	}
+}

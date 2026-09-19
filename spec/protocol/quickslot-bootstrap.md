@@ -164,7 +164,7 @@ The current owned synchronization is intentionally narrow:
 - move/removal synchronization does not run for partial merges or partial-stack splits where the original item still remains at the source cell, including partial `ITEM_MOVE` counted merges, partial counted `ITEM_DROP2`, partial `ITEM_USE_TO_ITEM` stack consolidation, and partial refine-confirm material stack decrements;
 - merchant partial-stack `SELL2` does not delete quickslots, because the original item still remains at the source cell;
 - accepted `SAFEBOX_CHECKOUT` and same-session `SAFEBOX_ITEM_MOVE` do not delete or retarget carried-inventory item quickslots (check-out places/merges into carried cells without clearing a carried source binding; item-move mutates only in-memory safebox cells);
-- it does not yet delete item quickslots when item timeout, destruction, mall, or other item-removal paths outside the currently owned removal set clear an item cell.
+- it does not yet delete item quickslots when item timeout, destruction, mall, belt, or other item-removal paths outside the currently owned removal set clear an item cell.
 
 ## Current scope
 
@@ -197,5 +197,5 @@ Implemented now:
 
 Not implemented yet:
 
-- automatic item quickslot deletion after item timeout, destruction, mall checkout/removal, or other item-removal paths outside the currently owned removal set
-- automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range
+- automatic item quickslot deletion after item timeout, destruction, mall checkout/removal, belt relocate/removal, or other item-removal paths outside the currently owned removal set
+- automatic item quickslot synchronization for belt inventory cells beyond the current carried inventory bootstrap range; same-window belt `ITEM_MOVE` relocates belt cells through `ITEM_DEL` / `ITEM_SET` without rewriting carried-inventory item quickslots

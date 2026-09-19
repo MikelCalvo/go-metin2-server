@@ -594,6 +594,8 @@ type gameRuntime struct {
 	mallPersistMu           sync.Mutex
 	mallSeedMu              sync.Mutex
 	mallSeedCells           map[string]map[uint8]inventory.ItemInstance
+	beltSeedMu              sync.Mutex
+	beltSeedCells           map[string]map[uint8]inventory.ItemInstance
 	cubeStore               cubestore.Store
 	cubeRecipes             cubestore.Snapshot
 	cubeRecipesAuthored     bool
@@ -749,6 +751,37 @@ func (r *gameRuntime) mallCellsForCharacter(login string, characterID uint32) ma
 	r.mallSeedMu.Lock()
 	defer r.mallSeedMu.Unlock()
 	return cloneMallCells(r.mallSeedCells[mallCharacterKey(login, characterID)])
+}
+
+// SeedBeltCellsForTest installs same-account belt cells for lab /open_belt
+// rematerialize and same-window belt ITEM_MOVE. Belt stays session-local seed
+// storage: no dedicated belt header, no durable FileStore, and no dragon-soul
+// or ground movement. Closed-belt and death-floor ITEM_MOVE stay fail-closed.
+func (r *gameRuntime) SeedBeltCellsForTest(login string, characterID uint32, cells map[uint8]inventory.ItemInstance) {
+	if r == nil {
+		return
+	}
+	cloned := cloneMallCells(cells)
+	r.beltSeedMu.Lock()
+	defer r.beltSeedMu.Unlock()
+	if r.beltSeedCells == nil {
+		r.beltSeedCells = make(map[string]map[uint8]inventory.ItemInstance)
+	}
+	key := mallCharacterKey(login, characterID)
+	if len(cloned) == 0 {
+		delete(r.beltSeedCells, key)
+		return
+	}
+	r.beltSeedCells[key] = cloned
+}
+
+func (r *gameRuntime) beltCellsForCharacter(login string, characterID uint32) map[uint8]inventory.ItemInstance {
+	if r == nil {
+		return make(map[uint8]inventory.ItemInstance)
+	}
+	r.beltSeedMu.Lock()
+	defer r.beltSeedMu.Unlock()
+	return cloneMallCells(r.beltSeedCells[mallCharacterKey(login, characterID)])
 }
 
 func (r *gameRuntime) BroadcastNotice(message string) int {
@@ -4721,6 +4754,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		safeboxStore:           safeboxItems,
 		mallStore:              mallItems,
 		mallSeedCells:          make(map[string]map[uint8]inventory.ItemInstance),
+		beltSeedCells:          make(map[string]map[uint8]inventory.ItemInstance),
 		cubeStore:              cubeRecipes,
 		liveCharactersByName:   make(map[string]liveCharacterRegistration),
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
@@ -4782,6 +4816,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var hasActiveMallOpen bool
 		var activeMallSize uint8
 		activeMallItems := make(map[uint8]inventory.ItemInstance)
+		var hasActiveBeltOpen bool
+		activeBeltItems := make(map[uint8]inventory.ItemInstance)
 		var pendingSafeboxPasswordChallenge bool
 		var pendingSafeboxPasswordSize uint8
 		var hasSafeboxOpenAnchor bool
@@ -5132,6 +5168,123 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				return gameflow.ItemMoveResult{Accepted: false}
 			}
 			return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
+		}
+		hydrateActiveBeltFromSeed := func() {
+			if !hasTicket || selectedPlayer == nil {
+				activeBeltItems = make(map[uint8]inventory.ItemInstance)
+				return
+			}
+			activeBeltItems = runtime.beltCellsForCharacter(sessionTicket.Login, selectedPlayer.LiveCharacter().ID)
+		}
+		persistActiveBeltCells := func(selected *player.Runtime) error {
+			if runtime == nil || !hasTicket || selected == nil {
+				return nil
+			}
+			cloned := cloneMallCells(activeBeltItems)
+			runtime.beltSeedMu.Lock()
+			defer runtime.beltSeedMu.Unlock()
+			if runtime.beltSeedCells == nil {
+				runtime.beltSeedCells = make(map[string]map[uint8]inventory.ItemInstance)
+			}
+			key := mallCharacterKey(sessionTicket.Login, selected.LiveCharacter().ID)
+			if len(cloned) == 0 {
+				delete(runtime.beltSeedCells, key)
+				return nil
+			}
+			runtime.beltSeedCells[key] = cloned
+			return nil
+		}
+		executeOpenBeltWindowItemMove := func(packet itemproto.ClientMovePacket, selectedPlayer *player.Runtime) gameflow.ItemMoveResult {
+			if selectedPlayer == nil || !hasActiveBeltOpen {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Source.WindowType != itemproto.WindowBeltInventory || packet.Destination.WindowType != itemproto.WindowBeltInventory {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Source.Cell >= itemproto.BeltInventoryMaxCell || packet.Destination.Cell >= itemproto.BeltInventoryMaxCell {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			sourceSlot := uint8(packet.Source.Cell)
+			destinationSlot := uint8(packet.Destination.Cell)
+			if sourceSlot == destinationSlot {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			sourceItem, occupied := activeBeltItems[sourceSlot]
+			if !occupied {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			template, ok := runtime.itemTemplates[sourceItem.Vnum]
+			if !ok || !itemcatalog.ValidTemplate(template) || sourceItem.Vnum != template.Vnum || sourceItem.Count == 0 || sourceItem.Count > template.MaxCount {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if sourceItem.Equipped || sourceItem.Locked {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if err := sourceItem.Validate(); err != nil {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if packet.Count != 0 && uint16(packet.Count) != sourceItem.Count {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			if _, destinationOccupied := activeBeltItems[destinationSlot]; destinationOccupied {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			resultItem, ok := safeboxWholeStackRelocateItem(sourceItem, inventory.SlotIndex(destinationSlot))
+			if !ok {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			setFrame, err := encodeBootstrapItemFrameWithTemplates(itemproto.BeltPosition(uint16(destinationSlot)), resultItem, runtime.itemTemplates)
+			if err != nil {
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			frames := [][]byte{
+				itemproto.EncodeDel(itemproto.DelPacket{Position: itemproto.BeltPosition(uint16(sourceSlot))}),
+				setFrame,
+			}
+			delete(activeBeltItems, sourceSlot)
+			activeBeltItems[destinationSlot] = resultItem
+			if err := persistActiveBeltCells(selectedPlayer); err != nil {
+				delete(activeBeltItems, destinationSlot)
+				activeBeltItems[sourceSlot] = sourceItem
+				_ = persistActiveBeltCells(selectedPlayer)
+				return gameflow.ItemMoveResult{Accepted: false}
+			}
+			return gameflow.ItemMoveResult{Accepted: true, Frames: frames}
+		}
+		encodeActiveBeltSetFrames := func() [][]byte {
+			if len(activeBeltItems) == 0 {
+				return nil
+			}
+			slots := make([]uint8, 0, len(activeBeltItems))
+			for slot := range activeBeltItems {
+				if uint16(slot) >= itemproto.BeltInventoryMaxCell {
+					continue
+				}
+				slots = append(slots, slot)
+			}
+			sort.Slice(slots, func(i, j int) bool { return slots[i] < slots[j] })
+			frames := make([][]byte, 0, len(slots))
+			for _, slot := range slots {
+				item := activeBeltItems[slot]
+				frame, err := encodeBootstrapItemFrameWithTemplates(itemproto.BeltPosition(uint16(slot)), item, runtime.itemTemplates)
+				if err != nil {
+					continue
+				}
+				frames = append(frames, frame)
+			}
+			return frames
+		}
+		setActiveBeltOpen := func(open bool) {
+			if !open {
+				hasActiveBeltOpen = false
+				return
+			}
+			hasActiveBeltOpen = true
+		}
+		openBeltPresentation := func() [][]byte {
+			setActiveBeltOpen(true)
+			hydrateActiveBeltFromSeed()
+			return encodeActiveBeltSetFrames()
 		}
 		encodeActiveMallSetFrames := func() [][]byte {
 			if len(activeMallItems) == 0 {
@@ -7558,6 +7711,23 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							setActiveMallOpen(0, false)
 							return gameflow.ChatResult{Accepted: true}
 						}
+						if slashOpenBeltCommand(packet.Message) {
+							selectedPlayer, selectedOK := currentSelectedPlayer()
+							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+								return gameflow.ChatResult{Accepted: false}
+							}
+							return gameflow.ChatResult{
+								Accepted: true,
+								Frames:   openBeltPresentation(),
+							}
+						}
+						if slashCloseBeltCommand(packet.Message) {
+							if !hasActiveBeltOpen {
+								return gameflow.ChatResult{Accepted: true}
+							}
+							setActiveBeltOpen(false)
+							return gameflow.ChatResult{Accepted: true}
+						}
 						if password, ok := slashSafeboxPasswordCommand(packet.Message); ok {
 							selectedPlayer, selectedOK := currentSelectedPlayer()
 							if !selectedOK || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
@@ -8060,6 +8230,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 							clearActiveSafeboxItems()
 							setActiveMallOpen(0, false)
+							setActiveBeltOpen(false)
 							setActiveRefineDialog(refineDialogPresentation{}, false)
 							setActiveCubeOpen(false, 0)
 						}
@@ -9038,6 +9209,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					if packet.Source.WindowType == itemproto.WindowMall || packet.Destination.WindowType == itemproto.WindowMall {
 						return executeOpenMallWindowItemMove(packet, selectedPlayer)
+					}
+					if packet.Source.WindowType == itemproto.WindowBeltInventory || packet.Destination.WindowType == itemproto.WindowBeltInventory {
+						return executeOpenBeltWindowItemMove(packet, selectedPlayer)
 					}
 					if packet.Source.WindowType != itemproto.WindowInventory {
 						return gameflow.ItemMoveResult{Accepted: false}
@@ -10645,6 +10819,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			}
 			clearActiveSafeboxItems()
 			setActiveMallOpen(0, false)
+			setActiveBeltOpen(false)
 			setActiveRefineDialog(refineDialogPresentation{}, false)
 			setActiveCubeOpen(false, 0)
 			clearActiveMyShopOpen()
@@ -11868,6 +12043,30 @@ func slashCloseMallCommand(message string) bool {
 	}
 	switch fields[0] {
 	case "close_mall", "mall_close":
+		return true
+	default:
+		return false
+	}
+}
+
+func slashOpenBeltCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	return len(fields) == 1 && fields[0] == "open_belt"
+}
+
+func slashCloseBeltCommand(message string) bool {
+	if !strings.HasPrefix(message, "/") {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(message[1:]))
+	if len(fields) != 1 {
+		return false
+	}
+	switch fields[0] {
+	case "close_belt", "belt_close":
 		return true
 	default:
 		return false

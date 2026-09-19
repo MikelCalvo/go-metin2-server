@@ -51,6 +51,7 @@ const (
 	WindowGround              uint8  = 7
 	InventoryMaxCell          uint16 = 90
 	WearMaxCell               uint16 = 32
+	BeltInventoryMaxCell      uint16 = 16
 	ItemSocketCount                  = 3
 	ItemAttributeCount               = 7
 	CharacterNameMaxLength           = 24
@@ -160,6 +161,7 @@ var (
 	ErrInvalidPayload         = errors.New("invalid item packet payload")
 	ErrInventoryCellRange     = errors.New("inventory cell is out of range")
 	ErrEquipmentWearCellRange = errors.New("equipment wear cell is out of range")
+	ErrBeltInventoryCellRange = errors.New("belt inventory cell is out of range")
 )
 
 type Position struct {
@@ -355,6 +357,17 @@ func InventoryPosition(cell uint16) Position {
 
 func MallPosition(cell uint16) Position {
 	return Position{WindowType: WindowMall, Cell: cell}
+}
+
+func BeltPosition(cell uint16) Position {
+	return Position{WindowType: WindowBeltInventory, Cell: cell}
+}
+
+func CarriedBeltInventoryPosition(cell uint16) (Position, error) {
+	if cell >= BeltInventoryMaxCell {
+		return Position{}, ErrBeltInventoryCellRange
+	}
+	return BeltPosition(cell), nil
 }
 
 func CarriedInventoryPosition(cell uint16) (Position, error) {
