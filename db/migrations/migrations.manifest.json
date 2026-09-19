@@ -240,6 +240,14 @@
       "down_path": "0030_bootstrap_ground_item_ownership_timer.down.sql",
       "up_sha256": "d8e1b4a242e8b6270cedc7deba505ee67dbf755df9cc65402904cd1140283912",
       "down_sha256": "9ea446575a1f2d957eead206b09271babf630c681647714bb1b22924a849391f"
+    },
+    {
+      "version": 31,
+      "name": "cube_recipe_state",
+      "up_path": "0031_cube_recipe_state.up.sql",
+      "down_path": "0031_cube_recipe_state.down.sql",
+      "up_sha256": "cc7aec98ba728d7fe1dfd2d62b53b92cac9fe77fcad548a42ca42a04a1c65a4d",
+      "down_sha256": "905f3a77440d946bdd9dcdca928ec146e06048c06cd1481ff30287dd50de6f66"
     }
   ]
 }

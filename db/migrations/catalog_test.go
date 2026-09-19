@@ -73,6 +73,8 @@ const (
 	expectedBootstrapGroundItemInstanceAttributesDownSHA256  = "5785614d646db03278f59174ffef124b4f490e2bf59362794ae7dabf0411058c"
 	expectedBootstrapGroundItemOwnershipTimerUpSHA256        = "d8e1b4a242e8b6270cedc7deba505ee67dbf755df9cc65402904cd1140283912"
 	expectedBootstrapGroundItemOwnershipTimerDownSHA256      = "9ea446575a1f2d957eead206b09271babf630c681647714bb1b22924a849391f"
+	expectedCubeRecipeStateUpSHA256                          = "cc7aec98ba728d7fe1dfd2d62b53b92cac9fe77fcad548a42ca42a04a1c65a4d"
+	expectedCubeRecipeStateDownSHA256                        = "905f3a77440d946bdd9dcdca928ec146e06048c06cd1481ff30287dd50de6f66"
 )
 
 func TestBuiltInCatalogIsValid(t *testing.T) {
@@ -1251,6 +1253,54 @@ func TestBuiltInCatalogIsValid(t *testing.T) {
 		}
 	}
 
+	if len(catalog) < 31 {
+		t.Fatalf("expected cube-recipe-state migration after bootstrap ground item ownership-timer, got %d", len(catalog))
+	}
+	thirtyFirst := catalog[30]
+	if thirtyFirst.Version != 31 || thirtyFirst.Name != "cube_recipe_state" {
+		t.Fatalf("unexpected thirty-first migration: %#v", thirtyFirst)
+	}
+	if thirtyFirst.UpPath != "0031_cube_recipe_state.up.sql" {
+		t.Fatalf("unexpected thirty-first up path: %q", thirtyFirst.UpPath)
+	}
+	if thirtyFirst.DownPath != "0031_cube_recipe_state.down.sql" {
+		t.Fatalf("unexpected thirty-first down path: %q", thirtyFirst.DownPath)
+	}
+	if thirtyFirst.UpSHA256 != expectedCubeRecipeStateUpSHA256 {
+		t.Fatalf("unexpected cube-recipe-state up checksum: got %q want %q", thirtyFirst.UpSHA256, expectedCubeRecipeStateUpSHA256)
+	}
+	if thirtyFirst.DownSHA256 != expectedCubeRecipeStateDownSHA256 {
+		t.Fatalf("unexpected cube-recipe-state down checksum: got %q want %q", thirtyFirst.DownSHA256, expectedCubeRecipeStateDownSHA256)
+	}
+	for _, want := range []string{
+		"CREATE TABLE cube_recipe_npcs",
+		"CREATE TABLE cube_recipes",
+		"CREATE TABLE cube_recipe_materials",
+		"CREATE TABLE cube_recipe_material_options",
+		"PRIMARY KEY (npc_vnum, position)",
+		"PRIMARY KEY (npc_vnum, recipe_position, material_position)",
+		"PRIMARY KEY (npc_vnum, recipe_position, option_index, material_position)",
+		"FOREIGN KEY (npc_vnum) REFERENCES cube_recipe_npcs(npc_vnum)",
+		"FOREIGN KEY (npc_vnum, recipe_position) REFERENCES cube_recipes(npc_vnum, position)",
+		"CHECK (percent >= 0 AND percent <= 100)",
+		"CHECK (reward_count > 0 AND reward_count <= 65535)",
+		"CHECK (gold >= 0 AND gold <= 9223372036854775807)",
+	} {
+		if !strings.Contains(thirtyFirst.UpSQL, want) {
+			t.Fatalf("expected cube-recipe-state up migration to contain %q, got:\n%s", want, thirtyFirst.UpSQL)
+		}
+	}
+	for _, want := range []string{
+		"DROP TABLE cube_recipe_material_options",
+		"DROP TABLE cube_recipe_materials",
+		"DROP TABLE cube_recipes",
+		"DROP TABLE cube_recipe_npcs",
+	} {
+		if !strings.Contains(thirtyFirst.DownSQL, want) {
+			t.Fatalf("expected cube-recipe-state down migration to contain %q, got:\n%s", want, thirtyFirst.DownSQL)
+		}
+	}
+
 	for i, migration := range catalog {
 		wantVersion := i + 1
 		if migration.Version != wantVersion {
@@ -1320,7 +1370,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("built-in catalog summary: %v", err)
 	}
-	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 30 {
+	if summary.Format != CatalogSummaryFormat || summary.LatestVersion < 31 {
 		t.Fatalf("unexpected built-in catalog summary: %#v", summary)
 	}
 	if len(summary.Migrations) != summary.LatestVersion {
@@ -1330,7 +1380,7 @@ func TestCatalogSummaryUsesBuiltInCatalog(t *testing.T) {
 		t.Fatalf("unexpected first built-in catalog summary row: %#v", summary.Migrations[0])
 	}
 	latest := summary.Migrations[len(summary.Migrations)-1]
-	if latest.Version != summary.LatestVersion || latest.Name != "bootstrap_ground_item_ownership_timer" {
+	if latest.Version != summary.LatestVersion || latest.Name != "cube_recipe_state" {
 		t.Fatalf("unexpected latest built-in catalog summary row: %#v", latest)
 	}
 }

@@ -280,6 +280,9 @@ func TestPlanUpToLatestUsesBuiltInCatalog(t *testing.T) {
 	if plan.Pending[29].Version != 30 || plan.Pending[29].Name != "bootstrap_ground_item_ownership_timer" || plan.Pending[29].Direction != DirectionUp || plan.Pending[29].Path != "0030_bootstrap_ground_item_ownership_timer.up.sql" {
 		t.Fatalf("unexpected thirtieth built-in pending step: %#v", plan.Pending[29])
 	}
+	if plan.Pending[30].Version != 31 || plan.Pending[30].Name != "cube_recipe_state" || plan.Pending[30].Direction != DirectionUp || plan.Pending[30].Path != "0031_cube_recipe_state.up.sql" {
+		t.Fatalf("unexpected thirty-first built-in pending step: %#v", plan.Pending[30])
+	}
 }
 
 func TestPlanJSONShapeIsStableForFuturePreflightOutput(t *testing.T) {

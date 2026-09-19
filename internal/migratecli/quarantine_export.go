@@ -24,6 +24,10 @@ const maxExportQuarantineBytes = 1 << 20
 
 var errInvalidExportQuarantineInput = errors.New("invalid export quarantine input")
 
+// exportQuarantineKinds is the closed CLI kind set for quarantine-export /
+// import-export / import-export-status / export-tree-status. cube-recipe-state
+// stays a cubestore primitive beside FileStore in this slice: adding an 11th
+// kind here would also recut HTTP drill proofs and factory catalog pins.
 var exportQuarantineKinds = []string{
 	"account-character-roster",
 	"character-item-state",
