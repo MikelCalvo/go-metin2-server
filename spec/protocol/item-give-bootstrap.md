@@ -7,8 +7,9 @@ The goal is intentionally conservative:
 - own the client packet layout and `GAME` dispatch seam
 - keep the owned template-authored `anti_give` self-only reject path
 - accept one player-to-player whole-stack or partial-stack transfer onto a currently visible live peer
+- accept one whole-stack give onto a currently visible live `talk` static/NPC actor using the same `CG::ITEM_GIVE` payload
 - fail closed with the already-owned requester busy-window info-chat when the giver is paired in a bootstrap exchange shell, including when the source stack is currently displayed in that shell
-- leave NPC-target give, transferring a currently displayed exchange item, a second exchange finalize path, and two-party rollback/audit policy deferred
+- leave exchange-window give onto an NPC, transferring a currently displayed exchange item, a second exchange finalize path, party `ITEM_GET` notices, and two-party rollback/audit policy deferred
 
 This is not a completed item-give, exchange, trade, or NPC handoff system.
 
@@ -28,7 +29,7 @@ Payload size is 8 bytes:
 | 4 | `item_pos` | packed `TItemPos` | `window_type uint8`, `cell uint16 LE` |
 | 7 | `count` | `uint8` | requested stack count |
 
-The layout is frozen from the TMP4-compatible client packet struct shape in project-owned terms. The repository owns the byte layout, the `anti_give` guard, and the first whole-stack plus partial-stack player-to-player transfer.
+The layout is frozen from the TMP4-compatible client packet struct shape in project-owned terms. The repository owns the byte layout, the `anti_give` guard, the first whole-stack plus partial-stack player-to-player transfer, and the first whole-stack give onto a currently visible live `talk` static/NPC actor. `target_vid` may name either a connected live player or that static/NPC visibility VID; unsupported NPC kinds stay fail-closed.
 
 ## Current runtime contract
 
@@ -61,7 +62,7 @@ That response is deliberately not a transfer attempt. Apart from the optional ac
 
 Templates that author `give_reject_message` without one owned exchange-display / give rejection guard (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, job/sex/empire anti flags, or `min_level`) are invalid at the item-template store boundary, and embedded NUL bytes in the message fail closed before runtime boot. The `ITEM_GIVE` runtime feedback path still requires `anti_give` specifically; the broader guard set only authorizes store validation and the separately owned active-shell `EXCHANGE ITEM_ADD` feedback path.
 
-Zero-target, unknown/invisible-target, zero-count, or oversized-count give attempts remain ordinary no-frame/no-mutation rejections even when the item template authors `anti_give` plus `give_reject_message`.
+Zero-target, unknown/invisible-target, unsupported-NPC-target, zero-count, or oversized-count give attempts remain ordinary no-frame/no-mutation rejections even when the item template authors `anti_give` plus `give_reject_message`. The owned `anti_give` chat still requires a currently connected visible live player target; a currently visible live `talk` NPC does not open that chat.
 
 Once the selected owner has reached the retaliation-owned bootstrap zero-HP floor frozen in `player-death-bootstrap.md`, `ITEM_GIVE` fails closed before this `anti_give` feedback path. The dead-owner attempt emits no self chat, queues no peer frames, and still performs no inventory, equipment, quickslot, ground-handle, or persistence mutation.
 
@@ -104,11 +105,38 @@ Authored `anti_give` / `give_reject_message` still closes the same-socket exchan
 
 If the recipient cannot place the count, the requested count is zero or larger than the live stack, a partial count targets a non-stackable template, the target is not a visible live player, the giver is dead, the giver has an open private shop, or any persist/apply step fails, the request stays fail-closed: no frames, no giver or recipient inventory/quickslot mutation, and no persistence change. There is no owned two-party rollback/audit policy beyond restoring the giver live snapshot when a later step fails before both accounts are committed.
 
+### First owned NPC-target whole-stack give
+
+When the `anti_give` guard does not apply and `target_vid` does not name a currently connected visible live player, the shipped runtime accepts one giver-only whole-stack give when all of these are true:
+
+- the selected giver is already in `GAME`, owns a live shared-world session, and is above the bootstrap zero-HP floor
+- `target_vid` names a currently visible live static/NPC actor in the selected character's live shared-world visibility set, also above the bootstrap zero-HP floor
+- that actor is within the already-owned static-actor interaction range used by `INTERACT`
+- that actor authors `interaction_kind = talk` plus a non-empty `interaction_ref`
+- the source position is a carried inventory cell (`window = INVENTORY`, `cell < 90`)
+- the source cell holds one unlocked, unequipped, well-formed stack whose template resolves, validates, matches the live `vnum`, and is not transfer-guarded (`anti_get` / `anti_drop` / `anti_give` / `anti_sell` / `anti_stack`) or equipment-shaped
+- the giver satisfies selected-character job/sex/empire/`min_level` use of that template
+- the requested `count` equals the live source stack count (partial NPC-target counts stay fail-closed)
+- the live source count does not exceed `template.max_count`
+- the giver is not currently paired in a bootstrap exchange shell and does not have an open private shop
+
+On success the runtime:
+
+- removes the giver's whole source stack and syncs source item quickslots
+- persists the selected-character account snapshot
+- updates the giver shared-world character
+- returns self-only giver inventory refresh (`ITEM_DEL`) plus any source `GC::QUICKSLOT_DEL` for the fully removed cell
+- does not place the stack onto another player, invent NPC inventory, spawn a ground item, emit `ITEM_GET`, or queue peer frames
+- does not invent quest turn-in, shop buy/sell, or talk-dialog consumption from this packet
+
+Unsupported NPC kinds (`shop_preview`, `open_cube`, `open_safebox`, `quest_flag`, `info`, `warp`, combat-only / no-interaction actors), dead or out-of-range actors, partial NPC-target counts, authored `anti_give` against an NPC target, and NPC-target give while an exchange shell is open stay fail-closed: no frames, no giver inventory/quickslot mutation, and no persistence change. The owned player-target busy-window chat is not reused for an NPC target.
+
 ## Deferred behavior
 
 Later slices must write a new contract before broadening this packet. In particular, this slice does not freeze:
 
-- NPC-target give semantics
+- NPC-target give onto shop, quest, cube, warehouse, or other non-`talk` static actors
+- NPC-target partial-stack give, NPC inventory, quest turn-in consume, or ground-item conversion
 - transferring a currently displayed exchange item, or any other second exchange finalize/result path besides the already-owned mutual-accept finalize
 - recipient-facing rejection text, give-success chat, or richer `ITEM_GET` party arguments
 - durable two-party rollback/audit policy after both accounts have been committed
@@ -119,4 +147,4 @@ Later slices must write a new contract before broadening this packet. In particu
 - `internal/game` freezes `GAME`-phase dispatch to a handler hook, with denied results returning no frames.
 - `internal/itemstore` freezes `give_reject_message` round-trip and fail-closed validation: it is valid with one owned exchange-display / give rejection guard (`anti_stack`, `anti_get`, `anti_drop`, `anti_give`, `anti_sell`, job/sex/empire anti flags, or `min_level`) and rejects embedded NUL bytes.
 - `internal/player` freezes the metadata-driven, no-mutation `anti_give` rejection lookup, including the non-zero / not-over-stack requested-count guard.
-- `internal/minimal` freezes the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket merchant-window and exchange-shell teardown before that authored rejection feedback, the no-frame/no-mutation guard for missing/invisible targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run, the first accepted whole-stack and partial-stack player-to-player transfers onto a visible live peer with dual persistence, giver `ITEM_DEL` / source quickslot clear for a whole stack or remainder `ITEM_UPDATE` without clearing still-occupied source item quickslots for a smaller count, queued recipient `ITEM_SET` or `ITEM_UPDATE` plus `ITEM_GET`, a fresh transferred identity on partial counts, and presence-aware sockets/attributes kept on the remainder, the transferred clone, and the rest of the recipient bag/equipment, plus the fail-closed self-only requester busy-window info-chat when the giver is paired in a bootstrap exchange shell (including a currently displayed source cell) that leaves the shell open without a second finalize path.
+- `internal/minimal` freezes the self-only `CHAT_TYPE_INFO` rejection frame when the request names a currently visible player target, the carried item's template authors `anti_give` and `give_reject_message`, and the requested count is valid for the live stack, active same-socket merchant-window and exchange-shell teardown before that authored rejection feedback, the no-frame/no-mutation guard for missing/invisible/unsupported-NPC targets and the post-floor dead-owner guard that denies `ITEM_GIVE` before that feedback path can run, the first accepted whole-stack and partial-stack player-to-player transfers onto a visible live peer with dual persistence, giver `ITEM_DEL` / source quickslot clear for a whole stack or remainder `ITEM_UPDATE` without clearing still-occupied source item quickslots for a smaller count, queued recipient `ITEM_SET` or `ITEM_UPDATE` plus `ITEM_GET`, a fresh transferred identity on partial counts, and presence-aware sockets/attributes kept on the remainder, the transferred clone, and the rest of the recipient bag/equipment, plus the fail-closed self-only requester busy-window info-chat when the giver is paired in a bootstrap exchange shell (including a currently displayed source cell) that leaves the shell open without a second finalize path, plus the first accepted whole-stack giver-only give onto a currently visible live `talk` static/NPC actor with giver persistence, `ITEM_DEL` / source quickslot clear, no ground item, and no peer `ITEM_GET`.

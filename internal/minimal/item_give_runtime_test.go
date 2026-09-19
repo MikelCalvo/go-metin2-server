@@ -1363,3 +1363,334 @@ func TestGameRuntimeItemGiveWhileOpenExchangeOfNonDisplayedStackFailsClosedWithB
 	}
 	assertExchangeEndFrame(t, queuedCancel[0], "open-exchange busy ITEM_GIVE peer cancel")
 }
+
+func TestGameRuntimeItemGivePlacesWholeStackOnVisibleTalkNPC(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveNPCOwner", 0x01030e00, 0x02040e00, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1908, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("GiveNPCPeer", 0x01030e01, 0x02040e01, 1120, 2120, 0, 101, 201)
+	peer.Inventory = []inventory.ItemInstance{{ID: 1909, Vnum: 27002, Count: 1, Slot: 6}}
+	issuePeerTicket(t, ticketStore, "item-give-npc-owner", 0x70707e00, owner)
+	issuePeerTicket(t, ticketStore, "item-give-npc-peer", 0x70707e01, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed item-give NPC owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed item-give NPC peer account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected item-give NPC runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:village_guard")
+	if !ok {
+		t.Fatal("expected talk NPC registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-owner", 0x70707e00)
+	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-peer", 0x70707e01)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, flow)
+	_ = flushServerFrames(t, peerFlow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: uint32(actor.EntityID), Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected accepted NPC item-give packet error: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected accepted NPC ITEM_GIVE to emit ITEM_DEL plus QUICKSLOT_DEL, got %d", len(out))
+	}
+	del, err := itemproto.DecodeDel(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode giver ITEM_DEL: %v", err)
+	}
+	if del.Position != itemproto.InventoryPosition(5) {
+		t.Fatalf("unexpected giver ITEM_DEL: %+v", del.Position)
+	}
+	quickslotDel, err := quickslotproto.DecodeDel(decodeSingleFrame(t, out[1]))
+	if err != nil {
+		t.Fatalf("decode giver QUICKSLOT_DEL: %v", err)
+	}
+	if quickslotDel.Position != 2 {
+		t.Fatalf("unexpected giver QUICKSLOT_DEL: %+v", quickslotDel)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected giver to queue no extra frames after accepted NPC ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected visible peer to receive no frames after NPC ITEM_GIVE, got %d", len(queued))
+	}
+	if items := runtime.GroundItems(); len(items) != 0 {
+		t.Fatalf("expected NPC ITEM_GIVE not to spawn a ground item, got %+v", items)
+	}
+
+	wantOwner := owner
+	wantOwner.Inventory = nil
+	wantOwner.Quickslots = nil
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-owner", wantOwner, "accepted NPC ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-peer", peer, "accepted NPC ITEM_GIVE peer")
+	assertExchangeLiveStateUnchanged(t, runtime, wantOwner, "accepted NPC ITEM_GIVE live owner")
+	assertExchangeLiveStateUnchanged(t, runtime, peer, "accepted NPC ITEM_GIVE live peer")
+}
+
+func TestGameRuntimeItemGiveFailsClosedForUnsupportedNPCKinds(t *testing.T) {
+	cases := []struct {
+		name             string
+		login            string
+		key              uint32
+		characterID      uint32
+		characterVID     uint32
+		kind             string
+		ref              string
+		definitions      []interactionstore.Definition
+		registerTalkOnly bool
+		x, y             int32
+	}{
+		{
+			name:         "shop preview",
+			login:        "item-give-npc-shop",
+			key:          0x70707e02,
+			characterID:  0x01030e02,
+			characterVID: 0x02040e02,
+			kind:         interactionstore.KindShopPreview,
+			ref:          "npc:merchant",
+			definitions:  []interactionstore.Definition{defaultMerchantCatalogDefinition()},
+			x:            1200,
+			y:            2200,
+		},
+		{
+			name:             "no interaction",
+			login:            "item-give-npc-plain",
+			key:              0x70707e03,
+			characterID:      0x01030e03,
+			characterVID:     0x02040e03,
+			registerTalkOnly: true,
+			x:                1200,
+			y:                2200,
+		},
+		{
+			name:         "out of range talk NPC",
+			login:        "item-give-npc-far",
+			key:          0x70707e04,
+			characterID:  0x01030e04,
+			characterVID: 0x02040e04,
+			kind:         interactionstore.KindTalk,
+			ref:          "npc:village_guard",
+			definitions:  []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}},
+			x:            5000,
+			y:            6000,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ticketStore := loginticket.NewFileStore(t.TempDir())
+			accounts := accountstore.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("GiveNPCReject", tc.characterID, tc.characterVID, 1100, 2100, 0, 101, 201)
+			owner.Inventory = []inventory.ItemInstance{{ID: 1910, Vnum: 27001, Count: 3, Slot: 5}}
+			owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+			issuePeerTicket(t, ticketStore, tc.login, tc.key, owner)
+			if err := accounts.Save(accountstore.Account{Login: tc.login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+				t.Fatalf("seed %s item-give NPC account: %v", tc.name, err)
+			}
+			var interactionStore interactionstore.Store
+			if len(tc.definitions) != 0 {
+				interactionStore = newInteractionDefinitionStore(t, tc.definitions)
+			}
+			runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, nil, nil)
+			if err != nil {
+				t.Fatalf("unexpected %s item-give NPC runtime error: %v", tc.name, err)
+			}
+			var actor StaticActorSnapshot
+			var ok bool
+			if tc.registerTalkOnly {
+				actor, ok = runtime.RegisterStaticActor("VillageProp", bootstrapMapIndex, tc.x, tc.y, 20300)
+			} else {
+				actor, ok = runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, tc.x, tc.y, 20300, tc.kind, tc.ref)
+			}
+			if !ok {
+				t.Fatalf("expected %s static actor registration to succeed", tc.name)
+			}
+			flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), tc.login, tc.key)
+			defer closeSessionFlow(t, flow)
+			_ = flushServerFrames(t, flow)
+
+			out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: uint32(actor.EntityID), Position: itemproto.InventoryPosition(5), Count: 3})))
+			if err != nil {
+				t.Fatalf("unexpected %s NPC item-give packet error: %v", tc.name, err)
+			}
+			if len(out) != 0 {
+				t.Fatalf("expected %s NPC ITEM_GIVE to emit no frames, got %d", tc.name, len(out))
+			}
+			if queued := flushServerFrames(t, flow); len(queued) != 0 {
+				t.Fatalf("expected no queued frames after %s NPC ITEM_GIVE, got %d", tc.name, len(queued))
+			}
+			if items := runtime.GroundItems(); len(items) != 0 {
+				t.Fatalf("expected %s NPC ITEM_GIVE not to spawn a ground item, got %+v", tc.name, items)
+			}
+			assertExchangeAccountUnchanged(t, accounts, tc.login, owner, tc.name+" NPC ITEM_GIVE owner")
+			assertExchangeLiveStateUnchanged(t, runtime, owner, tc.name+" NPC ITEM_GIVE live owner")
+		})
+	}
+}
+
+func TestGameRuntimeItemGivePartialStackToTalkNPCFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveNPCPartial", 0x01030e05, 0x02040e05, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1911, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-give-npc-partial", 0x70707e05, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-partial", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed partial NPC item-give account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected partial NPC item-give runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:village_guard")
+	if !ok {
+		t.Fatal("expected talk NPC registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-partial", 0x70707e05)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: uint32(actor.EntityID), Position: itemproto.InventoryPosition(5), Count: 1})))
+	if err != nil {
+		t.Fatalf("unexpected partial NPC item-give packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected partial NPC ITEM_GIVE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after partial NPC ITEM_GIVE, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-partial", owner, "partial NPC ITEM_GIVE owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "partial NPC ITEM_GIVE live owner")
+}
+
+func TestGameRuntimeItemGiveAntiGiveToTalkNPCFailsClosedWithoutChat(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveNPCBound", 0x01030e06, 0x02040e06, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1912, Vnum: 27042, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	issuePeerTicket(t, ticketStore, "item-give-npc-bound", 0x70707e06, owner)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-bound", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed bound NPC item-give account: %v", err)
+	}
+	template := itemcatalog.Template{
+		Vnum:           27042,
+		Name:           "Bound Gift Potion",
+		Stackable:      true,
+		MaxCount:       200,
+		AntiGive:       true,
+		GiveRejectText: "You cannot give this item.",
+	}
+	itemStore := newItemTemplateStore(t, []itemcatalog.Template{template})
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected bound NPC item-give runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:village_guard")
+	if !ok {
+		t.Fatal("expected talk NPC registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-bound", 0x70707e06)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: uint32(actor.EntityID), Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected anti-give NPC item-give packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected anti-give NPC ITEM_GIVE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected no queued frames after anti-give NPC ITEM_GIVE, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-bound", owner, "anti-give NPC ITEM_GIVE owner")
+	assertExchangeLiveStateUnchanged(t, runtime, owner, "anti-give NPC ITEM_GIVE live owner")
+}
+
+func TestGameRuntimeItemGiveToTalkNPCWhileOpenExchangeFailsClosed(t *testing.T) {
+	ticketStore := loginticket.NewFileStore(t.TempDir())
+	accounts := accountstore.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("GiveNPCExchOwner", 0x01030e07, 0x02040e07, 1100, 2100, 0, 101, 201)
+	owner.Inventory = []inventory.ItemInstance{{ID: 1913, Vnum: 27001, Count: 3, Slot: 5}}
+	owner.Quickslots = []loginticket.Quickslot{{Position: 2, Type: quickslotproto.TypeItem, Slot: 5}}
+	peer := peerVisibilityCharacter("GiveNPCExchPeer", 0x01030e08, 0x02040e08, 1120, 2120, 0, 101, 201)
+	issuePeerTicket(t, ticketStore, "item-give-npc-exch-owner", 0x70707e07, owner)
+	issuePeerTicket(t, ticketStore, "item-give-npc-exch-peer", 0x70707e08, peer)
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-exch-owner", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
+		t.Fatalf("seed exchange NPC item-give owner account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "item-give-npc-exch-peer", Empire: peer.Empire, Characters: cloneCharacters([]loginticket.Character{peer})}); err != nil {
+		t.Fatalf("seed exchange NPC item-give peer account: %v", err)
+	}
+	interactionStore := newInteractionDefinitionStore(t, []interactionstore.Definition{{Kind: interactionstore.KindTalk, Ref: "npc:village_guard", Text: "VillageGuard : Keep your blade sharp."}})
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts, nil, interactionStore, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected exchange NPC item-give runtime error: %v", err)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("VillageGuard", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindTalk, "npc:village_guard")
+	if !ok {
+		t.Fatal("expected talk NPC registration to succeed")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-exch-owner", 0x70707e07)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "item-give-npc-exch-peer", 0x70707e08)
+	defer closeSessionFlow(t, peerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_ = flushServerFrames(t, peerFlow)
+
+	startOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderStart, Arg1: peer.VID})))
+	if err != nil {
+		t.Fatalf("unexpected NPC item-give exchange start error: %v", err)
+	}
+	if len(startOut) != 1 {
+		t.Fatalf("expected NPC item-give exchange start to emit one owner frame, got %d", len(startOut))
+	}
+	assertExchangeStartFrame(t, startOut[0], peer.VID, "NPC item-give exchange owner start")
+	queuedStart := flushServerFrames(t, peerFlow)
+	if len(queuedStart) != 1 {
+		t.Fatalf("expected NPC item-give exchange peer start frame, got %d", len(queuedStart))
+	}
+
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientGive(itemproto.ClientGivePacket{TargetVID: uint32(actor.EntityID), Position: itemproto.InventoryPosition(5), Count: 3})))
+	if err != nil {
+		t.Fatalf("unexpected exchange NPC ITEM_GIVE packet error: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected exchange NPC ITEM_GIVE to emit no frames, got %d", len(out))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected no extra queued owner frames after exchange NPC ITEM_GIVE, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected exchange NPC ITEM_GIVE to queue no peer frames, got %d", len(queued))
+	}
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-exch-owner", owner, "exchange NPC ITEM_GIVE owner")
+	assertExchangeAccountUnchanged(t, accounts, "item-give-npc-exch-peer", peer, "exchange NPC ITEM_GIVE peer")
+
+	cancelOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientExchange(itemproto.ClientExchangePacket{Subheader: itemproto.ExchangeSubheaderCancel})))
+	if err != nil {
+		t.Fatalf("unexpected exchange cancel after NPC ITEM_GIVE: %v", err)
+	}
+	if len(cancelOut) != 1 {
+		t.Fatalf("expected exchange shell to remain cancellable after NPC ITEM_GIVE, got %d frames", len(cancelOut))
+	}
+	assertExchangeEndFrame(t, cancelOut[0], "exchange NPC ITEM_GIVE owner cancel")
+	queuedCancel := flushServerFrames(t, peerFlow)
+	if len(queuedCancel) != 1 {
+		t.Fatalf("expected exchange NPC ITEM_GIVE peer cancel END, got %d", len(queuedCancel))
+	}
+	assertExchangeEndFrame(t, queuedCancel[0], "exchange NPC ITEM_GIVE peer cancel")
+}

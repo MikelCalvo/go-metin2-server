@@ -234,6 +234,10 @@ type ClientPickupPacket struct {
 }
 
 type ClientGivePacket struct {
+	// TargetVID names the visible actor the client is attempting to give to:
+	// a currently connected live player, or one currently visible live
+	// static/NPC actor of an owned give kind. Unsupported NPC kinds stay
+	// fail-closed at the runtime handler.
 	TargetVID uint32
 	Position  Position
 	Count     uint8

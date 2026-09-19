@@ -840,6 +840,16 @@ func TestDecodeClientGiveReturnsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestDecodeClientGiveAcceptsStaticActorVisibilityVID(t *testing.T) {
+	packet, err := DecodeClientGive(decodeSingleFrame(t, frame.Encode(HeaderClientGive, []byte{0x07, 0x00, 0x00, 0x00, WindowInventory, 5, 0, 3})))
+	if err != nil {
+		t.Fatalf("unexpected static-actor item-give decode error: %v", err)
+	}
+	if packet != (ClientGivePacket{TargetVID: 7, Position: Position{WindowType: WindowInventory, Cell: 5}, Count: 3}) {
+		t.Fatalf("unexpected static-actor item-give packet: %+v", packet)
+	}
+}
+
 func TestDecodeClientGiveRejectsUnexpectedHeader(t *testing.T) {
 	_, err := DecodeClientGive(frame.Frame{Header: HeaderClientGive + 1, Length: 12, Payload: make([]byte, clientGivePayloadSize)})
 	if !errors.Is(err, ErrUnexpectedHeader) {

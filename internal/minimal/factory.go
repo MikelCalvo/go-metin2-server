@@ -9135,7 +9135,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if hasActiveMyShopOpen {
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
-					if !ownsLiveSharedWorldSession() || !sharedWorld.HasVisiblePlayerTarget(sharedWorldID, packet.TargetVID) {
+					if !ownsLiveSharedWorldSession() {
+						return gameflow.ItemGiveResult{Accepted: false}
+					}
+					visiblePlayer := sharedWorld.HasVisiblePlayerTarget(sharedWorldID, packet.TargetVID)
+					_, visibleNPC := visibleLiveTalkNPCGiveTarget(sharedWorld, sharedWorldID, packet.TargetVID)
+					if !visiblePlayer && !visibleNPC {
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
 					template, ok := runtime.resolveRuntimeItemTemplate(selectedPlayer, inventory.SlotIndex(packet.Position.Cell))
@@ -9143,6 +9148,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
 					if message, ok := selectedPlayer.GiveRejectText(inventory.SlotIndex(packet.Position.Cell), uint16(packet.Count), template); ok {
+						if !visiblePlayer {
+							return gameflow.ItemGiveResult{Accepted: false}
+						}
 						frames := [][]byte{chatproto.EncodeChatDelivery(chatproto.ChatDeliveryPacket{Type: chatproto.ChatTypeInfo, VID: 0, Empire: 0, Message: message})}
 						frames = prependMerchantCloseFrame(prependExchangeCloseFrame(frames))
 						return gameflow.ItemGiveResult{Accepted: true, Frames: frames}
@@ -9151,7 +9159,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						slot := inventory.SlotIndex(packet.Position.Cell)
 						count := uint16(packet.Count)
 						source, ok := carriedInventoryItemForSlot(selectedPlayer.LiveCharacter(), slot)
-						if ok && count != 0 && count <= source.Count && source.Count <= template.MaxCount &&
+						if visiblePlayer && ok && count != 0 && count <= source.Count && source.Count <= template.MaxCount &&
 							!(count < source.Count && !template.Stackable) &&
 							!template.AntiGet && !template.AntiDrop && !template.AntiGive && !template.AntiSell && !template.AntiStack &&
 							template.EquipSlot == "" && selectedPlayer.CanUseTemplate(template) {
@@ -9167,7 +9175,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
-					frames, ok := applyVisiblePlayerItemGive(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, packet, template)
+					var frames [][]byte
+					if visiblePlayer {
+						frames, ok = applyVisiblePlayerItemGive(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, packet, template)
+					} else {
+						frames, ok = applyVisibleNPCItemGive(runtime, accounts, sharedWorld, selectedPlayer, &sessionTicket, sharedWorldID, packet, template)
+					}
 					if !ok {
 						return gameflow.ItemGiveResult{Accepted: false}
 					}
@@ -10954,6 +10967,141 @@ func applyVisiblePlayerItemGive(
 	}
 	sharedWorld.UpdateCharacterWithVisibilityTransition(target.Entity.ID, target.Character, updatedPeer, nil)
 	_ = sharedWorld.EnqueueToEntity(target.Entity.ID, peerFrames)
+	sessionTicket.Characters = updatedGiverCharacters
+	selectedPlayer.SetPersistedSnapshot(persistedGiver)
+	sharedWorld.UpdateCharacterWithVisibilityTransition(originID, previousGiver, updatedGiver, nil)
+	return giverFrames, true
+}
+
+func visibleLiveNPCGiveTarget(sharedWorld *sharedWorldRegistry, originID uint64, targetVID uint32) (worldruntime.StaticEntity, bool) {
+	if sharedWorld == nil || originID == 0 || targetVID == 0 {
+		return worldruntime.StaticEntity{}, false
+	}
+
+	sharedWorld.mu.Lock()
+	defer sharedWorld.mu.Unlock()
+
+	if _, ok := sharedWorld.sessionEntryLocked(originID); !ok {
+		return worldruntime.StaticEntity{}, false
+	}
+	origin, ok := sharedWorld.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return worldruntime.StaticEntity{}, false
+	}
+	actor, ok := sharedWorld.scopesLocked().VisibleStaticActorByVID(origin, targetVID)
+	if !ok || actor.Entity.ID == 0 {
+		return worldruntime.StaticEntity{}, false
+	}
+	if !worldruntime.StaticActorWithinInteractionRange(origin, actor, staticActorInteractionMaxDistance) {
+		return worldruntime.StaticEntity{}, false
+	}
+	if sharedWorld.staticActorDeadLocked(actor.Entity.ID) {
+		return worldruntime.StaticEntity{}, false
+	}
+	return actor, true
+}
+
+func visibleLiveTalkNPCGiveTarget(sharedWorld *sharedWorldRegistry, originID uint64, targetVID uint32) (worldruntime.StaticEntity, bool) {
+	actor, ok := visibleLiveNPCGiveTarget(sharedWorld, originID, targetVID)
+	if !ok {
+		return worldruntime.StaticEntity{}, false
+	}
+	if actor.InteractionKind != interactionstore.KindTalk || strings.TrimSpace(actor.InteractionRef) == "" {
+		return worldruntime.StaticEntity{}, false
+	}
+	return actor, true
+}
+
+func applyVisibleNPCItemGive(
+	runtime *gameRuntime,
+	accounts accountstore.Store,
+	sharedWorld *sharedWorldRegistry,
+	selectedPlayer *player.Runtime,
+	sessionTicket *loginticket.Ticket,
+	originID uint64,
+	packet itemproto.ClientGivePacket,
+	template itemcatalog.Template,
+) ([][]byte, bool) {
+	if runtime == nil || accounts == nil || sharedWorld == nil || sharedWorld.entities == nil || selectedPlayer == nil || sessionTicket == nil || originID == 0 {
+		return nil, false
+	}
+	if packet.TargetVID == 0 || packet.Count == 0 || packet.Position.WindowType != itemproto.WindowInventory || packet.Position.Cell >= itemproto.InventoryMaxCell {
+		return nil, false
+	}
+	if !itemcatalog.ValidTemplate(template) || template.Vnum == 0 {
+		return nil, false
+	}
+	if template.AntiGet || template.AntiDrop || template.AntiGive || template.AntiSell || template.AntiStack || template.EquipSlot != "" {
+		return nil, false
+	}
+	slot := inventory.SlotIndex(packet.Position.Cell)
+	count := uint16(packet.Count)
+	previousGiver := selectedPlayer.LiveCharacter()
+	if previousGiver.ID == 0 || characterAtBootstrapHPFloor(previousGiver) {
+		return nil, false
+	}
+	source, ok := carriedInventoryItemForSlot(previousGiver, slot)
+	if !ok || source.ID == 0 || source.Vnum != template.Vnum || count == 0 || count > source.Count || source.Count == 0 || source.Count > template.MaxCount {
+		return nil, false
+	}
+	if count != source.Count {
+		return nil, false
+	}
+	if !selectedPlayer.CanUseTemplate(template) {
+		return nil, false
+	}
+	if _, ok := visibleLiveTalkNPCGiveTarget(sharedWorld, originID, packet.TargetVID); !ok {
+		return nil, false
+	}
+	if sharedWorld.hasActiveExchange(originID) {
+		return nil, false
+	}
+	dropResult, ok := selectedPlayer.DropInventoryItemWithTemplate(slot, count, template)
+	if !ok || !dropResult.Changed || dropResult.FromOccupied {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	giverFrames, err := itemDropInventoryResultFramesWithTemplates(dropResult, runtime.itemTemplates)
+	if err != nil || len(giverFrames) == 0 {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	quickslotFrames, ok := itemRemovalQuickslotSyncFrames(selectedPlayer, slot)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if len(quickslotFrames) != 0 {
+		giverFrames = append(giverFrames, quickslotFrames...)
+	}
+	updatedGiver := selectedPlayer.LiveCharacter()
+	if updatedGiver.ID == 0 {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	persistedGiver := selectedPlayer.PersistedSnapshot()
+	if persistedGiver.ID == 0 || persistedGiver.ID != updatedGiver.ID {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	persistedGiver.Gold = updatedGiver.Gold
+	persistedGiver.Inventory = updatedGiver.Inventory
+	persistedGiver.Equipment = updatedGiver.Equipment
+	persistedGiver.Quickslots = updatedGiver.Quickslots
+	giverAccount, err := accounts.Load(sessionTicket.Login)
+	if err != nil {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	updatedGiverCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, selectedPlayer.SessionLink().CharacterIndex, persistedGiver)
+	if !ok {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
+	if !saveAccountSnapshot(accounts, giverAccount.Login, giverAccount.Empire, updatedGiverCharacters) {
+		selectedPlayer.ApplyPersistedSnapshot(previousGiver)
+		return nil, false
+	}
 	sessionTicket.Characters = updatedGiverCharacters
 	selectedPlayer.SetPersistedSnapshot(persistedGiver)
 	sharedWorld.UpdateCharacterWithVisibilityTransition(originID, previousGiver, updatedGiver, nil)
