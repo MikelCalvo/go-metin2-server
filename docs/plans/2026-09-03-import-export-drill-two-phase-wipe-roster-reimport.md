@@ -107,10 +107,16 @@ Rules:
 ## What this is not yet
 
 - automatic / scheduled execution of the printed script
-- cascade-delete inside tip-`0002` `ImportAccountCharacterRoster`
 - stock production driver registration
 - DB-backed runtime repositories / daemon mutation routes
 - remote admin, secrets in git, metrics/tracing
+
+Opt-in tip-`0003` item-state cascade-delete inside
+`ImportAccountCharacterRoster` (`CascadeDeleteItemState`, only together with
+`Replace`) is a separate programmatic companion and does not change this
+printer. The printed two-phase script still wipes character-FK kinds before
+roster replace and does not pass `CascadeDeleteItemState`. Other child tip
+domains stay fail-closed on roster replace.
 
 Follow-up owned separately: read-only `synthesize-wipe-export-status` for retained `wipe-quarantine.json` — see [CLI synthesize wipe-export status](2026-09-03-cli-synthesize-wipe-export-status.md).
 
@@ -163,7 +169,7 @@ GREEN on `lane/persistence`.
 
 ## Anti-goals / ordering constraints
 
-- Do not invent cascade delete inside roster replace.
+- Do not change the two-phase printer to enable roster item-state cascade-delete.
 - Do not rewrite retained `quarantine.json` in place.
 - Do not auto-run printed scripts from CLI / contrib / cron.
 - Do not push `origin/main`; push only `origin/lane/persistence`.

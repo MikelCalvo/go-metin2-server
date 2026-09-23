@@ -593,6 +593,151 @@ INSERT INTO character_inventory_items (
 	}
 }
 
+func TestSQLiteHarnessRosterImportReplaceCascadeDeletesListedAccountItemState(t *testing.T) {
+	db := openSQLiteRosterImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, CharacterItemStateMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", CharacterItemStateMigrationVersion, err)
+	}
+
+	seedExport, err := ExportAccountCharacterRoster([]Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				rosterExportCharacter(11, "AlphaWar"),
+			},
+		},
+		{
+			Login:  "Bravo",
+			Empire: 2,
+			Characters: []loginticket.Character{
+				{},
+				rosterExportCharacter(22, "BravoNinja"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster(seed): %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportAccountCharacterRoster: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO character_inventory_items (
+    id, character_id, slot, vnum, count, locked
+) VALUES (1001, 11, 0, 27001, 1, 0)`); err != nil {
+		t.Fatalf("seed alpha inventory: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO character_equipment_items (
+    id, character_id, equip_slot, vnum, count, locked
+) VALUES (1002, 11, 'weapon', 19, 1, 0)`); err != nil {
+		t.Fatalf("seed alpha equipment: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO character_quickslots (
+    character_id, position, type, slot
+) VALUES (11, 0, 1, 0)`); err != nil {
+		t.Fatalf("seed alpha quickslot: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO character_inventory_items (
+    id, character_id, slot, vnum, count, locked
+) VALUES (2001, 22, 0, 27002, 1, 0)`); err != nil {
+		t.Fatalf("seed bravo inventory: %v", err)
+	}
+
+	replaceExport := seedExport
+	replaceExport.Accounts = []AccountCharacterRosterAccountRow{seedExport.Accounts[0]}
+	replaceExport.Characters = []AccountCharacterRosterCharacterRow{seedExport.Characters[0]}
+	replaceExport.AccountIDs = []int64{seedExport.Accounts[0].ID}
+
+	result, err := ImportAccountCharacterRoster(ctx, db, replaceExport, ImportAccountCharacterRosterOptions{
+		Replace:                true,
+		CascadeDeleteItemState: true,
+	})
+	if err != nil {
+		t.Fatalf("replace with tip-0003 cascade: %v", err)
+	}
+	if !result.Replaced || !result.ItemStateCascadeDeleted {
+		t.Fatalf("cascade result flags replaced=%v item_state_cascade_deleted=%v, want true/true", result.Replaced, result.ItemStateCascadeDeleted)
+	}
+
+	var alphaAccounts, bravoAccounts, alphaInventory, alphaEquipment, alphaQuickslots, bravoInventory int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts WHERE id = ?`, seedExport.Accounts[0].ID).Scan(&alphaAccounts); err != nil {
+		t.Fatalf("count alpha accounts: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts WHERE id = ?`, seedExport.Accounts[1].ID).Scan(&bravoAccounts); err != nil {
+		t.Fatalf("count bravo accounts: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items WHERE character_id = 11`).Scan(&alphaInventory); err != nil {
+		t.Fatalf("count alpha inventory: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_equipment_items WHERE character_id = 11`).Scan(&alphaEquipment); err != nil {
+		t.Fatalf("count alpha equipment: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_quickslots WHERE character_id = 11`).Scan(&alphaQuickslots); err != nil {
+		t.Fatalf("count alpha quickslots: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM character_inventory_items WHERE character_id = 22`).Scan(&bravoInventory); err != nil {
+		t.Fatalf("count bravo inventory: %v", err)
+	}
+	if alphaAccounts != 1 || bravoAccounts != 1 || alphaInventory != 0 || alphaEquipment != 0 || alphaQuickslots != 0 || bravoInventory != 1 {
+		t.Fatalf("cascade left unexpected state alphaA=%d bravoA=%d alphaInv=%d alphaEq=%d alphaQs=%d bravoInv=%d", alphaAccounts, bravoAccounts, alphaInventory, alphaEquipment, alphaQuickslots, bravoInventory)
+	}
+}
+
+func TestSQLiteHarnessRosterImportReplaceItemCascadeIsNoOpBeforeItemSchema(t *testing.T) {
+	db := openSQLiteRosterImportDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, AccountCharacterRosterMigrationVersion); err != nil {
+		t.Fatalf("ApplyToVersion(%d): %v", AccountCharacterRosterMigrationVersion, err)
+	}
+
+	seedExport, err := ExportAccountCharacterRoster([]Account{
+		{
+			Login:  "Alpha",
+			Empire: 1,
+			Characters: []loginticket.Character{
+				rosterExportCharacter(11, "AlphaWar"),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ExportAccountCharacterRoster(seed): %v", err)
+	}
+	if _, err := ImportAccountCharacterRoster(ctx, db, seedExport); err != nil {
+		t.Fatalf("seed ImportAccountCharacterRoster: %v", err)
+	}
+
+	result, err := ImportAccountCharacterRoster(ctx, db, seedExport, ImportAccountCharacterRosterOptions{
+		Replace:                true,
+		CascadeDeleteItemState: true,
+	})
+	if err != nil {
+		t.Fatalf("replace cascade before tip-0003 schema: %v", err)
+	}
+	if !result.Replaced || !result.ItemStateCascadeDeleted || result.AccountCount != 1 || result.CharacterCount != 1 {
+		t.Fatalf("unexpected pre-0003 cascade result: %+v", result)
+	}
+
+	var accountRows, characterRows int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM accounts`).Scan(&accountRows); err != nil {
+		t.Fatalf("count accounts after pre-0003 cascade: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM characters`).Scan(&characterRows); err != nil {
+		t.Fatalf("count characters after pre-0003 cascade: %v", err)
+	}
+	if accountRows != 1 || characterRows != 1 {
+		t.Fatalf("pre-0003 cascade left accounts=%d characters=%d, want 1/1", accountRows, characterRows)
+	}
+}
+
 func openSQLiteRosterImportDB(t *testing.T) *sql.DB {
 	t.Helper()
 

@@ -8,11 +8,15 @@ artifacts so operators can re-check tree-level cutover evidence during incident
 review or release packaging **without** walking the original export-tree or
 opening a database.
 
-This freeze does **not** invent upsert / merge / tip-`0002` cascade-delete, a
+This freeze does **not** invent upsert / merge, a
 stock production driver, automatic / scheduled script execution, new inner
 `go-metin2-export-tree-status-v1` fields, loopback ops mutation, or any claim
 that a present valid tree-status file proves live DB row state beyond the
-existing retained import / wipe-import contracts.
+existing retained import / wipe-import contracts. Opt-in tip-`0003` item-state
+cascade-delete inside `ImportAccountCharacterRoster` (`CascadeDeleteItemState`
+only together with `Replace`) is a separate programmatic companion and is not
+wired by this inspector or by the two-phase drill printer. Other child tip
+domains stay fail-closed on roster replace.
 
 ## Why docs-first
 
@@ -247,7 +251,7 @@ import itself.
 
 - new inner `go-metin2-export-tree-status-v1` fields
 - walking / hashing sibling tip-kind files from the original export-tree
-- upsert / merge / tip-`0002` single-pass cascade-delete
+- upsert / merge
 - stock production DB driver registration in `gamed` / `authd` / `metin2-migrate`
 - automatic / scheduled execution of printed synthesize / import / status scripts
 - opening a database from `export-tree-status-status`
@@ -320,7 +324,9 @@ GREEN on `lane/persistence`.
   `export-tree-status-status` redirects (`*-before-status.json` /
   `*-after-status.json`) with the same require flags as the live after-status
   line.
-- Upsert / auto-run / stock production driver / cascade-delete remain deferred.
+- Upsert / auto-run / stock production driver remain deferred. Tip-`0002`
+  item-state cascade-delete is a separate programmatic companion and is not
+  part of this inspector or the two-phase printer.
 - Follow-up owned separately and now GREEN: read-only `catalog-status` for retained `migration-catalog.json` — see [CLI catalog-status contract freeze](2026-09-05-cli-catalog-status-contract-freeze.md).
 - Follow-up owned separately and now GREEN: read-only `apply-lock-aside-status` for retained `apply-lock-aside.json` — see [CLI apply-lock-aside-status contract freeze](2026-09-05-cli-apply-lock-aside-status-contract-freeze.md).
 - Follow-up owned separately and now GREEN: read-only `backup-tree-status` for retained backup-restore trees — see [CLI backup-tree-status contract freeze](2026-09-06-cli-backup-tree-status-contract-freeze.md).
@@ -343,5 +349,5 @@ GREEN on `lane/persistence`.
 - Do not open RED until this freeze is committed.
 - Do not walk the original export-tree from the status-status command.
 - Do not register a production driver or auto-run printed scripts.
-- Do not invent cascade delete inside roster replace.
+- Do not wire tip-`0002` item-state cascade-delete into this inspector or the drill printer.
 - Do not push `origin/main`; push only `origin/lane/persistence`.

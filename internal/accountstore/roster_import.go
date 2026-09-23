@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 )
@@ -37,6 +38,11 @@ type AccountCharacterRosterImportResult struct {
 	// Omitted from JSON when false so legacy insert-only import-result files stay
 	// valid.
 	Replaced bool `json:"replaced,omitempty"`
+	// ItemStateCascadeDeleted is true when that replace also deleted tip-0003
+	// inventory / equipment / quickslot rows for characters of the listed
+	// accounts before deleting characters / accounts. Omitted from JSON when
+	// false so replace results without the companion stay valid.
+	ItemStateCascadeDeleted bool `json:"item_state_cascade_deleted,omitempty"`
 }
 
 // ImportAccountCharacterRosterOptions controls opt-in mutation policy for
@@ -46,9 +52,17 @@ type ImportAccountCharacterRosterOptions struct {
 	// Replace, when true, deletes existing tip-0002 accounts/characters rows for
 	// every account id in the quarantined export summary before inserting the
 	// canonicalized export rows, all inside one transaction. Accounts not listed
-	// in the export remain untouched. Child tip domains are not cascade-deleted;
-	// FK dependents fail closed and roll the transaction back.
+	// in the export remain untouched. Without CascadeDeleteItemState, child tip
+	// domains are not cascade-deleted; FK dependents fail closed and roll the
+	// transaction back.
 	Replace bool
+	// CascadeDeleteItemState, when true together with Replace, deletes tip-0003
+	// character_inventory_items / character_equipment_items / character_quickslots
+	// for every character currently owned by a listed account before the tip-0002
+	// character and account deletes, still inside the same transaction. It is a
+	// no-op when those tip-0003 tables are absent. Other child tip domains stay
+	// fail-closed. Ignored unless Replace is also true.
+	CascadeDeleteItemState bool
 }
 
 // ImportAccountCharacterRoster validates a retained 0002 roster export through
@@ -60,7 +74,10 @@ type ImportAccountCharacterRosterOptions struct {
 // Without options (or with Replace=false) it does not invent upsert / merge
 // policy: duplicate primary keys fail closed and roll the transaction back.
 // Pass ImportAccountCharacterRosterOptions{Replace: true} for the opt-in scoped
-// replace path frozen by the tip-0002 replace contract.
+// replace path frozen by the tip-0002 replace contract. Set CascadeDeleteItemState
+// on that same options value to also delete tip-0003 item rows for characters of
+// the listed accounts before the roster delete. The two-phase wipe→roster→reimport
+// drill is unchanged and does not enable this companion.
 func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQLMigrationExecutor, export AccountCharacterRosterExport, opts ...ImportAccountCharacterRosterOptions) (AccountCharacterRosterImportResult, error) {
 	if rosterImportExecutorIsNil(executor) {
 		return AccountCharacterRosterImportResult{}, ErrAccountCharacterRosterImportExecutorRequired
@@ -69,8 +86,10 @@ func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQL
 		return AccountCharacterRosterImportResult{}, fmt.Errorf("ImportAccountCharacterRoster accepts at most one options value")
 	}
 	replace := false
+	cascadeDeleteItemState := false
 	if len(opts) == 1 {
 		replace = opts[0].Replace
+		cascadeDeleteItemState = replace && opts[0].CascadeDeleteItemState
 	}
 
 	canonical, summary, err := QuarantineAccountCharacterRosterExport(export)
@@ -79,13 +98,14 @@ func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQL
 	}
 
 	result := AccountCharacterRosterImportResult{
-		MigrationVersion: AccountCharacterRosterMigrationVersion,
-		MigrationName:    AccountCharacterRosterMigrationName,
-		AccountCount:     summary.AccountCount,
-		CharacterCount:   summary.CharacterCount,
-		AccountIDs:       append([]int64(nil), summary.AccountIDs...),
-		CharacterIDs:     append([]uint32(nil), summary.CharacterIDs...),
-		Replaced:         replace,
+		MigrationVersion:        AccountCharacterRosterMigrationVersion,
+		MigrationName:           AccountCharacterRosterMigrationName,
+		AccountCount:            summary.AccountCount,
+		CharacterCount:          summary.CharacterCount,
+		AccountIDs:              append([]int64(nil), summary.AccountIDs...),
+		CharacterIDs:            append([]uint32(nil), summary.CharacterIDs...),
+		Replaced:                replace,
+		ItemStateCascadeDeleted: cascadeDeleteItemState,
 	}
 	if result.AccountIDs == nil {
 		result.AccountIDs = []int64{}
@@ -105,6 +125,11 @@ func ImportAccountCharacterRoster(ctx context.Context, executor dbmigrations.SQL
 
 	if replace {
 		for _, accountID := range summary.AccountIDs {
+			if cascadeDeleteItemState {
+				if err := deleteAccountCharacterItemStateForAccount(ctx, tx, accountID); err != nil {
+					return AccountCharacterRosterImportResult{}, rollbackAfterRosterImportFailure(tx, err)
+				}
+			}
 			if err := deleteAccountCharacterRosterForAccount(ctx, tx, accountID); err != nil {
 				return AccountCharacterRosterImportResult{}, rollbackAfterRosterImportFailure(tx, err)
 			}
@@ -147,11 +172,50 @@ func requireAccountCharacterRosterSchema(ctx context.Context, querier dbmigratio
 	return fmt.Errorf("%w: ledger tip %d missing version %d %q", ErrAccountCharacterRosterImportSchemaRequired, latest, AccountCharacterRosterMigrationVersion, AccountCharacterRosterMigrationName)
 }
 
+func deleteAccountCharacterItemStateForAccount(ctx context.Context, tx *sql.Tx, accountID int64) error {
+	// Tip-0003 only. Delete inventory, equipment, then quickslots for characters
+	// currently owned by this account so the following tip-0002 character DELETE
+	// is not blocked by those FKs. Missing tables are a no-op (schema may still
+	// be tip-0002). Other child domains stay fail-closed.
+	const inventory = `DELETE FROM character_inventory_items WHERE character_id IN (SELECT id FROM characters WHERE account_id = ?)`
+	const equipment = `DELETE FROM character_equipment_items WHERE character_id IN (SELECT id FROM characters WHERE account_id = ?)`
+	const quickslots = `DELETE FROM character_quickslots WHERE character_id IN (SELECT id FROM characters WHERE account_id = ?)`
+	if err := execRosterItemStateDelete(ctx, tx, inventory, accountID, "inventory items"); err != nil {
+		return err
+	}
+	if err := execRosterItemStateDelete(ctx, tx, equipment, accountID, "equipment items"); err != nil {
+		return err
+	}
+	return execRosterItemStateDelete(ctx, tx, quickslots, accountID, "quickslots")
+}
+
+func execRosterItemStateDelete(ctx context.Context, tx *sql.Tx, query string, accountID int64, what string) error {
+	if _, err := tx.ExecContext(ctx, query, accountID); err != nil {
+		if rosterItemStateTableMissing(err) {
+			return nil
+		}
+		return fmt.Errorf("delete %s for account %d: %w", what, accountID, err)
+	}
+	return nil
+}
+
+func rosterItemStateTableMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "no such table") && !strings.Contains(message, "doesn't exist") && !strings.Contains(message, "does not exist") && !strings.Contains(message, "undefined_table") {
+		return false
+	}
+	return strings.Contains(message, "character_inventory_items") || strings.Contains(message, "character_equipment_items") || strings.Contains(message, "character_quickslots")
+}
+
 func deleteAccountCharacterRosterForAccount(ctx context.Context, tx *sql.Tx, accountID int64) error {
 	// Delete characters before accounts so the tip-0002 FK
 	// (characters.account_id → accounts.id) cannot fail closed mid replace.
-	// Child tip domains are intentionally not cascade-deleted; FK dependents
-	// fail closed here and roll the surrounding transaction back.
+	// Unless CascadeDeleteItemState was requested, child tip domains are not
+	// cascade-deleted; remaining FK dependents fail closed here and roll the
+	// surrounding transaction back.
 	if _, err := tx.ExecContext(ctx, `DELETE FROM characters WHERE account_id = ?`, accountID); err != nil {
 		return fmt.Errorf("delete characters for account %d: %w", accountID, err)
 	}
