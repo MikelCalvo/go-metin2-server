@@ -25,7 +25,7 @@ What this document adds is the next narrower question:
 This contract currently applies only to:
 - authored content loaded by the current single-process bootstrap runtime
 - one stable top-level authored collection named `spawn_groups`
-- stationary non-player combatants only
+- stationary non-player combatants, plus one opt-in idle roam / wander step around authored home when `combat_profiles.roam_delay_ms` is positive (omitted or zero stays stationary)
 - one authored `combat_profile` per spawn group
 - one authored spawn position on one map per spawn group
 - one server-owned respawn lifecycle that recreates the combatant from authored content after death
@@ -35,7 +35,7 @@ This contract currently applies only to:
 - atomic bootstrap visibility for content-bundle replacement: live sessions receive static-actor replacement visibility only after the full replacement succeeds; successful replacements replay deletes for removed actors before newly imported actor bootstrap bursts, and failed replacement/rollback paths discard all staged delete/add visibility frames instead of leaking partial content to online sessions
 
 This contract does **not** yet claim:
-- roaming/wandering/pathing AI beyond the pure spawn-position leash classifier
+- pack behaviors, pathfinding around obstacles, or authored patrol routes (one opt-in idle roam / wander step around authored home is owned below; WORLD-PATROL stays the later route companion)
 - pack behaviors or multi-wave encounters
 - random loot tables beyond one authored weighted `drop_tables[].entries` pick, quest rewards, or corpse interactions
 - spawn conditions, timers authored per player, or scripting hooks
@@ -648,10 +648,30 @@ Explicit non-goals for this anti-leak freeze alone:
 - remapping engagement or chase/return schedules across non-identical content-bundle replacement (live damaged HP remapping and proximity-suppress remapping across that replacement are frozen above)
 - converting generic operator actor presentation updates or respawn rebuild to MOVE
 
+## First opt-in idle roam / wander step
+
+Question frozen here:
+
+**Once spawn-backed actors stay at authored home until chase, homeward, or return, what is the smallest honest opt-in so one live unengaged `at_home` actor can take a single wander step around that home without turning default mobs into roamers?**
+
+Contract (now GREEN):
+- `combat_profiles.roam_delay_ms` is optional. Omitted or zero keeps the actor stationary at authored home so existing idle-flush proofs stay green.
+- a positive authored delay, at or above `250ms` and at or below `60s`, arms one deterministic same-map wander step of the profile `max_step` (bootstrap `100` when omitted) along `+x` from authored home
+- the step stays inside the leash, emits the retained-viewer chase MOVE without `CHANGE_SPEED`, and does not repeat while the actor is no longer `at_home`
+- flush order is due respawns, then return, then homeward, then this one roam step, then chase
+- chase, homeward, and return still win: an engaged actor, a `return_required` actor, or an actor already arming homeward or return does not roam
+- after the one step the actor is `within_radius` and the existing homeward seam owns the walk back
+- pack-member assist, occupancy detours, and authored patrol routes stay deferred (WORLD-PATROL is the later route companion)
+
+### Runtime proof
+
+- `internal/worldruntime/spawn_lifecycle_test.go` covers the pure at-home roam planner and its fail-closed cases (within-radius, return-required, non-positive step, step past the leash).
+- `internal/minimal/spawn_roam_runtime_test.go` covers one live opt-in roam MOVE for an unengaged at-home spawn actor, and that an omitted roam delay stays at home.
+
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- patrol routes or idle roaming
+- patrol routes, pack AI assist, and pathfinding around obstacles (one opt-in idle roam / wander step around authored home is specified below; WORLD-PATROL stays the later authored-route companion)
 - broader hostile retaliation beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, one profile-resolved sustained delayed self-only server-origin retaliation cadence at a time, and the frozen proximity aggro-radius acquisition seam below
 - random spawn selection from a pool
 - random loot tables, broader kill rewards, or corpse gameplay

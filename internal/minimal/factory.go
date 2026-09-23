@@ -617,6 +617,8 @@ type gameRuntime struct {
 	spawnChaseStepDueAt     map[uint64]time.Time
 	spawnHomewardMu         sync.Mutex
 	spawnHomewardStepDueAt  map[uint64]time.Time
+	spawnRoamMu             sync.Mutex
+	spawnRoamStepDueAt      map[uint64]time.Time
 	chaseSpeedMu            sync.Mutex
 	chaseSpeeds             []spawnGroupChaseChangeSpeedDelivery
 	now                     func() time.Time
@@ -1376,6 +1378,7 @@ func (r *gameRuntime) reloadPersistedStaticActorsLocked() error {
 		r.clearSpawnGroupReturnStep(actor.EntityID)
 		r.clearSpawnGroupChaseStep(actor.EntityID)
 		r.clearSpawnGroupHomewardStep(actor.EntityID)
+		r.clearSpawnGroupRoamStep(actor.EntityID)
 	}
 	if err := r.loadPersistedStaticActors(); err != nil {
 		return err
@@ -2117,6 +2120,7 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 			}
 			if r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID) {
 				r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
+				r.syncSpawnGroupRoamStepScheduleForEntity(respawn.EntityID)
 			}
 		}
 		return
@@ -2135,6 +2139,7 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		if idx == -1 {
 			if r.sharedWorld.FlushReadyStaticActorRespawn(respawn.EntityID) {
 				r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
+				r.syncSpawnGroupRoamStepScheduleForEntity(respawn.EntityID)
 			}
 			continue
 		}
@@ -2155,6 +2160,7 @@ func (r *gameRuntime) flushReadyStaticActorRespawns() {
 		r.syncSpawnGroupReturnStepScheduleForEntity(respawn.EntityID)
 		r.clearSpawnGroupChaseStep(respawn.EntityID)
 		r.clearSpawnGroupHomewardStep(respawn.EntityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(respawn.EntityID)
 		// Persist again after the live rebuild so still-dead HP / absolute deadline
 		// fields are cleared from the static-actor snapshot before the next restart.
 		_ = r.persistStaticActorSnapshot(r.sharedWorld.StaticActors())
@@ -2451,6 +2457,7 @@ func (r *gameRuntime) syncSpawnGroupChaseStepScheduleForEntity(entityID uint64) 
 	if !ok || actor.Dead || actor.SpawnGroupRef == "" || actor.SpawnLeash == nil || actor.SpawnLeash.ReturnRequired {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.clearSpawnGroupHomewardStep(entityID)
+		r.clearSpawnGroupRoamStep(entityID)
 		return
 	}
 	r.sharedWorld.mu.Lock()
@@ -2459,21 +2466,25 @@ func (r *gameRuntime) syncSpawnGroupChaseStepScheduleForEntity(entityID uint64) 
 	if !engaged || engagedBy == 0 {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 		return
 	}
 	owner, ok := r.sharedWorld.playerCharacter(engagedBy)
 	if !ok || characterAtBootstrapHPFloor(owner) {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 		return
 	}
 	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
 	if _, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID)); !ok {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 		return
 	}
 	r.clearSpawnGroupHomewardStep(entityID)
+	r.clearSpawnGroupRoamStep(entityID)
 	r.scheduleSpawnGroupChaseStep(entityID)
 }
 
@@ -2748,13 +2759,184 @@ func (r *gameRuntime) syncSpawnGroupHomewardStepScheduleForEntity(entityID uint6
 	r.sharedWorld.mu.Unlock()
 	if engagedBy != 0 {
 		r.clearSpawnGroupHomewardStep(entityID)
+		r.clearSpawnGroupRoamStep(entityID)
 		return
 	}
 	if _, ok := r.sharedWorld.PlanSpawnGroupHomewardStep(entityID, r.effectiveSpawnGroupMaxStep(entityID)); !ok {
 		r.clearSpawnGroupHomewardStep(entityID)
 		return
 	}
+	r.clearSpawnGroupRoamStep(entityID)
 	r.scheduleSpawnGroupHomewardStep(entityID)
+}
+
+func (r *gameRuntime) scheduleSpawnGroupRoamStep(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok {
+		return
+	}
+	delay := worldruntime.EffectiveStaticActorSpawnRoamDelay(actor.CombatProfile)
+	if delay <= 0 {
+		return
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnRoamMu.Lock()
+	defer r.spawnRoamMu.Unlock()
+	if r.spawnRoamStepDueAt == nil {
+		r.spawnRoamStepDueAt = make(map[uint64]time.Time)
+	}
+	if _, exists := r.spawnRoamStepDueAt[entityID]; exists {
+		return
+	}
+	r.spawnRoamStepDueAt[entityID] = now.Add(delay)
+}
+
+func (r *gameRuntime) clearSpawnGroupRoamStep(entityID uint64) {
+	if r == nil || entityID == 0 {
+		return
+	}
+	r.spawnRoamMu.Lock()
+	defer r.spawnRoamMu.Unlock()
+	delete(r.spawnRoamStepDueAt, entityID)
+}
+
+func (r *gameRuntime) syncSpawnGroupRoamStepScheduleForEntity(entityID uint64) {
+	if r == nil || entityID == 0 || r.sharedWorld == nil {
+		return
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok || actor.Dead || actor.SpawnGroupRef == "" || actor.SpawnLeash == nil || actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome || actor.SpawnLeash.ReturnRequired {
+		r.clearSpawnGroupRoamStep(entityID)
+		return
+	}
+	if worldruntime.EffectiveStaticActorSpawnRoamDelay(actor.CombatProfile) <= 0 {
+		r.clearSpawnGroupRoamStep(entityID)
+		return
+	}
+	r.sharedWorld.mu.Lock()
+	engagedBy := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if engagedBy != 0 {
+		r.clearSpawnGroupRoamStep(entityID)
+		return
+	}
+	r.spawnHomewardMu.Lock()
+	_, homewardArmed := r.spawnHomewardStepDueAt[entityID]
+	r.spawnHomewardMu.Unlock()
+	r.spawnReturnMu.Lock()
+	_, returnArmed := r.spawnReturnStepDueAt[entityID]
+	r.spawnReturnMu.Unlock()
+	if homewardArmed || returnArmed {
+		r.clearSpawnGroupRoamStep(entityID)
+		return
+	}
+	if _, ok := r.planSpawnGroupRoamStep(entityID); !ok {
+		r.clearSpawnGroupRoamStep(entityID)
+		return
+	}
+	r.scheduleSpawnGroupRoamStep(entityID)
+}
+
+func (r *gameRuntime) planSpawnGroupRoamStep(entityID uint64) (worldruntime.SpawnLeashRoamStepPlan, bool) {
+	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 {
+		return worldruntime.SpawnLeashRoamStepPlan{}, false
+	}
+	r.sharedWorld.mu.Lock()
+	actor, ok := r.sharedWorld.entities.StaticActor(entityID)
+	r.sharedWorld.mu.Unlock()
+	if !ok {
+		return worldruntime.SpawnLeashRoamStepPlan{}, false
+	}
+	return worldruntime.PlanStaticActorSpawnLeashRoamStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), r.effectiveSpawnGroupMaxStep(entityID))
+}
+
+func (r *gameRuntime) dueSpawnGroupRoamStepIDs() []uint64 {
+	if r == nil {
+		return nil
+	}
+	now := time.Now()
+	if r.now != nil {
+		now = r.now()
+	}
+	r.spawnRoamMu.Lock()
+	defer r.spawnRoamMu.Unlock()
+	if len(r.spawnRoamStepDueAt) == 0 {
+		return nil
+	}
+	dueIDs := make([]uint64, 0, len(r.spawnRoamStepDueAt))
+	for entityID, dueAt := range r.spawnRoamStepDueAt {
+		if dueAt.IsZero() || now.Before(dueAt) {
+			continue
+		}
+		dueIDs = append(dueIDs, entityID)
+	}
+	sort.Slice(dueIDs, func(i, j int) bool { return dueIDs[i] < dueIDs[j] })
+	return dueIDs
+}
+
+func (r *gameRuntime) flushDueSpawnGroupRoamSteps() {
+	if r == nil {
+		return
+	}
+	for _, entityID := range r.dueSpawnGroupRoamStepIDs() {
+		if !r.stepSpawnGroupRoam(entityID) {
+			r.clearSpawnGroupRoamStep(entityID)
+			continue
+		}
+		r.clearSpawnGroupRoamStep(entityID)
+		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
+	}
+}
+
+func (r *gameRuntime) stepSpawnGroupRoam(entityID uint64) bool {
+	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 {
+		return false
+	}
+	actor, ok := r.SpawnGroup(entityID)
+	if !ok || actor.Dead || actor.SpawnGroupRef == "" || actor.SpawnLeash == nil || actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome || actor.SpawnLeash.ReturnRequired {
+		return false
+	}
+	if worldruntime.EffectiveStaticActorSpawnRoamDelay(actor.CombatProfile) <= 0 {
+		return false
+	}
+	r.sharedWorld.mu.Lock()
+	engagedBy := r.sharedWorld.staticActorCombatEngagedBy[entityID]
+	r.sharedWorld.mu.Unlock()
+	if engagedBy != 0 {
+		return false
+	}
+	plan, ok := r.planSpawnGroupRoamStep(entityID)
+	if !ok || !plan.Next.Valid() || plan.Next.Equal(worldruntime.NewPosition(actor.MapIndex, actor.X, actor.Y)) {
+		return false
+	}
+
+	r.staticActorMu.Lock()
+	defer r.staticActorMu.Unlock()
+	current := r.sharedWorld.StaticActors()
+	idx := staticActorSnapshotIndex(current, entityID)
+	if idx == -1 || current[idx].SpawnGroupRef == "" || current[idx].Dead {
+		return false
+	}
+	target := cloneStaticActorSnapshots(current)
+	target[idx].MapIndex = plan.Next.MapIndex
+	target[idx].X = plan.Next.X
+	target[idx].Y = plan.Next.Y
+	if !r.persistStaticActorSnapshot(target) {
+		return false
+	}
+	chasePlan := worldruntime.SpawnChaseStepPlan{Evaluation: plan.Evaluation, Next: plan.Next, Complete: false}
+	if _, ok := r.applySpawnGroupRelocateStepPlan(entityID, chasePlan, false); !ok {
+		_ = r.persistStaticActorSnapshot(current)
+		return false
+	}
+	return true
 }
 
 func (r *gameRuntime) dueSpawnGroupHomewardStepIDs() []uint64 {
@@ -3246,8 +3428,14 @@ func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSn
 }
 
 func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool) {
+	return r.applySpawnGroupRelocateStepPlan(entityID, plan, true)
+}
+
+func (r *gameRuntime) applySpawnGroupRelocateStepPlan(entityID uint64, plan worldruntime.SpawnChaseStepPlan, emitChangeSpeed bool) (SpawnGroupReturnStepSnapshot, bool) {
 	snapshot, ok, speedDeliveries := r.applySpawnGroupChaseStepPlanLocked(entityID, plan)
-	r.queueSpawnGroupChaseChangeSpeed(speedDeliveries)
+	if emitChangeSpeed {
+		r.queueSpawnGroupChaseChangeSpeed(speedDeliveries)
+	}
 	return snapshot, ok
 }
 
@@ -4235,6 +4423,7 @@ func (r *gameRuntime) registerStaticActorWithInteractionCombatProfileSpawnGroupR
 		return StaticActorSnapshot{}, false
 	}
 	r.syncSpawnGroupReturnStepSchedule(registered)
+	r.syncSpawnGroupRoamStepScheduleForEntity(registered.EntityID)
 	return registered, true
 }
 
@@ -4301,6 +4490,7 @@ func (r *gameRuntime) updateStaticActorWithInteractionCombatProfileAndSpawnGroup
 		return StaticActorSnapshot{}, false
 	}
 	r.syncSpawnGroupReturnStepSchedule(updated)
+	r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 	// Operator/runtime update releases engagement / selected-target ownership in
 	// shared-world; clear any pending chase deadline so a stale 5s chase MOVE
 	// cannot fire after that owned reset boundary (matches return-home / remove).
@@ -4422,6 +4612,7 @@ func (r *gameRuntime) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupLeashSnap
 	r.syncSpawnGroupReturnStepSchedule(returned.Actor)
 	r.clearSpawnGroupChaseStep(entityID)
 	r.clearSpawnGroupHomewardStep(entityID)
+	r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 	return returned, true
 }
 
@@ -4517,6 +4708,7 @@ func (r *gameRuntime) RemoveStaticActor(entityID uint64) (StaticActorSnapshot, b
 	r.clearSpawnGroupReturnStep(entityID)
 	r.clearSpawnGroupChaseStep(entityID)
 	r.clearSpawnGroupHomewardStep(entityID)
+	r.clearSpawnGroupRoamStep(entityID)
 	return removed, true
 }
 
@@ -4760,6 +4952,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		spawnReturnStepDueAt:   make(map[uint64]time.Time),
 		spawnChaseStepDueAt:    make(map[uint64]time.Time),
 		spawnHomewardStepDueAt: make(map[uint64]time.Time),
+		spawnRoamStepDueAt:     make(map[uint64]time.Time),
 		now:                    time.Now,
 	}
 	sharedWorld.now = func() time.Time {
@@ -6073,6 +6266,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
 						runtime.flushDueSpawnGroupHomewardSteps()
+						runtime.flushDueSpawnGroupRoamSteps()
 						runtime.flushDueSpawnGroupChaseSteps()
 						runtime.flushPendingSpawnGroupChaseChangeSpeed()
 						runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -7238,6 +7432,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					runtime.flushReadyStaticActorRespawns()
 					runtime.flushDueSpawnGroupReturnSteps()
 					runtime.flushDueSpawnGroupHomewardSteps()
+					runtime.flushDueSpawnGroupRoamSteps()
 					runtime.flushDueSpawnGroupChaseSteps()
 					runtime.flushPendingSpawnGroupChaseChangeSpeed()
 					runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -8298,6 +8493,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
+							runtime.flushDueSpawnGroupRoamSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
 							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -8361,6 +8557,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
+							runtime.flushDueSpawnGroupRoamSteps()
 							runtime.flushDueSpawnGroupChaseSteps()
 							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -10817,6 +11014,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			runtime.flushReadyStaticActorRespawns()
 			runtime.flushDueSpawnGroupReturnSteps()
 			runtime.flushDueSpawnGroupHomewardSteps()
+			runtime.flushDueSpawnGroupRoamSteps()
 			runtime.flushDueSpawnGroupChaseSteps()
 			runtime.flushProximitySpawnGroupAggroAcquisition()
 			if runtime.sharedWorld != nil {
@@ -14703,6 +14901,7 @@ func (r *gameRuntime) loadPersistedStaticActors() error {
 		// return_required corpse. Homeward already re-reads by entity.
 		r.syncSpawnGroupReturnStepScheduleForEntity(registered.EntityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(registered.EntityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(registered.EntityID)
 	}
 	loaded = true
 	return nil
@@ -15283,6 +15482,7 @@ func contentBundleCombatProfileSnapshotMatchesDefaults(snapshot worldruntime.Sta
 		normalized.ChaseDelay == defaults.ChaseDelay &&
 		normalized.ReturnDelay == defaults.ReturnDelay &&
 		normalized.HomewardDelay == defaults.HomewardDelay &&
+		normalized.RoamDelay == defaults.RoamDelay &&
 		normalized.MaxStep == defaults.MaxStep &&
 		normalized.ReactionDelay == defaults.ReactionDelay &&
 		normalized.RetaliationPointDelta == defaults.RetaliationPointDelta &&
@@ -15303,6 +15503,10 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	homewardDelay, ok := worldruntime.StaticActorCombatProfileHomewardDelay(snapshot.HomewardDelayMs)
+	if !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	roamDelay, ok := worldruntime.StaticActorCombatProfileRoamDelay(snapshot.RoamDelayMs)
 	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -15332,6 +15536,7 @@ func contentBundleCombatProfileSnapshotDefaults(snapshot worldruntime.StaticActo
 		ChaseDelay:            chaseDelay,
 		ReturnDelay:           returnDelay,
 		HomewardDelay:         homewardDelay,
+		RoamDelay:             roamDelay,
 		MaxStep:               snapshot.MaxStep,
 		ReactionDelay:         reactionDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
@@ -15449,6 +15654,11 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
 		}
+		roamDelay, ok := worldruntime.StaticActorCombatProfileRoamDelay(snapshot.RoamDelayMs)
+		if !ok {
+			rollback()
+			return nil, contentbundle.ErrInvalidBundle
+		}
 		if !worldruntime.ValidStaticActorCombatProfileMaxStep(snapshot.MaxStep) {
 			rollback()
 			return nil, contentbundle.ErrInvalidBundle
@@ -15463,6 +15673,7 @@ func registerContentBundleCombatProfiles(profiles []worldruntime.StaticActorComb
 		defaults.ChaseDelay = chaseDelay
 		defaults.ReturnDelay = returnDelay
 		defaults.HomewardDelay = homewardDelay
+		defaults.RoamDelay = roamDelay
 		defaults.ReactionDelay = reactionDelay
 		if !worldruntime.RegisterStaticActorCombatProfile(profile, defaults) {
 			rollback()

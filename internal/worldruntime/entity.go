@@ -128,6 +128,7 @@ type StaticActorCombatProfileDefaults struct {
 	ChaseDelay            time.Duration
 	ReturnDelay           time.Duration
 	HomewardDelay         time.Duration
+	RoamDelay             time.Duration
 	MaxStep               int32
 	ReactionDelay         time.Duration
 	RetaliationPointDelta int32
@@ -148,6 +149,7 @@ type StaticActorCombatProfileSnapshot struct {
 	ChaseDelayMs          int64                  `json:"chase_delay_ms,omitempty"`
 	ReturnDelayMs         int64                  `json:"return_delay_ms,omitempty"`
 	HomewardDelayMs       int64                  `json:"homeward_delay_ms,omitempty"`
+	RoamDelayMs           int64                  `json:"roam_delay_ms,omitempty"`
 	MaxStep               int32                  `json:"max_step,omitempty"`
 	ReactionDelayMs       int64                  `json:"reaction_delay_ms,omitempty"`
 	RetaliationPointDelta int32                  `json:"retaliation_point_delta,omitempty"`
@@ -182,6 +184,9 @@ func RegisterStaticActorCombatProfile(profile string, defaults StaticActorCombat
 		return false
 	}
 	if !ValidStaticActorCombatProfileHomewardDelay(defaults.HomewardDelay) {
+		return false
+	}
+	if !ValidStaticActorCombatProfileRoamDelay(defaults.RoamDelay) {
 		return false
 	}
 	if !ValidStaticActorCombatProfileMaxStep(defaults.MaxStep) {
@@ -274,6 +279,7 @@ func staticActorCombatProfileSnapshot(profile string, defaults StaticActorCombat
 		ChaseDelayMs:          defaults.ChaseDelay.Milliseconds(),
 		ReturnDelayMs:         defaults.ReturnDelay.Milliseconds(),
 		HomewardDelayMs:       defaults.HomewardDelay.Milliseconds(),
+		RoamDelayMs:           defaults.RoamDelay.Milliseconds(),
 		MaxStep:               defaults.MaxStep,
 		ReactionDelayMs:       defaults.ReactionDelay.Milliseconds(),
 		DeathReward:           defaults.DeathReward.Clone(),
@@ -302,6 +308,7 @@ func StaticActorCombatProfileDefaultsFromSnapshot(snapshot StaticActorCombatProf
 		ChaseDelay:            time.Duration(snapshot.ChaseDelayMs) * time.Millisecond,
 		ReturnDelay:           time.Duration(snapshot.ReturnDelayMs) * time.Millisecond,
 		HomewardDelay:         time.Duration(snapshot.HomewardDelayMs) * time.Millisecond,
+		RoamDelay:             time.Duration(snapshot.RoamDelayMs) * time.Millisecond,
 		MaxStep:               snapshot.MaxStep,
 		ReactionDelay:         time.Duration(snapshot.ReactionDelayMs) * time.Millisecond,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
@@ -570,6 +577,64 @@ func EffectiveStaticActorSpawnHomewardDelay(profile string) time.Duration {
 // and returns its effective spawn homeward delay.
 func EffectiveStaticActorSpawnHomewardDelayForActor(actor StaticEntity) time.Duration {
 	return EffectiveStaticActorSpawnHomewardDelay(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
+}
+
+// ValidStaticActorCombatProfileRoamDelay accepts omitted/zero (stationary
+// at_home) and positive authored delays at or above MinSpawnRoamDelay and at
+// or below the bootstrap MaxSpawnRoamDelay upper bound.
+func ValidStaticActorCombatProfileRoamDelay(roamDelay time.Duration) bool {
+	if roamDelay < 0 {
+		return false
+	}
+	if roamDelay == 0 {
+		return true
+	}
+	return roamDelay >= MinSpawnRoamDelay && roamDelay <= MaxSpawnRoamDelay
+}
+
+// StaticActorCombatProfileRoamDelay converts authored roam_delay_ms into a
+// duration. Zero means omit and stay stationary at_home; negative or
+// overflowing values fail closed.
+func StaticActorCombatProfileRoamDelay(delayMs int64) (time.Duration, bool) {
+	if delayMs < 0 {
+		return 0, false
+	}
+	maxDelayMs := int64(1<<63-1) / int64(time.Millisecond)
+	if delayMs > maxDelayMs {
+		return 0, false
+	}
+	delay := time.Duration(delayMs) * time.Millisecond
+	if !ValidStaticActorCombatProfileRoamDelay(delay) {
+		return 0, false
+	}
+	return delay, true
+}
+
+// EffectiveStaticActorSpawnRoamDelayFromDefaults keeps omit/zero stationary.
+// A positive authored delay is the idle roam arming / re-arm delay. It does
+// not fall back to a bootstrap wander cadence.
+func EffectiveStaticActorSpawnRoamDelayFromDefaults(defaults StaticActorCombatProfileDefaults) time.Duration {
+	if defaults.RoamDelay <= 0 {
+		return 0
+	}
+	return defaults.RoamDelay
+}
+
+// EffectiveStaticActorSpawnRoamDelay returns the idle roam arming / re-arm
+// delay for one combat profile. Omitted, zero, or unknown profiles stay
+// stationary.
+func EffectiveStaticActorSpawnRoamDelay(profile string) time.Duration {
+	defaults, ok := BootstrapStaticActorCombatProfileDefaults(strings.TrimSpace(profile))
+	if !ok {
+		return 0
+	}
+	return EffectiveStaticActorSpawnRoamDelayFromDefaults(defaults)
+}
+
+// EffectiveStaticActorSpawnRoamDelayForActor resolves the actor's combat profile
+// and returns its effective idle roam delay. Zero means stay at_home.
+func EffectiveStaticActorSpawnRoamDelayForActor(actor StaticEntity) time.Duration {
+	return EffectiveStaticActorSpawnRoamDelay(staticActorCombatProfile(actor.CombatProfile, actor.CombatKind))
 }
 
 // ValidStaticActorCombatProfileMaxStep accepts omitted/zero (bootstrap default)

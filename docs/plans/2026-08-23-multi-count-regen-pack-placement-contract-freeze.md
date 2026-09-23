@@ -125,7 +125,7 @@ rows are later companions, not part of this placement freeze.
 - shared HP unless a multi-count regen row opts in with `shared_hp` (default packs and live one-count refs stay independent)
 - pack aggro / assist / multi-mob linkage
 - applying a timer overlay or facing overlay to every regen row by default
-- roaming, pathing, or group formations beyond the deterministic grid offsets
+- roaming beyond one opt-in idle wander step around authored home when `combat_profiles.roam_delay_ms` is positive (omitted or zero stays stationary); pathing and group formations beyond the deterministic grid offsets stay deferred, and authored patrol routes stay with WORLD-PATROL
 - changing built-in one-count fixtures to synthesize `.m01` suffixes
 - weighted/random loot
 - branching quest scripts

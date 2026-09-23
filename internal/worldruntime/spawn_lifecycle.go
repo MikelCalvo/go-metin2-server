@@ -64,6 +64,12 @@ const (
 	// MaxSpawnReactionDelay is the bootstrap upper bound for optional authored
 	// combat_profiles.reaction_delay_ms on this Track A seam.
 	MaxSpawnReactionDelay = 60 * time.Second
+	// MinSpawnRoamDelay is the bootstrap lower bound for optional authored
+	// combat_profiles.roam_delay_ms. Omitted or zero stays stationary at_home.
+	MinSpawnRoamDelay = 250 * time.Millisecond
+	// MaxSpawnRoamDelay is the bootstrap upper bound for optional authored
+	// combat_profiles.roam_delay_ms on this Track A seam.
+	MaxSpawnRoamDelay = 60 * time.Second
 )
 
 // SpawnLeashEvaluation is a pure planning result for the first mob lifecycle
@@ -98,6 +104,16 @@ type SpawnChaseStepPlan struct {
 // mutate actor state or emit packets. return_required recovery stays owned by
 // PlanStaticActorSpawnLeashReturnStep.
 type SpawnLeashHomewardStepPlan struct {
+	Evaluation SpawnLeashEvaluation
+	Next       Position
+	Complete   bool
+}
+
+// SpawnLeashRoamStepPlan is a pure planning result for one opt-in idle wander
+// step around authored home. It does not mutate actor state or emit packets.
+// Omitted roam delay stays stationary; chase, homeward, and return stay on
+// their own planners.
+type SpawnLeashRoamStepPlan struct {
 	Evaluation SpawnLeashEvaluation
 	Next       Position
 	Complete   bool
@@ -243,6 +259,28 @@ func PlanStaticActorSpawnLeashHomewardStep(actor StaticEntity, radius int32, max
 	plan.Next = next
 	plan.Complete = complete
 	return plan, true
+}
+
+// PlanStaticActorSpawnLeashRoamStep computes one deterministic same-map wander
+// step around authored home for a live unengaged at_home spawn-backed actor.
+// The step reuses the already-owned max_step cap and stays inside the leash.
+// within_radius, return_required, cross-map, and invalid inputs fail closed so
+// homeward and return keep winning. The planner never mutates actor state.
+// Callers must also require a positive authored roam delay; omit/zero stays
+// stationary and must not call this planner.
+func PlanStaticActorSpawnLeashRoamStep(actor StaticEntity, radius int32, maxStep int32) (SpawnLeashRoamStepPlan, bool) {
+	if maxStep <= 0 {
+		return SpawnLeashRoamStepPlan{}, false
+	}
+	evaluation, ok := EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok || evaluation.ReturnRequired || evaluation.Status != SpawnLeashStatusAtHome || !evaluation.Current.Equal(evaluation.Home) || !evaluation.Home.SameMap(evaluation.Current) {
+		return SpawnLeashRoamStepPlan{}, false
+	}
+	next := NewPosition(evaluation.Home.MapIndex, evaluation.Home.X+maxStep, evaluation.Home.Y)
+	if !next.Valid() || !next.SameMap(evaluation.Home) || next.Equal(evaluation.Home) || !positionWithinRadius(evaluation.Home, next, radius) {
+		return SpawnLeashRoamStepPlan{}, false
+	}
+	return SpawnLeashRoamStepPlan{Evaluation: evaluation, Next: next, Complete: false}, true
 }
 
 // PlanStaticActorSpawnChaseStep computes one deterministic chase step toward an

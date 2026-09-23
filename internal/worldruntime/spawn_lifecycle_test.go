@@ -432,6 +432,74 @@ func TestPlanStaticActorSpawnLeashHomewardStepFailsClosedForReturnRequiredOrInva
 	}
 }
 
+func TestPlanStaticActorSpawnLeashRoamStepMovesAtHomeOneMaxStepInsideLeashWithoutMutating(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	actor := StaticEntity{
+		Entity:        Entity{ID: 41, Kind: EntityKindStaticActor, Name: "RoamPlannerMob"},
+		Position:      home,
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.roam_planner",
+	}
+
+	plan, ok := PlanStaticActorSpawnLeashRoamStep(actor, DefaultSpawnLeashRadius, 100)
+	if !ok {
+		t.Fatal("expected at-home spawn actor to produce one idle roam step")
+	}
+	if plan.Evaluation.Status != SpawnLeashStatusAtHome || plan.Complete {
+		t.Fatalf("expected incomplete at-home roam plan, got %+v", plan)
+	}
+	if plan.Next != NewPosition(42, 1800, 2800) {
+		t.Fatalf("expected one +100 x-axis roam step around authored home, got %+v", plan.Next)
+	}
+	if !positionWithinRadius(home, plan.Next, DefaultSpawnLeashRadius) {
+		t.Fatalf("expected roam step to stay inside leash, got %+v", plan.Next)
+	}
+	if actor.Position != home || actor.SpawnHome != home {
+		t.Fatalf("expected roam planning not to mutate actor, got actor=%+v", actor)
+	}
+}
+
+func TestPlanStaticActorSpawnLeashRoamStepFailsClosedAwayFromHomeOrInvalidInput(t *testing.T) {
+	home := NewPosition(42, 1700, 2800)
+	within := StaticEntity{
+		Entity:        Entity{ID: 42, Kind: EntityKindStaticActor, Name: "RoamPlannerWithinMob"},
+		Position:      NewPosition(42, 1800, 2800),
+		SpawnHome:     home,
+		RaceNum:       20350,
+		CombatProfile: StaticActorCombatProfilePracticeMob,
+		CombatKind:    StaticActorCombatProfilePracticeMob,
+		SpawnGroupRef: "practice.roam_planner_within",
+	}
+	if plan, ok := PlanStaticActorSpawnLeashRoamStep(within, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected within_radius roam plan to fail closed so homeward wins, got ok=%v plan=%+v", ok, plan)
+	}
+
+	outside := within
+	outside.Position = NewPosition(42, 2301, 2800)
+	outside.SpawnGroupRef = "practice.roam_planner_outside"
+	if plan, ok := PlanStaticActorSpawnLeashRoamStep(outside, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected return_required roam plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	atHome := within
+	atHome.Position = home
+	atHome.SpawnGroupRef = "practice.roam_planner_home"
+	if plan, ok := PlanStaticActorSpawnLeashRoamStep(atHome, DefaultSpawnLeashRadius, 0); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-positive max step roam plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+	if plan, ok := PlanStaticActorSpawnLeashRoamStep(atHome, 50, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected roam step past leash to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+
+	nonSpawn := StaticEntity{Entity: Entity{ID: 421, Kind: EntityKindStaticActor, Name: "RoamPlannerInvalidMob"}, Position: home, RaceNum: 20350}
+	if plan, ok := PlanStaticActorSpawnLeashRoamStep(nonSpawn, DefaultSpawnLeashRadius, 100); ok || plan.Next.Valid() {
+		t.Fatalf("expected non-spawn roam plan to fail closed, got ok=%v plan=%+v", ok, plan)
+	}
+}
+
 func TestPlanStaticActorSpawnChaseStepMovesTowardOwnerWithoutMutating(t *testing.T) {
 	home := NewPosition(42, 1700, 2800)
 	current := NewPosition(42, 1700, 2800)
