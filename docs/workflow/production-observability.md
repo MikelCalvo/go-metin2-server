@@ -96,15 +96,56 @@ Example safe access line shape:
 {"time":"...","level":"INFO","msg":"ops local request","service":"gamed","version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-20T15:30:45Z","method":"GET","path":"/local/build-info","remote_addr":"127.0.0.1:54321","status":200,"duration_ms":1}
 ```
 
+## Loopback `/local/metrics` companion
+
+`observability.OpsMetrics` is the first metrics companion beside the process
+logger and `WrapOpsAccessLog`. It counts completed `/local/*` requests in
+memory and can serve that snapshot as JSON. It does not replace either log.
+
+`GET /local/metrics` (`observability.LocalMetricsPath`) is loopback-only and
+metadata-only:
+
+| Field | Meaning |
+| --- | --- |
+| `service` | daemon name set with `SetService` (`authd` or `gamed`); empty until set |
+| `local_requests_total` | completed `/local/*` requests with a clean path |
+| `local_errors_total` | those requests whose status is `>= 400` |
+| `local_requests_by_path` | counts keyed only by `URL.Path` |
+
+Rules:
+
+1. `Wrap` counts a request only when `URL.Path` has prefix `/local/` and the
+   path is one clean segment (`/local/build-info`). Query strings, fragments,
+   bodies, methods, and remote addresses are never stored.
+2. `/healthz`, `/debug/pprof/*`, any other non-`/local/` path, paths containing
+   `..`, and multi-segment paths are not counted.
+3. `Handler` allows `GET` from loopback (`127.0.0.1`, `::1`, `localhost`) only.
+   Other methods return `405` and non-loopback callers return `403`, both with
+   an empty body.
+4. A nil `*OpsMetrics` is a passthrough: `Wrap(nil)` stays nil, `Wrap(next)`
+   returns `next`, and `ObserveLocalRequest` does not panic.
+5. This slice does **not** mount the handler on `authd` or `gamed`. Operators
+   cannot curl it on a running daemon until a later slice registers
+   `OpsMetrics.Handler` on the ops mux. The type is the contract and the test
+   surface.
+
+Example safe snapshot shape:
+
+```json
+{"service":"gamed","local_requests_total":3,"local_errors_total":1,"local_requests_by_path":{"/local/build-info":2,"/local/notice":1}}
+```
+
 ## What this is not yet
 
-- metrics exporters (`/metrics`) or OpenTelemetry traces
+- mounting `/local/metrics` on the daemon ops mux
+- Prometheus `/metrics` exposition or any other pull exporter
+- OpenTelemetry traces or span export
 - remote log shipping / SIEM sinks
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging
 - log sampling / rate limits
 - changing the migration CLI redaction helper beyond its existing DSN scrub
-- remote admin authentication
+- remote admin authentication or token auth
 - packaging that installs enabled `newsyslog` / `logrotate` entries by default
 
 ## Related docs
