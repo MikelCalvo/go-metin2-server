@@ -71,12 +71,30 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 		t.Fatalf("expected visible peer to receive only CHARACTER_POSITION after sit, got %d", len(peerSitQueued))
 	}
 
-	skillOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: targetVID})))
+	unsupported, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: targetVID})))
 	if err != nil {
-		t.Fatalf("unexpected use-skill guard error while sitting: %v", err)
+		t.Fatalf("unexpected unsupported use-skill error while sitting: %v", err)
 	}
-	if len(skillOut) != 0 {
-		t.Fatalf("expected sitting use-skill to stay fail-closed, got %d frames", len(skillOut))
+	if len(unsupported) != 0 {
+		t.Fatalf("expected unsupported sitting use-skill to stay fail-closed, got %d frames", len(unsupported))
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("expected unsupported sitting use-skill to queue no STUN, got %d", len(queued))
+	}
+
+	skillOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: bootstrapUseSkillPresentationVnum, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected sitting use-skill error: %v", err)
+	}
+	if len(skillOut) != 1 {
+		t.Fatalf("expected sitting use-skill to emit one self-only CREATE_FLY, got %d", len(skillOut))
+	}
+	sittingFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, skillOut[0]))
+	if err != nil {
+		t.Fatalf("decode sitting use-skill CREATE_FLY: %v", err)
+	}
+	if sittingFly.Type != bootstrapCreateFlyType || sittingFly.StartVID != owner.VID || sittingFly.EndVID != targetVID {
+		t.Fatalf("unexpected sitting use-skill CREATE_FLY: %+v", sittingFly)
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected sitting use-skill to queue no STUN, got %d", len(queued))

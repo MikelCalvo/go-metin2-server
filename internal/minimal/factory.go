@@ -94,6 +94,15 @@ const bootstrapCharacterPositionGeneral uint8 = 0
 const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
 const bootstrapCreateFlyType uint8 = 0
+const bootstrapUseSkillPresentationVnum uint32 = 1
+
+func encodeBootstrapCreateFly(startVID, endVID uint32) []byte {
+	return combatproto.EncodeServerCreateFly(combatproto.ServerCreateFlyPacket{
+		Type:     bootstrapCreateFlyType,
+		StartVID: startVID,
+		EndVID:   endVID,
+	})
+}
 const bootstrapTargetMarkerType = combatproto.ServerTargetMarkerTypeCharacter
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
@@ -5920,6 +5929,30 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		ownsLiveSharedWorldSession := func() bool {
 			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
 		}
+		selectedTargetCreateFlyPresentation := func(targetVID uint32) (uint32, uint32, bool) {
+			if !ownsLiveSharedWorldSession() {
+				return 0, 0, false
+			}
+			selectedPlayer, ok := currentSelectedPlayer()
+			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+				return 0, 0, false
+			}
+			selected := selectedPlayer.LiveCharacter()
+			if selected.ID == 0 || selected.VID == 0 {
+				return 0, 0, false
+			}
+			if targetVID == 0 || targetVID != activeCombatTargetVID {
+				return 0, 0, false
+			}
+			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, targetVID)
+			if !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID != targetVID {
+				return 0, 0, false
+			}
+			if resolution.SnapshotVersion != activeCombatTargetSnapshotVersion {
+				return 0, 0, false
+			}
+			return selected.VID, targetVID, true
+		}
 		myShopBagUseBusyOpen := func() bool {
 			return hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen ||
 				(ownsLiveSharedWorldSession() && sharedWorld != nil && sharedWorld.hasActiveExchange(sharedWorldID))
@@ -10201,34 +10234,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					if !ownsLiveSharedWorldSession() {
-						return gameflow.FlyTargetingResult{Accepted: false}
-					}
-					selectedPlayer, ok := currentSelectedPlayer()
-					if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
-						return gameflow.FlyTargetingResult{Accepted: false}
-					}
-					selected := selectedPlayer.LiveCharacter()
-					if selected.ID == 0 || selected.VID == 0 {
-						return gameflow.FlyTargetingResult{Accepted: false}
-					}
-					if packet.TargetVID == 0 || packet.TargetVID != activeCombatTargetVID {
-						return gameflow.FlyTargetingResult{Accepted: false}
-					}
-					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
-					if !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID != packet.TargetVID {
-						return gameflow.FlyTargetingResult{Accepted: false}
-					}
-					if resolution.SnapshotVersion != activeCombatTargetSnapshotVersion {
+					startVID, endVID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					if !ok {
 						return gameflow.FlyTargetingResult{Accepted: false}
 					}
 					return gameflow.FlyTargetingResult{
 						Accepted: true,
-						Frames: [][]byte{combatproto.EncodeServerCreateFly(combatproto.ServerCreateFlyPacket{
-							Type:     bootstrapCreateFlyType,
-							StartVID: selected.VID,
-							EndVID:   packet.TargetVID,
-						})},
+						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
+					}
+				},
+				HandleUseSkill: func(packet combatproto.ClientUseSkillPacket) gameflow.UseSkillResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if packet.SkillVnum != bootstrapUseSkillPresentationVnum {
+						return gameflow.UseSkillResult{Accepted: false}
+					}
+					startVID, endVID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					if !ok {
+						return gameflow.UseSkillResult{Accepted: false}
+					}
+					return gameflow.UseSkillResult{
+						Accepted: true,
+						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
 					}
 				},
 				HandleTarget: func(packet combatproto.ClientTargetPacket) gameflow.TargetResult {
