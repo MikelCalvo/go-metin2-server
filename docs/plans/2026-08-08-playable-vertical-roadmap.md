@@ -137,6 +137,7 @@ Likely areas:
 - `spec/protocol/non-player-death-respawn-bootstrap.md`
 - `spec/protocol/non-player-reward-bootstrap.md`
 - `spec/protocol/player-death-bootstrap.md`
+- `spec/protocol/combat-pvp-duel-bootstrap.md` now emits one presentation-only `GC::PVP(mode = revenge)` when a living player sends talking-chat `/pvp <visible_player_vid>` naming another living visible player; `DUEL_START`, invites, karma, and safe zones stay out
 
 Next slices:
 
