@@ -36,7 +36,7 @@ This contract currently applies only to:
 - one currently visible in-range non-player actor still marked as `training_dummy`
 - one immediate attack-intent request against that already selected target
 - one tiny target-refresh surface that can still describe `current target`, `updated hp percent`, or `no active target`
-- one decode-and-fail-closed skill-intent guard so client `USE_SKILL` traffic cannot fall through as an unknown combat header
+- one presentation-only skill-intent ingress so one accepted client `USE_SKILL(skill_vnum = 1)` against the currently selected visible combat target emits one self-only `CREATE_FLY` while every other `USE_SKILL` still fails closed instead of falling through as an unknown combat header
 - one projectile-targeting ingress so client `FLY_TARGETING` can emit the first self-only `CREATE_FLY` companion against the currently selected visible combat target while `ADD_FLY_TARGETING` and unsupported `FLY_TARGETING` still fail closed instead of falling through as unknown combat headers
 - one decode-owned `ON_CLICK` ingress that fail-closes unsupported click targets while also owning guest private-shop browse open against an already-open peer MYSHOP
 - one narrow character-position ingress seam so client `CHARACTER_POSITION(position=0|3|4)` traffic can drive the first self/peer stance presentation while unsupported/battle-position bytes still fail closed instead of falling through as unknown target/UI headers
