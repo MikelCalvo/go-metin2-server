@@ -104,6 +104,7 @@ func encodeBootstrapCreateFly(startVID, endVID uint32) []byte {
 		EndVID:   endVID,
 	})
 }
+
 const bootstrapTargetMarkerType = combatproto.ServerTargetMarkerTypeCharacter
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
@@ -8245,6 +8246,36 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						}
 					}
 
+					if targetVID, accepted, matched := slashPVPPresentationCommand(packet.Message); matched {
+						if packet.Type != chatproto.ChatTypeTalking || !accepted {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						selectedPlayer, ok := currentSelectedPlayer()
+						if !ok || !ownsLiveSharedWorldSession() || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						selected := selectedPlayer.LiveCharacter()
+						if selected.VID == 0 || selected.VID == targetVID {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						sharedWorld.mu.Lock()
+						target, visible := visibleLivePlayerByVIDLocked(sharedWorld, sharedWorldID, targetVID)
+						if !visible {
+							sharedWorld.mu.Unlock()
+							return gameflow.ChatResult{Accepted: false}
+						}
+						frame := combatproto.EncodeServerPVP(combatproto.ServerPVPPacket{
+							SourceVID:      selected.VID,
+							DestinationVID: target.Character.VID,
+							Mode:           combatproto.ServerPVPModeRevenge,
+						})
+						queued := sharedWorld.enqueueToEntityLocked(target.Entity.ID, [][]byte{frame})
+						sharedWorld.mu.Unlock()
+						if !queued {
+							return gameflow.ChatResult{Accepted: false}
+						}
+						return gameflow.ChatResult{Accepted: true, Frames: [][]byte{frame}}
+					}
 					if command, ok := slashGameCommand(packet.Message); ok {
 						if packet.Type != chatproto.ChatTypeTalking {
 							return gameflow.ChatResult{Accepted: false}
@@ -11944,6 +11975,49 @@ func ticketEmpire(ticket loginticket.Ticket) uint8 {
 		}
 	}
 	return 0
+}
+
+func slashPVPPresentationCommand(message string) (uint32, bool, bool) {
+	if !strings.HasPrefix(message, "/") {
+		return 0, false, false
+	}
+	fields := strings.Fields(message[1:])
+	if len(fields) == 0 || fields[0] != "pvp" {
+		return 0, false, false
+	}
+	if len(fields) != 2 {
+		return 0, false, true
+	}
+	vid, err := strconv.ParseUint(fields[1], 10, 32)
+	if err != nil || vid == 0 {
+		return 0, false, true
+	}
+	return uint32(vid), true, true
+}
+
+// visibleLivePlayerByVIDLocked resolves one currently visible live player by
+// the same visibility gate as HasVisiblePlayerTarget. Callers must hold r.mu.
+func visibleLivePlayerByVIDLocked(r *sharedWorldRegistry, originID uint64, targetVID uint32) (worldruntime.PlayerEntity, bool) {
+	if r == nil || originID == 0 || targetVID == 0 {
+		return worldruntime.PlayerEntity{}, false
+	}
+	if _, ok := r.sessionEntryLocked(originID); !ok {
+		return worldruntime.PlayerEntity{}, false
+	}
+	origin, ok := r.playerCharacter(originID)
+	if !ok || characterAtBootstrapHPFloor(origin) {
+		return worldruntime.PlayerEntity{}, false
+	}
+	for _, candidate := range r.scopesLocked().VisibleTargets(originID, origin) {
+		if candidate.Character.VID != targetVID || characterAtBootstrapHPFloor(candidate.Character) {
+			continue
+		}
+		if _, ok := r.sessionEntryLocked(candidate.Entity.ID); !ok {
+			return worldruntime.PlayerEntity{}, false
+		}
+		return candidate, true
+	}
+	return worldruntime.PlayerEntity{}, false
 }
 
 func slashGameCommand(message string) (string, bool) {

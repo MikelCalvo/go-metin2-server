@@ -1,6 +1,6 @@
 # Combat PVP / Duel Signal Bootstrap
 
-This note freezes the first owned server-to-client PVP and duel-start packet shapes for `go-metin2-server` without adding runtime PvP or duel gameplay.
+This note freezes the first owned server-to-client PVP and duel-start packet shapes for `go-metin2-server`, plus one presentation-only `GC::PVP` emit.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -10,7 +10,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns only two server-to-client packet codecs and the current non-emission rule.
+This slice owns two server-to-client packet codecs and one presentation-only `GC::PVP` emit. `DUEL_START` stays codec-only.
 
 The packets are:
 
@@ -64,18 +64,22 @@ Current accepted bootstrap combat still uses the already-owned surfaces:
 - non-lethal practice-mob hits use `TARGET`, `PLAYER_POINT_CHANGE`, and `DAMAGE_INFO`,
 - killing hits use `DEAD(vid)` plus `TARGET(0, 0)` before any owned reward feedback,
 - player zero-HP retaliation edges use `PLAYER_POINT_CHANGE`, `DEAD(owner_vid)`, and `TARGET(0, 0)`,
-- server fly-effect packet shapes stay codec-only until a later projectile/skill slice owns runtime emission.
+- server fly-effect packet shapes now have presentation-only `CREATE_FLY` emits on accepted selected-target `FLY_TARGETING`, `USE_SKILL(skill_vnum = 1)`, and `SHOOT(shoot_type = 1)`; server `FLY_TARGETING` / `ADD_FLY_TARGETING` stay unemitted.
 
-The Go runtime does not currently emit `PVP` or `DUEL_START` from player-vs-player targeting, normal attacks, retaliation, death, restart, slash commands, or any other gameplay path.
+The Go runtime emits `GC::PVP` from one presentation seam only: a living owner sends talking-chat `/pvp <visible_player_vid>` naming another living player already visible on the same map. Both the requester and that named player receive one `PVP(source_vid = requester, destination_vid = named player, mode = revenge)`. A third visible player receives nothing. The command does not change HP, targets, inventory, or any duel/karma/safe-zone state, and it is not spoken as chat.
+
+Malformed `/pvp`, a non-talking chat type, a missing or non-visible id, a self id, a mob or dummy id, and a zero-HP requester or target fail closed with no `PVP` frame. Ordinary targeting, attacks, retaliation, death, restart, and other slash commands still omit `PVP` and `DUEL_START`.
+
+`DUEL_START` is still not emitted.
 
 ## Non-goals
 
 This slice does not freeze:
 - player-vs-player attack acceptance,
-- duel request/invite/accept/reject choreography,
+- duel request/invite/accept/reject choreography beyond the single challenge-mark paint above,
 - party/guild war semantics,
 - PvP flagging, karma, revenge eligibility, or safe-zone rules,
-- peer fanout policy for PVP/duel presentation packets,
+- peer fanout of `PVP` to anyone other than the requester and the named visible player,
 - interaction between PvP/duel state and current target, death, restart, or reward rules.
 
 ## Success definition
@@ -84,4 +88,5 @@ After this slice:
 - `PVP` and `DUEL_START` are listed in the packet matrix as documented server combat presentation packet shapes,
 - `internal/proto/combat` can encode and decode their exact payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- later PvP/duel gameplay slices can start from tested packet shapes while preserving the current no-runtime-emission rule.
+- one accepted talking-chat `/pvp <visible_player_vid>` emits `GC::PVP(mode = revenge)` to the requester and the named living visible player only,
+- `DUEL_START` and every other gameplay path still do not emit PVP or duel frames.
