@@ -95,6 +95,7 @@ const bootstrapCharacterPositionSittingChair uint8 = 3
 const bootstrapCharacterPositionSittingGround uint8 = 4
 const bootstrapCreateFlyType uint8 = 0
 const bootstrapUseSkillPresentationVnum uint32 = 1
+const bootstrapShootPresentationType uint8 = 1
 
 func encodeBootstrapCreateFly(startVID, endVID uint32) []byte {
 	return combatproto.EncodeServerCreateFly(combatproto.ServerCreateFlyPacket{
@@ -10256,6 +10257,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.UseSkillResult{Accepted: false}
 					}
 					return gameflow.UseSkillResult{
+						Accepted: true,
+						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
+					}
+				},
+				HandleShoot: func(packet combatproto.ClientShootPacket) gameflow.ShootResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					if packet.ShootType != bootstrapShootPresentationType {
+						return gameflow.ShootResult{Accepted: false}
+					}
+					startVID, endVID, ok := selectedTargetCreateFlyPresentation(activeCombatTargetVID)
+					if !ok {
+						return gameflow.ShootResult{Accepted: false}
+					}
+					return gameflow.ShootResult{
 						Accepted: true,
 						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
 					}
