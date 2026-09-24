@@ -12694,15 +12694,33 @@ func TestNewGameSessionFactoryUseSkillFailsClosedWithoutMutatingSelectedTarget(t
 	}
 
 	drainAcceptedTargetCreateNewIfQueued(t, flow)
-	useSkillOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 35, TargetVID: targetVID})))
+	unsupportedOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 35, TargetVID: targetVID})))
 	if err != nil {
-		t.Fatalf("unexpected use-skill guard dispatch error: %v", err)
+		t.Fatalf("unexpected unsupported use-skill dispatch error: %v", err)
 	}
-	if len(useSkillOut) != 0 {
-		t.Fatalf("expected unsupported use-skill to fail closed with no frames, got %d", len(useSkillOut))
+	if len(unsupportedOut) != 0 {
+		t.Fatalf("expected unsupported use-skill to fail closed with no frames, got %d", len(unsupportedOut))
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected unsupported use-skill to queue no server frames, got %d", len(queued))
+	}
+
+	useSkillOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: bootstrapUseSkillPresentationVnum, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected accepted use-skill dispatch error: %v", err)
+	}
+	if len(useSkillOut) != 1 {
+		t.Fatalf("expected accepted use-skill to emit one self-only CREATE_FLY, got %d", len(useSkillOut))
+	}
+	skillFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, useSkillOut[0]))
+	if err != nil {
+		t.Fatalf("decode CREATE_FLY after accepted use-skill: %v", err)
+	}
+	if skillFly.Type != bootstrapCreateFlyType || skillFly.StartVID != attacker.VID || skillFly.EndVID != targetVID {
+		t.Fatalf("unexpected CREATE_FLY after accepted use-skill: %+v", skillFly)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected accepted use-skill to queue no extra server frames, got %d", len(queued))
 	}
 
 	attackOut, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))

@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING` against the currently selected visible combat target.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING` or the bootstrap presentation `USE_SKILL` against the currently selected visible combat target.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -9,7 +9,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns three fixed server-to-client packet codecs plus the first `FLY_TARGETING` emission rule.
+This slice owns three fixed server-to-client packet codecs plus the first `FLY_TARGETING` and bootstrap presentation `USE_SKILL` emission rules.
 
 The packets are:
 
@@ -66,20 +66,25 @@ Client-source inspection of the TMP4-compatible client shows separate game-phase
 - `FLY_TARGETING` and `ADD_FLY_TARGETING` both identify a shooter, an optional target, and fallback world coordinates.
 - `CREATE_FLY` identifies a fly/effect type plus start and end actor VIDs.
 
-The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as `GAME` ingress. This note keeps `ADD_FLY_TARGETING` and `SHOOT` fail-closed and reuses the already-owned `CREATE_FLY` codec on one existing seam: an accepted client `FLY_TARGETING` whose `target_vid` matches the session's currently selected visible combat target.
+The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as `GAME` ingress. This note keeps `ADD_FLY_TARGETING` and `SHOOT` fail-closed and reuses the already-owned `CREATE_FLY` codec on two existing seams: an accepted client `FLY_TARGETING` whose `target_vid` matches the session's currently selected visible combat target, and one accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target.
 
 It does not invent skill resource or cooldown tables, projectile travel duration, hit-timing formulas, a type catalog beyond bootstrap `type = 0`, or a second damage path.
 
 ## Current runtime rule
 
-The shipped runtime now emits `CREATE_FLY` only on this accepted `FLY_TARGETING` seam:
+The shipped runtime now emits `CREATE_FLY` on two presentation-only seams that share the same selected-target policy:
 
 - the session is already in `GAME` with a live selected character above the bootstrap `0`-HP floor
 - that character currently holds a selected combat target accepted through the existing `TARGET` path
-- the request is client `FLY_TARGETING(0x0404)` whose `target_vid` matches that selected target exactly and is still a currently visible in-range combat target
-- the request coordinates are ignored in this first GREEN; `CREATE_FLY` names actor VIDs only
+- the request `target_vid` matches that selected target exactly and is still a currently visible in-range combat target
+- `CREATE_FLY` names actor VIDs only
 
-On that accepted request the owner socket receives exactly one self-only:
+The seams are:
+
+1. client `FLY_TARGETING(0x0404)`; the request coordinates are ignored in this first GREEN
+2. client `USE_SKILL(0x0402)` whose `skill_vnum` is the bootstrap presentation value `1`
+
+On either accepted request the owner socket receives exactly one self-only:
 
 1. `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`
 
@@ -88,9 +93,10 @@ Visible peers receive no fly-effect fanout in this first GREEN. The companion is
 - it does not mutate selected-target HP
 - it does not rewrite the selected target
 - it does not change normal-attack cadence, retaliation, death, respawn, restart, inventory, points, or persistence
-- it does not emit server `FLY_TARGETING`, `ADD_FLY_TARGETING`, `SHOOT` gameplay, skill, knockdown, or PvP/duel packets
+- it does not spend skill points, start a cooldown, or apply hit timing
+- it does not emit server `FLY_TARGETING`, `ADD_FLY_TARGETING`, `SHOOT` gameplay, knockdown, or PvP/duel packets
 
-Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. Client `ADD_FLY_TARGETING`, `SHOOT`, `USE_SKILL`, and ordinary `ATTACK` still do not emit `CREATE_FLY`.
+Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. `USE_SKILL` uses the same fail-closed rule, and any `skill_vnum` other than bootstrap presentation `1` also stays fail-closed. Client `ADD_FLY_TARGETING`, `SHOOT`, and ordinary `ATTACK` still do not emit `CREATE_FLY`. A repeat of the same accepted `USE_SKILL` emits another presentation `CREATE_FLY`; this slice does not own a skill cooldown.
 
 ## Relationship to current combat slices
 
@@ -100,13 +106,13 @@ Current accepted normal attacks still use the already-owned combat presentation 
 - content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
 - sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-This first GREEN only adds the selected-target `FLY_TARGETING` → self-only `CREATE_FLY` presentation companion. Later ranged `SHOOT`, skill, hit-timing, or peer-fanout slices must freeze their own policy instead of widening this seam by implication.
+This first GREEN adds the selected-target `FLY_TARGETING` → self-only `CREATE_FLY` presentation companion and reuses that same companion for one accepted bootstrap presentation `USE_SKILL`. Later ranged `SHOOT`, skill resource/cooldown tables, hit-timing, or peer-fanout slices must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
 This slice does not freeze:
 - accepted ranged `SHOOT` gameplay,
-- accepted skill combat, resource costs, or cooldowns,
+- skill resource costs, cooldowns, hit timing, or skill combat beyond the one presentation-only `USE_SKILL(skill_vnum = 1)` → `CREATE_FLY` companion,
 - projectile hit timing or travel duration,
 - visual effect type meanings beyond bootstrap `CREATE_FLY` `type = 0`,
 - multi-target or chained projectile behavior, including client/server `ADD_FLY_TARGETING`,
@@ -122,7 +128,8 @@ After this slice:
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
 - an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one self-only `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`,
-- that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence,
+- an accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target emits the same self-only `CREATE_FLY`,
+- that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
 - visible peers receive no fly-effect frame,
-- unsupported `FLY_TARGETING` without the new policy, `ADD_FLY_TARGETING`, `SHOOT`, `USE_SKILL`, and ordinary `ATTACK` stay fail-closed for fly emission,
+- unsupported `FLY_TARGETING` without the new policy, other `USE_SKILL` vnums, `ADD_FLY_TARGETING`, `SHOOT`, and ordinary `ATTACK` stay fail-closed for fly emission,
 - later ranged/projectile/skill slices can start from this tested packet shape and this first `FLY_TARGETING` emission rule instead of re-discovering them.

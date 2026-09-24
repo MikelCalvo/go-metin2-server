@@ -83,12 +83,12 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 		t.Fatalf("expected selected shoot to stay fail-closed, got %d frames", len(shootOut))
 	}
 
-	skillOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: targetVID})))
+	unsupported, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: targetVID})))
 	if err != nil {
-		t.Fatalf("unexpected use-skill guard error before fly presentation: %v", err)
+		t.Fatalf("unexpected unsupported use-skill error before fly presentation: %v", err)
 	}
-	if len(skillOut) != 0 {
-		t.Fatalf("expected selected use-skill to stay fail-closed, got %d frames", len(skillOut))
+	if len(unsupported) != 0 {
+		t.Fatalf("expected unsupported use-skill to stay fail-closed, got %d frames", len(unsupported))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected fail-closed projectile/skill guards to queue no CREATE_FLY, got %d", len(queued))
