@@ -675,5 +675,7 @@ func syncGroundItemStoreDir(path string) error {
 }
 
 // Ensure FileStore satisfies the exporter seam when used as a durable source.
+// SQLGroundItemStore is the opt-in DB twin; it is not the stock restart path.
 var _ BootstrapGroundItemStateExporter = (*FileStore)(nil)
 var _ GroundItemStore = (*FileStore)(nil)
+var _ BootstrapGroundItemStateExporter = (*SQLGroundItemStore)(nil)

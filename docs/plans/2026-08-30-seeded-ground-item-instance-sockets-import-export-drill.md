@@ -37,14 +37,16 @@ sockets, or README churn.
    values on `bootstrap_ground_items`.
 4. Empty-payload hermetic proof stays socket-omitted / empty for tip-`0010`.
 5. Gold-shaped rows remain socket-less (unchanged).
-6. Upsert / stock production driver / DB-backed live ground rematerialize /
-   `ITEM_GROUND_ADD` wire sockets remain deferred.
+6. Upsert / stock production driver / `gamed` SQL cutover /
+   `ITEM_GROUND_ADD` wire sockets remain deferred. Opt-in
+   `worldruntime.SQLGroundItemStore` is the first DB-backed pending ground
+   Load/Save seam beside tip-`0010`; FileStore remains stock rematerialize.
 
 ## What this is not yet
 
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- DB-backed live ground repositories replacing FileStore rematerialize
+- stock `gamed` rematerialize from SQL (FileStore remains the restart path; opt-in `SQLGroundItemStore` is not a cutover)
 - changing `GC::ITEM_GROUND_ADD` / ownership wire layouts
 - remote admin / daemon mutation route / secrets in git
 
@@ -72,5 +74,6 @@ GREEN on `lane/items`: seeded hermetic import-export-drill proves tip-`0010`+`00
 presence-aware pending ground sockets through the printed PATH + tip-order SQLite
 path. Operator docs tip-sync after catalog tip `0026` is owned by
 [ops docs tip sync after catalog tip 0026](2026-08-30-ops-docs-0026-ground-sockets-tip-sync.md).
-Upsert / stock driver / live DB ground rematerialize / wire sockets remain
-deferred.
+Upsert / stock driver / `gamed` SQL cutover / wire sockets remain deferred.
+Opt-in `SQLGroundItemStore` Load/Save beside tip-`0010` is owned separately;
+FileStore remains stock rematerialize.

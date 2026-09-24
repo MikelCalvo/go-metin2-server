@@ -39,18 +39,22 @@ A later persistence-lane slice added a loopback-only read-only export for curren
 
 The export projects live item-shaped and gold-shaped ground snapshots onto the `0010_bootstrap_ground_item_state` row shape with `migration_version`, `migration_name`, and deterministic `ground_items` ordered by visible `vid`. It fails closed if any live handle cannot target the migration schema and includes the schema-owned pickup reach so operator/backfill tooling can inspect exactly the fields `0010` froze.
 
+## Opt-in SQL repository
+
+`worldruntime.SQLGroundItemStore` is the first live DB-backed pending ground repository beside this schema. A caller supplies the `database/sql` executor. `LoadGroundItems` / `SaveGroundItems` / `ExportBootstrapGroundItemState` require tip-`0010` plus additive `0026` sockets, `0029` attributes, and `0030` ownership timers. Save deletes every `bootstrap_ground_items` row and inserts the canonical export. Export identity stays tip-`0010`.
+
+It does not select a driver, mount `gamed`, add a remote-admin or daemon mutation route, invent `ITEM_GROUND_ADD` wire sockets, or add party-loot tables. Process-local item ids stay on the ground-item FileStore, which remains stock process-restart rematerialize. Proven by `go test ./internal/worldruntime -run SQLGroundItemStore` and `go test -tags=sqlite_harness ./internal/worldruntime -run SQLiteHarnessSQLGroundItemStore`.
+
 ## What this is not yet
 
 These slices deliberately do not add:
 
-- a DB-backed ground-item repository;
-- process-restart restoration of pending ground handles from SQL (FileStore remains the restart path);
+- stock `gamed` rematerialize from SQL (FileStore remains the restart path; opt-in `SQLGroundItemStore` is not mounted);
 - party loot ownership tables;
 - item sockets/attributes/ownership timers on the original `0010` table (additive `0026`/`0029`/`0030` later project those FileStore extras onto the same rows);
-- import/backfill execution tooling for live ground handles;
-- any daemon-local mutating migration endpoint.
+- a stock production driver or daemon-local mutating migration endpoint.
 
-The shipped runtime still keeps pending bootstrap ground handles in memory. `0010` is a durable schema contract, planning/checksum boundary, and now a read-only migration-shaped export only.
+The shipped runtime still keeps pending bootstrap ground handles in memory and restarts them from the ground-item FileStore. `0010` remains the export identity. The opt-in SQL store is a caller-supplied Load/Save seam, not a cutover.
 
 ## Why this order
 
@@ -102,5 +106,5 @@ See [debugging and profiling](../debugging-and-profiling.md) and [development](.
 
 1. Add crash/restart recovery for pending ground entries only after deciding whether in-memory bootstrap handles should survive process restart at all.
 2. Add import/backfill execution tooling only after operators have a closed quarantine/validation policy for retained exports.
-3. Additive `0030_bootstrap_ground_item_ownership_timer` now projects FileStore exclusive-ownership / public-release / despawn timers onto `bootstrap_ground_items` while export identity stays tip-`0010`. Live DB rematerialize and a stock production driver remain out of scope.
+3. ~~Add one DB-backed pending ground repository beside tip-`0010` and the read-only export.~~ Done for opt-in `worldruntime.SQLGroundItemStore`: caller-supplied executor, schema preflight through additive `0030`, whole-snapshot replace, export identity stays tip-`0010`. FileStore remains stock process-restart rematerialize. A stock production driver and `gamed` SQL cutover remain out of scope.
 4. ~~Keep DB apply/rollback surfaces CLI-only and daemon ops endpoints read-only unless a future production-admin design explicitly changes that boundary.~~ Done — `metin2-migrate apply-boundary` restates the CLI-only apply/rollback contract against the closed read-only loopback ops set; `/local/db/migrations/apply` and `/local/db/migrations/rollback` stay unregistered.
