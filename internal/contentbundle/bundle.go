@@ -25,6 +25,11 @@ const maxRegenSpawnCount = 8
 const maxRegenRectangleExtent int32 = 10000
 const maxWeightedDropTableEntries = 8
 
+const (
+	regenPackFormationGrid = "grid"
+	regenPackFormationLine = "line"
+)
+
 var ErrInvalidBundle = errors.New("invalid content bundle")
 
 type StaticActor struct {
@@ -70,6 +75,7 @@ type RegenSpawn struct {
 	CombatProfile      string   `json:"combat_profile,omitempty"`
 	Count              uint16   `json:"count,omitempty"`
 	PackSpacing        int32    `json:"pack_spacing,omitempty"`
+	Formation          string   `json:"formation,omitempty"`
 	SyncRespawn        bool     `json:"sync_respawn,omitempty"`
 	SharedHP           bool     `json:"shared_hp,omitempty"`
 	Time               int64    `json:"time,omitempty"`
@@ -5068,7 +5074,7 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 			return nil, false
 		}
 		if count == 1 {
-			if regenSpawn.PackSpacing != 0 || regenSpawn.SyncRespawn || regenSpawn.SharedHP {
+			if regenSpawn.PackSpacing != 0 || regenSpawn.SyncRespawn || regenSpawn.SharedHP || !regenSpawnFormationOmitted(regenSpawn.Formation) {
 				return nil, false
 			}
 			x, y := regenSpawn.X, regenSpawn.Y
@@ -5088,16 +5094,26 @@ func spawnGroupsFromRegenSpawns(regenSpawns []RegenSpawn) ([]SpawnGroup, bool) {
 		if regenSpawn.PackSpacing <= 0 {
 			return nil, false
 		}
+		formation, ok := regenSpawnPackFormation(regenSpawn.Formation)
+		if !ok {
+			return nil, false
+		}
 		cols := regenPackColumnCount(int(count))
 		baseName := strings.TrimSpace(regenSpawn.Name)
 		for member := uint16(1); member <= count; member++ {
 			index := int(member - 1)
 			row := index / cols
 			col := index % cols
+			if formation == regenPackFormationLine {
+				row = index
+				col = 0
+			}
 			memberRef := fmt.Sprintf("%s.m%02d", regenSpawn.Ref, member)
 			memberName := fmt.Sprintf("%s %d", baseName, member)
-			x := regenSpawn.X + int32(col)*regenSpawn.PackSpacing
-			y := regenSpawn.Y + int32(row)*regenSpawn.PackSpacing
+			x, y, ok := regenPackMemberPoint(regenSpawn.X, regenSpawn.Y, col, row, regenSpawn.PackSpacing)
+			if !ok {
+				return nil, false
+			}
 			spawnGroups = append(spawnGroups, spawnGroupFromRegenSpawn(regenSpawn, memberRef, memberName, x, y))
 		}
 	}
@@ -5111,6 +5127,59 @@ func regenPackColumnCount(count int) int {
 		}
 	}
 	return count
+}
+
+func regenSpawnFormationOmitted(formation string) bool {
+	return strings.TrimSpace(formation) == ""
+}
+
+func regenSpawnPackFormation(formation string) (string, bool) {
+	formation = strings.TrimSpace(formation)
+	switch formation {
+	case "", regenPackFormationGrid:
+		return regenPackFormationGrid, true
+	case regenPackFormationLine:
+		return regenPackFormationLine, true
+	default:
+		return "", false
+	}
+}
+
+func regenPackMemberPoint(originX int32, originY int32, col int, row int, spacing int32) (int32, int32, bool) {
+	dx, ok := regenPackOffset(col, spacing)
+	if !ok {
+		return 0, 0, false
+	}
+	dy, ok := regenPackOffset(row, spacing)
+	if !ok {
+		return 0, 0, false
+	}
+	if dx > 0 && originX > math.MaxInt32-dx {
+		return 0, 0, false
+	}
+	if dy > 0 && originY > math.MaxInt32-dy {
+		return 0, 0, false
+	}
+	if dx < 0 && originX < math.MinInt32-dx {
+		return 0, 0, false
+	}
+	if dy < 0 && originY < math.MinInt32-dy {
+		return 0, 0, false
+	}
+	return originX + dx, originY + dy, true
+}
+
+func regenPackOffset(steps int, spacing int32) (int32, bool) {
+	if steps < 0 || spacing <= 0 {
+		return 0, false
+	}
+	if steps == 0 {
+		return 0, true
+	}
+	if int64(steps) > int64(math.MaxInt32)/int64(spacing) {
+		return 0, false
+	}
+	return int32(steps) * spacing, true
 }
 
 func regenRectanglePoint(regenSpawn RegenSpawn, member uint16) (int32, int32, bool) {

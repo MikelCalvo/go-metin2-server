@@ -5346,6 +5346,178 @@ func TestCanonicalizeExpandsMultiCountRegenSpawnIntoPackMembers(t *testing.T) {
 	}
 }
 
+func TestCanonicalizeExplicitGridFormationKeepsOwnedPackSpacingGrid(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.qa_grid_formation",
+			Name:        "QAGridFormation",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       4,
+			PackSpacing: 100,
+			Formation:   "grid",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize explicit grid formation: %v", err)
+	}
+	if len(bundle.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to be stripped, got %+v", bundle.RegenSpawns)
+	}
+	want := []struct {
+		ref string
+		x   int32
+		y   int32
+	}{
+		{ref: "practice.qa_grid_formation.m01", x: 469900, y: 964200},
+		{ref: "practice.qa_grid_formation.m02", x: 470000, y: 964200},
+		{ref: "practice.qa_grid_formation.m03", x: 469900, y: 964300},
+		{ref: "practice.qa_grid_formation.m04", x: 470000, y: 964300},
+	}
+	if len(bundle.SpawnGroups) != len(want) {
+		t.Fatalf("unexpected grid member count: got %#v", bundle.SpawnGroups)
+	}
+	for i, member := range want {
+		got := bundle.SpawnGroups[i]
+		if got.Ref != member.ref || got.X != member.x || got.Y != member.y {
+			t.Fatalf("grid member %d = %+v, want %+v", i, got, member)
+		}
+	}
+}
+
+func TestCanonicalizeExpandsLineRegenSpawnIntoPackMembers(t *testing.T) {
+	bundle, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.qa_line_formation",
+			Name:        "QALineFormation",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       3,
+			PackSpacing: 100,
+			Formation:   " line ",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonicalize line formation: %v", err)
+	}
+	if len(bundle.RegenSpawns) != 0 {
+		t.Fatalf("expected regen_spawns to be stripped, got %+v", bundle.RegenSpawns)
+	}
+	want := []struct {
+		ref  string
+		name string
+		x    int32
+		y    int32
+	}{
+		{ref: "practice.qa_line_formation.m01", name: "QALineFormation 1", x: 469900, y: 964200},
+		{ref: "practice.qa_line_formation.m02", name: "QALineFormation 2", x: 469900, y: 964300},
+		{ref: "practice.qa_line_formation.m03", name: "QALineFormation 3", x: 469900, y: 964400},
+	}
+	if len(bundle.SpawnGroups) != len(want) {
+		t.Fatalf("unexpected line member count: got %#v", bundle.SpawnGroups)
+	}
+	for i, member := range want {
+		got := bundle.SpawnGroups[i]
+		if got.Ref != member.ref || got.Name != member.name || got.X != member.x || got.Y != member.y {
+			t.Fatalf("line member %d = %+v, want %+v", i, got, member)
+		}
+	}
+	raw, err := CanonicalJSON(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.qa_line_formation",
+			Name:        "QALineFormation",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       3,
+			PackSpacing: 100,
+			Formation:   "line",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("canonical JSON for line formation: %v", err)
+	}
+	if bytes.Contains(raw, []byte(`"regen_spawns"`)) || bytes.Contains(raw, []byte(`"formation"`)) {
+		t.Fatalf("expected canonical JSON to strip regen_spawns and formation, got %s", raw)
+	}
+}
+
+func TestCanonicalizeRejectsOneCountRegenSpawnWithLineFormation(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:       "practice.one_count_line",
+			Name:      "OneCountLine",
+			MapIndex:  1,
+			X:         469900,
+			Y:         964200,
+			RaceNum:   20350,
+			Count:     1,
+			Formation: "line",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for one-count regen spawn with line formation, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsUnknownRegenSpawnFormation(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.unknown_formation",
+			Name:        "UnknownFormation",
+			MapIndex:    1,
+			X:           469900,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       2,
+			PackSpacing: 100,
+			Formation:   "wedge",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for unknown regen formation, got %v", err)
+	}
+}
+
+func TestCanonicalizeRejectsPackSpacingOverflow(t *testing.T) {
+	_, err := Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.pack_spacing_overflow",
+			Name:        "PackSpacingOverflow",
+			MapIndex:    1,
+			X:           math.MaxInt32 - 10,
+			Y:           964200,
+			RaceNum:     20350,
+			Count:       2,
+			PackSpacing: 100,
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for pack_spacing grid overflow, got %v", err)
+	}
+	_, err = Canonicalize(Bundle{
+		RegenSpawns: []RegenSpawn{{
+			Ref:         "practice.line_spacing_overflow",
+			Name:        "LineSpacingOverflow",
+			MapIndex:    1,
+			X:           469900,
+			Y:           math.MaxInt32 - 10,
+			RaceNum:     20350,
+			Count:       2,
+			PackSpacing: 100,
+			Formation:   "line",
+		}},
+	})
+	if !errors.Is(err, ErrInvalidBundle) {
+		t.Fatalf("expected ErrInvalidBundle for line formation pack_spacing overflow, got %v", err)
+	}
+}
+
 func TestCanonicalizeRejectsMultiCountRegenSpawnWithoutPackSpacing(t *testing.T) {
 	_, err := Canonicalize(Bundle{
 		RegenSpawns: []RegenSpawn{{
