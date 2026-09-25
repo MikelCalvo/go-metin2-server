@@ -24,7 +24,7 @@ Today that includes both:
 - gameplay-triggered map-transfer slices driven from `MOVE` / `SYNC_POSITION`
 - the first service-style NPC `warp` interaction resolved from a visible static actor through `INTERACT`
 
-It does not yet freeze a final warp/loading-screen UX, reconnect choreography, or inter-channel migration.
+It does not yet freeze inter-channel migration or a full client loading choreography.
 
 ## Current owned self-session contract
 
@@ -33,10 +33,16 @@ When a bootstrap transfer is committed from gameplay today:
 1. the normal same-map self reply is suppressed
    - no immediate self `MOVE_ACK`
    - no immediate self `SYNC_POSITION_ACK`
-2. the moved session instead receives an immediate **transfer rebootstrap burst** on that same game socket
-3. the burst reuses the owned selected-character bootstrap packet family with the relocated snapshot
-4. trailing visibility deltas are appended after that self burst
-5. if the moved player had already changed a supported `body`, `weapon`, or `head` item through the owned equip/unequip seam before the transfer, the destination peer-entry burst reuses that latest projected appearance
+2. the relocated selected-character **transfer rebootstrap burst** follows on that same socket
+3. one self-only `GC::WARP` (`0x0306`) closes that reply, after the trailing visibility deltas
+4. the burst reuses the owned selected-character bootstrap packet family with the relocated snapshot
+5. trailing visibility deltas are appended after that self burst
+6. if the moved player had already changed a supported `body`, `weapon`, or `head` item through the owned equip/unequip seam before the transfer, the destination peer-entry burst reuses that latest projected appearance
+
+`GC::WARP` carries the committed destination `x` / `y` plus the advertised login `addr` / `port` of this same process.
+It closes the self transfer reply: the relocated character burst and the visibility deltas keep their existing order, and this one self-only frame follows them.
+It does not change channel, replay `PHASE(LOADING)` / `PHASE(GAME)`, or replace the rebootstrap burst.
+Busy-window close frames that already precede the burst (`GC::SHOP END`, exchange `END`, safebox / cube / private-shop close) still precede both the burst and `GC::WARP`.
 
 ## Self rebootstrap frames
 
@@ -47,7 +53,7 @@ The moved player first receives the relocated selected-character burst in this e
 3. `CHARACTER_UPDATE`
 4. `PLAYER_POINT_CHANGE`
 
-These four frames reuse the same owned self-bootstrap family documented by `loading-to-game-bootstrap-burst.md`, but they are rebuilt from the **post-transfer** character snapshot.
+`GC::WARP` is not part of that four-frame family. It closes the whole self transfer reply, after the trailing visibility deltas below.
 
 ## Trailing visibility frames
 
@@ -104,6 +110,7 @@ then a successful committed transfer currently produces this self-session result
    - `ITEM_GROUND_DEL` for source-map ground item E
    - `ITEM_GROUND_ADD` for destination-map ground item F
    - `ITEM_OWNERSHIP` for destination-map ground item F
+6. self-only `GC::WARP` for the committed destination (`1700,2800` on the advertised login address/port; the example destination map is `42`)
 
 At the same time:
 - player A receives `CHARACTER_DEL` for player B
@@ -116,7 +123,7 @@ At the same time:
 Ordinary same-map `MOVE` / `SYNC_POSITION` that keep the player on the same effective map scope do **not** emit this self-session rebootstrap burst.
 That remains a normal same-map movement/sync concern rather than a visible-world transfer concern.
 
-NPC `warp` INTERACT is different: `HandleInteraction` always commits through the transfer helper with rebootstrap enabled, including same-map destinations such as the composed PvE fixture `npc:qa_teleporter` (`470200,964200` on map `1`). Those warps still emit authored informational text (when present) plus the self rebootstrap burst, even though visibility scope does not change. After that destination the player may still be outside the 300-unit static-actor interaction radius of the source square.
+NPC `warp` INTERACT is different: `HandleInteraction` always commits through the transfer helper with rebootstrap enabled, including same-map destinations such as the composed PvE fixture `npc:qa_teleporter` (`470200,964200` on map `1`). Those warps still emit authored informational text (when present), then the self rebootstrap burst, then one self-only `GC::WARP` that closes that reply, even though visibility scope does not change. After that destination the player may still be outside the 300-unit static-actor interaction radius of the source square.
 
 ## Why this slice exists
 
@@ -133,8 +140,7 @@ This slice makes the current behavior explicit without overstating progress towa
 ## Explicit non-goals
 
 This slice still does not freeze:
-- a dedicated client-originated warp request packet
-- a final self-visible loading-screen or warp packet
+- a client-chosen warp destination (`CG::WARP` stays fail-closed unless a later policy quotes it)
 - `PHASE(LOADING)` / `PHASE(GAME)` replay during transfer
 - inter-channel migration
 - reconnect/resume semantics across transfer

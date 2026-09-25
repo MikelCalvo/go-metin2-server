@@ -4489,8 +4489,8 @@ func assertExactPositionTransferRebuildsGroundItemVisibility(t *testing.T, trigg
 	if err != nil {
 		t.Fatalf("unexpected transfer trigger error: %v", err)
 	}
-	if len(transferOut) != 11 {
-		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add/ownership transfer frames, got %d", len(transferOut))
+	if len(transferOut) != 12 {
+		t.Fatalf("expected self bootstrap, peer del/add, ground del/add/ownership, and self GC::WARP transfer frames, got %d", len(transferOut))
 	}
 	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, transferOut[8]))
 	if err != nil {
@@ -4513,6 +4513,7 @@ func assertExactPositionTransferRebuildsGroundItemVisibility(t *testing.T, trigg
 	if destOwnership != (itemproto.OwnershipPacket{VID: destGround.VID, OwnerName: destDropper.Name}) {
 		t.Fatalf("unexpected destination ground ownership after transfer: got %+v want vid %d owner %q", destOwnership, destGround.VID, destDropper.Name)
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer ground rebuild, got %d", len(queued))
 	}
