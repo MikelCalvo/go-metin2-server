@@ -64,6 +64,12 @@ rows are later companions, not part of this placement freeze.
      - `col = (i - 1) % cols`
      - `x' = x + col * pack_spacing`
      - `y' = y + row * pack_spacing`
+   - optional `formation` omitted or `"grid"` keeps this grid
+   - optional `formation = "line"` places the same members in one file along Y:
+     member `i` stays at `x' = x` and `y' = y + (i - 1) * pack_spacing`
+   - any other `formation` name fails closed
+   - a member coordinate that would overflow `int32` fails closed before runtime
+     mutation (grid and line)
    - `map_index`, `race_num`, `combat_profile`, reward scalars/lists, drop-table
      expansion, and kill-quest / require-gate fields are copied identically onto
      every member
@@ -80,6 +86,9 @@ rows are later companions, not part of this placement freeze.
     - `count > 8`
     - `count >= 2` and `pack_spacing` is omitted or `<= 0`
     - `count == 1` and `pack_spacing > 0`
+    - `count == 1` and `formation` is present (including `"line"` or `"grid"`)
+    - `count >= 2` and `formation` is present but not `"grid"` or `"line"`
+    - any synthesized member coordinate would overflow `int32`
     - any synthesized member ref is non-canonical or collides
 
 ### First one-count random-rectangle placement (GREEN target — now owned)
@@ -125,7 +134,7 @@ rows are later companions, not part of this placement freeze.
 - shared HP unless a multi-count regen row opts in with `shared_hp` (default packs and live one-count refs stay independent)
 - pack aggro / assist / multi-mob linkage
 - applying a timer overlay or facing overlay to every regen row by default
-- roaming, pathing, or group formations beyond the deterministic grid offsets
+- roaming or pathing beyond the owned grid and line pack offsets
 - changing built-in one-count fixtures to synthesize `.m01` suffixes
 - weighted/random loot
 - branching quest scripts
@@ -137,6 +146,12 @@ rows are later companions, not part of this placement freeze.
    - `count = 2` + `pack_spacing = 100` expands to `{ref}.m01` at `(x,y)` and
      `{ref}.m02` at `(x+100,y)` with shared rewards and stripped authoring
      collections
+   - omitted `formation` and `formation = "grid"` keep that same grid
+   - `formation = "line"` places `{ref}.m01` at `(x,y)` and `{ref}.m02` at
+     `(x, y+pack_spacing)`
+   - `count = 1` with `formation = "line"` fails closed
+   - an unknown `formation` name fails closed
+   - a member step that would overflow `int32` fails closed
    - `count = 1` with `pack_spacing = 0`/omitted keeps authored `ref` (no suffix)
    - `count = 2` without `pack_spacing` fails closed
    - `count = 9` fails closed
@@ -187,3 +202,11 @@ spawn (one-count keeps the authored ref; multi-count copies onto every
 `{ref}.mNN` member). Canonical JSON still strips `regen_spawns`. Default regen
 rows plus `spawn_groups` without the overlay stay at `angle=0`. Pack AI, MOVE
 rotation, and a pack object stay deferred.
+The first opt-in pack formation besides the owned grid now lives on
+`regen_spawns[].formation`: omitted or `"grid"` keeps the deterministic
+`pack_spacing` grid, and `"line"` places the same `{ref}.mNN` members in one
+file along Y (`x` unchanged, `y + (i-1)*pack_spacing`). One-count rows still
+reject any formation name, unknown names fail closed, and a member coordinate
+that would overflow `int32` fails closed before runtime mutation. Canonical
+JSON still strips `regen_spawns`. Pack AI assist, shared HP, synchronized
+respawn, and a pack object stay out of this companion.
