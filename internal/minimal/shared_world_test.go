@@ -7529,6 +7529,7 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	if destinationActorUpdate.VID != uint32(actor.EntityID) {
 		t.Fatalf("unexpected destination static actor update after transfer: %+v", destinationActorUpdate)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 5100, 6100)
 }
 
 func TestGameRuntimeImportContentBundleQueuesSpawnGroupVisibilityForOnlinePlayers(t *testing.T) {
@@ -14220,6 +14221,25 @@ func TestNewGameSessionFactoryRadiusAOISyncPositionOutOfRangeRemovesStaticActorV
 	}
 }
 
+func assertSelfWarpClosesTransfer(t *testing.T, frames [][]byte, x, y int32) {
+	t.Helper()
+	if len(frames) == 0 {
+		t.Fatal("expected self GC::WARP to close the transfer reply")
+	}
+	warp, err := worldproto.DecodeWarp(decodeSingleFrame(t, frames[len(frames)-1]))
+	if err != nil {
+		t.Fatalf("decode closing self GC::WARP: %v", err)
+	}
+	if warp.X != x || warp.Y != y || warp.Addr != 0x0100007F || warp.Port != 13000 {
+		t.Fatalf("unexpected closing self GC::WARP: %+v", warp)
+	}
+	for i, raw := range frames[:len(frames)-1] {
+		if decoded, err := worldproto.DecodeWarp(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatalf("expected GC::WARP only as the closing frame, got %+v at index %d", decoded, i)
+		}
+	}
+}
+
 func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -14299,6 +14319,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testi
 	if addedPeer.VID != peerThree.VID || addedPeer.X != peerThree.X || addedPeer.Y != peerThree.Y {
 		t.Fatalf("unexpected mover peer add: %+v", addedPeer)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1700, 2800)
 
 	moverFrames := flushServerFrames(t, flowTwo)
 	if len(moverFrames) != 0 {
@@ -14371,6 +14392,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPosition(
 	if len(syncOut) != 9 {
 		t.Fatalf("expected 8 self transfer-rebootstrap frames from sync_position trigger plus self GC::WARP, got %d", len(syncOut))
 	}
+	assertSelfWarpClosesTransfer(t, syncOut, 1700, 2800)
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
 	if err != nil {
 		t.Fatalf("decode self transfer add from sync_position: %v", err)
@@ -14474,6 +14496,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStati
 	if actorUpdate.VID != uint32(targetActor.EntityID) {
 		t.Fatalf("unexpected target static actor update during transfer: %+v", actorUpdate)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1700, 2800)
 	if queued := flushServerFrames(t, flowTwo); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer rebootstrap with static actors, got %d", len(queued))
 	}
@@ -14566,6 +14589,7 @@ func TestNewGameSessionFactoryDueSpawnGroupReturnStepFlushesBeforeMoveTransferRe
 	if steppedUpdate.VID != uint32(group.EntityID) {
 		t.Fatalf("expected transfer rebootstrap to see stepped actor update for target %d, got %+v", group.EntityID, steppedUpdate)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 2201, 2800)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no duplicate queued return-step rebuild after transfer rebootstrap, got %d", len(queued))
 	}
@@ -14703,6 +14727,7 @@ func TestNewGameSessionFactoryDueSpawnGroupChaseStepFlushesBeforeMoveTransferReb
 	if steppedUpdate.VID != targetVID {
 		t.Fatalf("expected transfer rebootstrap to see stepped chase actor update for target %d, got %+v", group.EntityID, steppedUpdate)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1850, 2800)
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no duplicate queued chase-step rebuild after transfer rebootstrap, got %d", len(queued))
 	}
@@ -14877,6 +14902,7 @@ func TestNewGameSessionFactoryDueSpawnGroupHomewardStepFlushesBeforeMoveTransfer
 	if steppedUpdate.VID != targetVID {
 		t.Fatalf("expected transfer rebootstrap to see stepped homeward actor update for target %d, got %+v", group.EntityID, steppedUpdate)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1850, 2800)
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no duplicate queued homeward-step rebuild after transfer rebootstrap, got %d", len(queued))
 	}
@@ -14994,7 +15020,8 @@ func TestNewGameSessionFactoryDueStaticActorRespawnFlushesBeforeMoveTransferRebo
 	if respawnUpdate.VID != targetVID {
 		t.Fatalf("expected transfer rebootstrap to see respawned actor update for target %d, got %+v", targetVID, respawnUpdate)
 	}
-	for idx := 4; idx < len(moveOut); idx++ {
+	assertSelfWarpClosesTransfer(t, moveOut, 1200, 2200)
+	for idx := 4; idx < len(moveOut)-1; idx++ {
 		if deadReplay, err := worldproto.DecodeDead(decodeSingleFrame(t, moveOut[idx])); err == nil {
 			t.Fatalf("expected transfer due-respawn preflight not to replay stale DEAD frame, got %+v at frame %d", deadReplay, idx)
 		}
@@ -15124,6 +15151,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 	if dead.VID != targetVID {
 		t.Fatalf("unexpected dead dummy transfer dead replay: %+v", dead)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1700, 2800)
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer into dead dummy visibility, got %d", len(queued))
 	}
@@ -15168,6 +15196,7 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPositionW
 	if len(syncOut) != 9 {
 		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas from sync_position plus self GC::WARP, got %d", len(syncOut))
 	}
+	assertSelfWarpClosesTransfer(t, syncOut, 1700, 2800)
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
 	if err != nil {
 		t.Fatalf("decode self transfer add with static actors from sync_position: %v", err)
@@ -15302,6 +15331,7 @@ func TestNewGameSessionFactoryRoutesPostTransferChatAndMoveToDestinationMapPeers
 	if len(transferOut) != 9 {
 		t.Fatalf("expected 8 self transfer-rebootstrap frames before post-transfer gameplay plus self GC::WARP, got %d", len(transferOut))
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	_ = flushServerFrames(t, flowOne)
 	_ = flushServerFrames(t, flowTwo)
 	_ = flushServerFrames(t, flowThree)
@@ -28980,6 +29010,7 @@ func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestination
 	if len(transferOut) != 9 {
 		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner plus self GC::WARP, got %d", len(transferOut))
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	oldTransferExit := flushServerFrames(t, flowWatcherOld)
 	if len(oldTransferExit) != 1 {
 		t.Fatalf("expected 1 old-map delete frame after owner transfer, got %d", len(oldTransferExit))
@@ -29115,6 +29146,7 @@ func TestGameRuntimeCloseAfterTransferEmitsPeerDeleteWhenEntityRegistryEntryAlre
 	if len(transferOut) != 9 {
 		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner plus self GC::WARP, got %d", len(transferOut))
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	oldTransferExit := flushServerFrames(t, flowWatcherOld)
 	if len(oldTransferExit) != 1 {
 		t.Fatalf("expected 1 old-map delete frame after owner transfer, got %d", len(oldTransferExit))
@@ -38479,6 +38511,7 @@ func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap
 	if removedActor.VID != uint32(actor.EntityID) {
 		t.Fatalf("expected source merchant delete for entity %d after transfer close, got %+v", actor.EntityID, removedActor)
 	}
+	assertSelfWarpClosesTransfer(t, moveOut, 1700, 2800)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after transfer-triggered merchant close, got %d", len(queued))
 	}
@@ -41152,6 +41185,7 @@ func TestGameSessionFlowStaticActorQuestGatedWarpTransfersWhenRequirementMet(t *
 	if len(out) != 6 {
 		t.Fatalf("expected 5 gated warp interaction frames (4 self rebootstrap + 1 static actor delete) plus self GC::WARP, got %d", len(out))
 	}
+	assertSelfWarpClosesTransfer(t, out, 1700, 2800)
 	connected := runtime.ConnectedCharacters()
 	if len(connected) != 1 || connected[0].MapIndex != 42 || connected[0].X != 1700 || connected[0].Y != 2800 {
 		t.Fatalf("expected runtime connected character snapshot to move to gated warp destination, got %+v", connected)
@@ -41240,12 +41274,41 @@ func TestGameSessionFlowStaticActorWarpInteractionReturnsTransferRebootstrapFram
 	if len(out) != 6 {
 		t.Fatalf("expected 5 warp interaction frames (4 self rebootstrap + 1 static actor delete) plus self GC::WARP, got %d", len(out))
 	}
+	assertSelfWarpClosesTransfer(t, out, 1700, 2800)
 	connected := runtime.ConnectedCharacters()
 	if len(connected) != 1 || connected[0].MapIndex != 42 || connected[0].X != 1700 || connected[0].Y != 2800 {
 		t.Fatalf("expected runtime connected character snapshot to move to warp destination, got %+v", connected)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued peer frames for self-only warp interaction, got %d", len(queued))
+	}
+}
+
+func TestGameSessionFlowClientWarpStaysFailClosed(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "peer-one", 0x11111111, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "peer-one", 0x11111111)
+	defer closeSessionFlow(t, flow)
+	_ = flushServerFrames(t, flow)
+
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, worldproto.EncodeClientWarp(worldproto.ClientWarpPacket{X: 1700, Y: 2800})))
+	if err == nil {
+		t.Fatal("expected unsupported CG::WARP to stay fail-closed")
+	}
+	if len(out) != 0 {
+		t.Fatalf("expected unsupported CG::WARP to emit no frames, got %d", len(out))
+	}
+	connected := runtime.ConnectedCharacters()
+	if len(connected) != 1 || connected[0].MapIndex != bootstrapMapIndex || connected[0].X != peer.X || connected[0].Y != peer.Y {
+		t.Fatalf("expected unsupported CG::WARP to keep the original position, got %+v", connected)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("expected unsupported CG::WARP to queue no frames, got %d", len(queued))
 	}
 }
 
@@ -45423,8 +45486,9 @@ func TestGameSessionFlowPracticeMobImmediateRetaliationPointLossPersistsAcrossTr
 	if len(transferOut) == 0 {
 		t.Fatal("expected transfer rebootstrap frames after immediate retaliation")
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	foundTransferPointChange := false
-	for _, raw := range transferOut {
+	for _, raw := range transferOut[:len(transferOut)-1] {
 		decoded, decodeErr := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw))
 		if decodeErr != nil {
 			continue
@@ -45576,6 +45640,7 @@ func TestGameSessionFlowPracticeMobTransferRebootstrapStopsPendingRetaliationAnd
 	if len(transferOut) == 0 {
 		t.Fatal("expected transfer rebootstrap frames after pending retaliation was armed")
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 
 	watcherQueued := flushServerFrames(t, watcherFlow)
 	if len(watcherQueued) != 1 {
@@ -45720,6 +45785,7 @@ func TestGameSessionFlowPracticeMobWarpRebootstrapQueuesTargetClearAndReleasesAg
 	if !containsServerTargetClear(t, warpOut) {
 		t.Fatalf("expected warp rebootstrap response to carry selected-target clear, got %d frames", len(warpOut))
 	}
+	assertSelfWarpClosesTransfer(t, warpOut, 1700, 2800)
 
 	watcherQueued := flushServerFrames(t, watcherFlow)
 	if len(watcherQueued) != 1 {
@@ -55679,6 +55745,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t
 	if len(transferOut) == 0 {
 		t.Fatal("expected transfer rebootstrap frames after first move trigger")
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	returnOut, err := flow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{Func: 1, Arg: 0, Rot: 12, X: 1700, Y: 2800, Time: 0x21222325})))
 	if err != nil {
 		t.Fatalf("unexpected return transfer move error: %v", err)
@@ -55686,6 +55753,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsAcrossTransferRebootstrap(t
 	if len(returnOut) == 0 {
 		t.Fatal("expected transfer rebootstrap frames after return move trigger")
 	}
+	assertSelfWarpClosesTransfer(t, returnOut, 1100, 2100)
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {
 		t.Fatalf("expected no queued frames after round-trip transfer rebootstrap, got %d", len(queued))
 	}

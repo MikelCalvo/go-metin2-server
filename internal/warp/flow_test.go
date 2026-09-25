@@ -166,7 +166,7 @@ func TestFlowRollsBackPersistedSnapshotWhenCommitFails(t *testing.T) {
 	}
 }
 
-func TestFlowPrependsSelfWarpUsingAdvertisedEndpoint(t *testing.T) {
+func TestFlowAppendsSelfWarpAfterCommitFrames(t *testing.T) {
 	selected := loginticket.Character{ID: 0x01030102, VID: 0x02040102, Name: "PeerTwo", MapIndex: 1, X: 1500, Y: 2600}
 	burst := []byte{0x0D, 0x00, 0x04, 0x00}
 	flow := NewFlow(Config{
@@ -181,10 +181,10 @@ func TestFlowPrependsSelfWarpUsingAdvertisedEndpoint(t *testing.T) {
 		t.Fatal("expected flow to report successful commit")
 	}
 	want := worldproto.EncodeWarp(worldproto.WarpPacket{X: 1700, Y: 2800, Addr: 0x0100007F, Port: 13000})
-	if len(result.SelfFrames) != 2 || !bytes.Equal(result.SelfFrames[0], want) || !bytes.Equal(result.SelfFrames[1], burst) {
-		t.Fatalf("expected self warp ahead of commit frames, got %x", result.SelfFrames)
+	if len(result.SelfFrames) != 2 || !bytes.Equal(result.SelfFrames[0], burst) || !bytes.Equal(result.SelfFrames[1], want) {
+		t.Fatalf("expected self warp after commit frames, got %x", result.SelfFrames)
 	}
-	decoded, err := worldproto.DecodeWarp(decodeWarpFrame(t, result.SelfFrames[0]))
+	decoded, err := worldproto.DecodeWarp(decodeWarpFrame(t, result.SelfFrames[1]))
 	if err != nil {
 		t.Fatalf("decode self warp: %v", err)
 	}

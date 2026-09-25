@@ -68,7 +68,7 @@ func (f Flow) Apply(selected loginticket.Character, target Target) (Result, bool
 			Addr: f.endpoint.Addr,
 			Port: f.endpoint.Port,
 		})
-		result.SelfFrames = append([][]byte{warpFrame}, result.SelfFrames...)
+		result.SelfFrames = append(append([][]byte(nil), result.SelfFrames...), warpFrame)
 	}
 	return result, true
 }

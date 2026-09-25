@@ -4513,6 +4513,7 @@ func assertExactPositionTransferRebuildsGroundItemVisibility(t *testing.T, trigg
 	if destOwnership != (itemproto.OwnershipPacket{VID: destGround.VID, OwnerName: destDropper.Name}) {
 		t.Fatalf("unexpected destination ground ownership after transfer: got %+v want vid %d owner %q", destOwnership, destGround.VID, destDropper.Name)
 	}
+	assertSelfWarpClosesTransfer(t, transferOut, 1700, 2800)
 	if queued := flushServerFrames(t, moverFlow); len(queued) != 0 {
 		t.Fatalf("expected no queued mover frames after immediate transfer ground rebuild, got %d", len(queued))
 	}
