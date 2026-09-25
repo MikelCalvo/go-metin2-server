@@ -630,12 +630,20 @@ type gameRuntime struct {
 	spawnHomewardStepDueAt  map[uint64]time.Time
 	chaseSpeedMu            sync.Mutex
 	chaseSpeeds             []spawnGroupChaseChangeSpeedDelivery
+	chaseMarkerMu           sync.Mutex
+	chaseMarkers            []spawnGroupChaseTargetMarkerDelivery
 	now                     func() time.Time
 }
 
 type spawnGroupChaseChangeSpeedDelivery struct {
 	entityID uint64
 	frame    []byte
+}
+
+type spawnGroupChaseTargetMarkerDelivery struct {
+	entityID  uint64
+	targetVID uint32
+	frame     []byte
 }
 
 type liveCharacterStateSnapshot struct {
@@ -3257,25 +3265,26 @@ func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSn
 }
 
 func (r *gameRuntime) applySpawnGroupChaseStepPlan(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool) {
-	snapshot, ok, speedDeliveries := r.applySpawnGroupChaseStepPlanLocked(entityID, plan)
+	snapshot, ok, speedDeliveries, markerDeliveries := r.applySpawnGroupChaseStepPlanLocked(entityID, plan)
 	r.queueSpawnGroupChaseChangeSpeed(speedDeliveries)
+	r.queueSpawnGroupChaseTargetMarker(markerDeliveries)
 	return snapshot, ok
 }
 
-func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool, []spawnGroupChaseChangeSpeedDelivery) {
+func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan worldruntime.SpawnChaseStepPlan) (SpawnGroupReturnStepSnapshot, bool, []spawnGroupChaseChangeSpeedDelivery, []spawnGroupChaseTargetMarkerDelivery) {
 	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 || !plan.Next.Valid() {
-		return SpawnGroupReturnStepSnapshot{}, false, nil
+		return SpawnGroupReturnStepSnapshot{}, false, nil, nil
 	}
 	world := r.sharedWorld
 	world.mu.Lock()
 	defer world.mu.Unlock()
 	actor, ok := world.entities.StaticActor(entityID)
 	if !ok || actor.SpawnGroupRef == "" {
-		return SpawnGroupReturnStepSnapshot{}, false, nil
+		return SpawnGroupReturnStepSnapshot{}, false, nil, nil
 	}
 	currentHP, ok := world.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok || currentHP == 0 {
-		return SpawnGroupReturnStepSnapshot{}, false, nil
+		return SpawnGroupReturnStepSnapshot{}, false, nil, nil
 	}
 	snapshotFor := func(updated worldruntime.StaticEntity, complete bool) SpawnGroupReturnStepSnapshot {
 		return SpawnGroupReturnStepSnapshot{
@@ -3288,19 +3297,20 @@ func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan w
 		}
 	}
 	if plan.Complete && plan.Next.Equal(actor.Position) {
-		return snapshotFor(actor, true), true, nil
+		return snapshotFor(actor, true), true, nil, nil
 	}
 	if !plan.Next.SameMap(actor.Position) {
-		return SpawnGroupReturnStepSnapshot{}, false, nil
+		return SpawnGroupReturnStepSnapshot{}, false, nil, nil
 	}
 	steppedActor := actor
 	steppedActor.Position = plan.Next
 	targetDiff := world.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
 	updated, ok := world.entities.UpdateStaticActor(steppedActor)
 	if !ok {
-		return SpawnGroupReturnStepSnapshot{}, false, nil
+		return SpawnGroupReturnStepSnapshot{}, false, nil, nil
 	}
 	var speedDeliveries []spawnGroupChaseChangeSpeedDelivery
+	var markerDeliveries []spawnGroupChaseTargetMarkerDelivery
 	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
 		for _, target := range targetDiff.RetainedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
@@ -3316,6 +3326,22 @@ func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan w
 				speedDeliveries = append(speedDeliveries, spawnGroupChaseChangeSpeedDelivery{
 					entityID: target.Entity.ID,
 					frame:    append([]byte(nil), speedRaw...),
+				})
+			}
+		}
+		if markerRaw, markerEncodable := encodeSelectedTargetMarkerUpdateFrame(updated); markerEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				selectedVID, selected := world.sessionCombatTargetLocked(target.Entity.ID)
+				if !selected || selectedVID != markerTargetVID(updated) {
+					continue
+				}
+				markerDeliveries = append(markerDeliveries, spawnGroupChaseTargetMarkerDelivery{
+					entityID:  target.Entity.ID,
+					targetVID: selectedVID,
+					frame:     append([]byte(nil), markerRaw...),
 				})
 			}
 		}
@@ -3336,7 +3362,7 @@ func (r *gameRuntime) applySpawnGroupChaseStepPlanLocked(entityID uint64, plan w
 			world.enqueueToEntityLocked(target.Entity.ID, addFrames)
 		}
 	}
-	return snapshotFor(updated, plan.Complete), true, speedDeliveries
+	return snapshotFor(updated, plan.Complete), true, speedDeliveries, markerDeliveries
 }
 
 func encodeStaticActorChangeSpeedFrame(actor worldruntime.StaticEntity) ([]byte, bool) {
@@ -3369,6 +3395,56 @@ func (r *gameRuntime) flushPendingSpawnGroupChaseChangeSpeed() {
 	r.chaseSpeedMu.Unlock()
 	for _, delivery := range deliveries {
 		if delivery.entityID == 0 || len(delivery.frame) == 0 {
+			continue
+		}
+		owner, ok := r.sharedWorld.playerCharacter(delivery.entityID)
+		if !ok || characterAtBootstrapHPFloor(owner) {
+			continue
+		}
+		r.sharedWorld.EnqueueToEntity(delivery.entityID, [][]byte{delivery.frame})
+	}
+	r.flushPendingSpawnGroupChaseTargetMarker()
+}
+
+func markerTargetVID(actor worldruntime.StaticEntity) uint32 {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok {
+		return 0
+	}
+	return vid
+}
+
+func encodeSelectedTargetMarkerUpdateFrame(actor worldruntime.StaticEntity) ([]byte, bool) {
+	vid, ok := staticActorVisibilityVID(actor)
+	if !ok || vid == 0 {
+		return nil, false
+	}
+	return combatproto.EncodeServerTargetUpdate(combatproto.ServerTargetUpdatePacket{
+		ID: int32(vid),
+		X:  actor.Position.X,
+		Y:  actor.Position.Y,
+	}), true
+}
+
+func (r *gameRuntime) queueSpawnGroupChaseTargetMarker(deliveries []spawnGroupChaseTargetMarkerDelivery) {
+	if r == nil || len(deliveries) == 0 {
+		return
+	}
+	r.chaseMarkerMu.Lock()
+	defer r.chaseMarkerMu.Unlock()
+	r.chaseMarkers = append(r.chaseMarkers, deliveries...)
+}
+
+func (r *gameRuntime) flushPendingSpawnGroupChaseTargetMarker() {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.chaseMarkerMu.Lock()
+	deliveries := r.chaseMarkers
+	r.chaseMarkers = nil
+	r.chaseMarkerMu.Unlock()
+	for _, delivery := range deliveries {
+		if delivery.entityID == 0 || delivery.targetVID == 0 || len(delivery.frame) == 0 {
 			continue
 		}
 		owner, ok := r.sharedWorld.playerCharacter(delivery.entityID)
