@@ -356,6 +356,75 @@ func TestDecodeChangeSpeedRejectsInvalidPayload(t *testing.T) {
 	}
 }
 
+func TestEncodeClientWarpBuildsAClientFrame(t *testing.T) {
+	want := frame.Encode(HeaderClientWarp, []byte{0xDC, 0x05, 0x00, 0x00, 0x28, 0x0A, 0x00, 0x00})
+	got := EncodeClientWarp(ClientWarpPacket{X: 1500, Y: 2600})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected client warp frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeClientWarpReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeClientWarp(decodeSingleFrame(t, EncodeClientWarp(ClientWarpPacket{X: 1500, Y: 2600})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.X != 1500 || packet.Y != 2600 {
+		t.Fatalf("unexpected client warp packet: %+v", packet)
+	}
+}
+
+func TestDecodeClientWarpRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeClientWarp(frame.Frame{Header: HeaderWarp, Length: 12, Payload: []byte{0xA4, 0x05, 0x00, 0x00, 0x28, 0x0A, 0x00, 0x00}})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeClientWarpRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeClientWarp(frame.Frame{Header: HeaderClientWarp, Length: 8, Payload: []byte{0xA4, 0x05, 0x00, 0x00}})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
+func TestEncodeWarpBuildsAServerFrame(t *testing.T) {
+	want := frame.Encode(HeaderWarp, []byte{
+		0xA4, 0x06, 0x00, 0x00,
+		0xF0, 0x0A, 0x00, 0x00,
+		0x7F, 0x00, 0x00, 0x01,
+		0xC8, 0x32,
+	})
+	got := EncodeWarp(WarpPacket{X: 1700, Y: 2800, Addr: 0x0100007F, Port: 13000})
+	if !bytes.Equal(got, want) {
+		t.Fatalf("unexpected warp frame bytes: got %x want %x", got, want)
+	}
+}
+
+func TestDecodeWarpReturnsExpectedFields(t *testing.T) {
+	packet, err := DecodeWarp(decodeSingleFrame(t, EncodeWarp(WarpPacket{X: 1700, Y: 2800, Addr: 0x0100007F, Port: 13000})))
+	if err != nil {
+		t.Fatalf("unexpected decode error: %v", err)
+	}
+	if packet.X != 1700 || packet.Y != 2800 || packet.Addr != 0x0100007F || packet.Port != 13000 {
+		t.Fatalf("unexpected warp packet: %+v", packet)
+	}
+}
+
+func TestDecodeWarpRejectsUnexpectedHeader(t *testing.T) {
+	_, err := DecodeWarp(frame.Frame{Header: HeaderClientWarp, Length: 18, Payload: make([]byte, warpPayloadSize)})
+	if !errors.Is(err, ErrUnexpectedHeader) {
+		t.Fatalf("expected ErrUnexpectedHeader, got %v", err)
+	}
+}
+
+func TestDecodeWarpRejectsInvalidPayload(t *testing.T) {
+	_, err := DecodeWarp(frame.Frame{Header: HeaderWarp, Length: 12, Payload: make([]byte, clientWarpPayloadSize)})
+	if !errors.Is(err, ErrInvalidPayload) {
+		t.Fatalf("expected ErrInvalidPayload, got %v", err)
+	}
+}
+
 func TestEncodeStunBuildsAServerFrame(t *testing.T) {
 	want := frame.Encode(HeaderStun, []byte{0x04, 0x03, 0x02, 0x01})
 	got := EncodeStun(StunPacket{VID: 0x01020304})

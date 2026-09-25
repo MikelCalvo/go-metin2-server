@@ -4489,8 +4489,8 @@ func assertExactPositionTransferRebuildsGroundItemVisibility(t *testing.T, trigg
 	if err != nil {
 		t.Fatalf("unexpected transfer trigger error: %v", err)
 	}
-	if len(transferOut) != 11 {
-		t.Fatalf("expected self bootstrap, peer del/add, and ground del/add/ownership transfer frames, got %d", len(transferOut))
+	if len(transferOut) != 12 {
+		t.Fatalf("expected self bootstrap, peer del/add, ground del/add/ownership, and self GC::WARP transfer frames, got %d", len(transferOut))
 	}
 	sourceDelete, err := itemproto.DecodeGroundDel(decodeSingleFrame(t, transferOut[8]))
 	if err != nil {

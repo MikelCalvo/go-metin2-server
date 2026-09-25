@@ -30,6 +30,8 @@ const (
 	HeaderStun                    uint16 = 0x0216
 	HeaderDead                    uint16 = 0x0217
 	HeaderChangeSpeed             uint16 = 0x0218
+	HeaderClientWarp              uint16 = 0x0305
+	HeaderWarp                    uint16 = 0x0306
 
 	// BootstrapCharacterMovingSpeed is the already-owned CHARACTER_ADD /
 	// CHARACTER_UPDATE default reused by GC CHANGE_SPEED emits, including the
@@ -65,6 +67,8 @@ const (
 	stunPayloadSize                    = 4
 	deadPayloadSize                    = 4
 	changeSpeedPayloadSize             = 6
+	clientWarpPayloadSize              = 8
+	warpPayloadSize                    = 14
 	simplePlayerPayloadSize            = 103
 )
 
@@ -127,6 +131,24 @@ type DeadPacket struct {
 type ChangeSpeedPacket struct {
 	VID         uint32
 	MovingSpeed uint16
+}
+
+// ClientWarpPacket is the client-originated WARP request (0x0305).
+// The bootstrap runtime does not accept a client-chosen destination; an
+// unsupported request stays fail-closed instead of opening a second transfer.
+type ClientWarpPacket struct {
+	X int32
+	Y int32
+}
+
+// WarpPacket is the self-visible server WARP (0x0306) for one already-committed
+// same-process transfer. Addr and Port reuse the advertised login endpoint so
+// the client can keep the current game socket; this is not an inter-channel hop.
+type WarpPacket struct {
+	X    int32
+	Y    int32
+	Addr uint32
+	Port uint16
 }
 
 type CharacterAddPacket struct {
@@ -419,6 +441,50 @@ func DecodeDead(f frame.Frame) (DeadPacket, error) {
 		return DeadPacket{}, ErrInvalidPayload
 	}
 	return DeadPacket{VID: binary.LittleEndian.Uint32(f.Payload)}, nil
+}
+
+func EncodeClientWarp(packet ClientWarpPacket) []byte {
+	payload := make([]byte, clientWarpPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(packet.Y))
+	return frame.Encode(HeaderClientWarp, payload)
+}
+
+func DecodeClientWarp(f frame.Frame) (ClientWarpPacket, error) {
+	if f.Header != HeaderClientWarp {
+		return ClientWarpPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != clientWarpPayloadSize {
+		return ClientWarpPacket{}, ErrInvalidPayload
+	}
+	return ClientWarpPacket{
+		X: int32(binary.LittleEndian.Uint32(f.Payload[0:4])),
+		Y: int32(binary.LittleEndian.Uint32(f.Payload[4:8])),
+	}, nil
+}
+
+func EncodeWarp(packet WarpPacket) []byte {
+	payload := make([]byte, warpPayloadSize)
+	binary.LittleEndian.PutUint32(payload[0:4], uint32(packet.X))
+	binary.LittleEndian.PutUint32(payload[4:8], uint32(packet.Y))
+	binary.LittleEndian.PutUint32(payload[8:12], packet.Addr)
+	binary.LittleEndian.PutUint16(payload[12:14], packet.Port)
+	return frame.Encode(HeaderWarp, payload)
+}
+
+func DecodeWarp(f frame.Frame) (WarpPacket, error) {
+	if f.Header != HeaderWarp {
+		return WarpPacket{}, ErrUnexpectedHeader
+	}
+	if len(f.Payload) != warpPayloadSize {
+		return WarpPacket{}, ErrInvalidPayload
+	}
+	return WarpPacket{
+		X:    int32(binary.LittleEndian.Uint32(f.Payload[0:4])),
+		Y:    int32(binary.LittleEndian.Uint32(f.Payload[4:8])),
+		Addr: binary.LittleEndian.Uint32(f.Payload[8:12]),
+		Port: binary.LittleEndian.Uint16(f.Payload[12:14]),
+	}, nil
 }
 
 func EncodeChangeSpeed(packet ChangeSpeedPacket) []byte {

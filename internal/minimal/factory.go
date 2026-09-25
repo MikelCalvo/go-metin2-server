@@ -6243,6 +6243,15 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			var transferFrames [][]byte
 			var transferExchangeCloseFrames [][]byte
 			transferFlow := warp.NewFlow(warp.Config{
+				Endpoint: func() *worldproto.WarpPacket {
+					if !rebootstrap {
+						return nil
+					}
+					// Same-process self warp. Addr/port are this process's advertised
+					// login endpoint, not a channel hop. Coordinates come from the
+					// committed destination inside the warp flow.
+					return &worldproto.WarpPacket{Addr: advertisedAddr, Port: advertisedPort}
+				}(),
 				Persist: func(updated loginticket.Character) bool {
 					updatedCharacters, _, _, ok := buildUpdatedSelection(updated)
 					if !ok {
@@ -6306,8 +6315,16 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				}
 				sharedWorld.mu.Unlock()
 			}
-			if _, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y}); !ok {
+			applied, ok := transferFlow.Apply(selected, warp.Target{MapIndex: mapIndex, X: x, Y: y})
+			if !ok {
 				return RelocationPreview{}, nil, false
+			}
+			if rebootstrap && len(applied.SelfFrames) > 0 {
+				// GC::WARP closes the self transfer reply. The relocated character
+				// burst and its visibility deltas keep the positions they already had;
+				// this one self-only frame follows them. Busy-window closes still sit
+				// in front of the whole reply.
+				transferFrames = append(transferFrames, applied.SelfFrames...)
 			}
 			transferFrames = prependTransferBusyCloseFrames(transferFrames, transferExchangeCloseFrames, rebootstrap)
 			clearActiveCombatTarget()

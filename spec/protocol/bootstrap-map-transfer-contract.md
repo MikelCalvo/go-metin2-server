@@ -3,8 +3,8 @@
 This document freezes the first minimal map-transfer contract used by the bootstrap shared-world runtime.
 
 It is intentionally narrower than a final gameplay warp contract.
-The client-facing loading choreography, warp packets, and inter-channel migration semantics are still out of scope.
-What is frozen here is the minimum server-side transfer contract that future warp work can target.
+Inter-channel migration and a full client loading choreography (`PHASE(LOADING)` / `PHASE(GAME)` replay) stay out of scope.
+What is frozen here is the minimum server-side transfer contract, plus one self-visible `GC::WARP` (`0x0306`) on an already-committed same-process transfer.
 
 ## Scope
 
@@ -182,6 +182,11 @@ When the commit operation succeeds, the bootstrap runtime guarantees:
 4. visible peers are inserted from the destination map scope
 5. future peer-scoped movement/chat fanout follows the destination `MapIndex`
 6. the structured result reflects the exact committed transfer, not a separate best-effort estimate
+7. when the gameplay path asks for the self-session rebootstrap, the moved player also receives one self-only `GC::WARP` (`0x0306`) for that same committed destination after the relocated character burst and its trailing visibility deltas
+
+`GC::WARP` does not open a second transfer contract.
+Its coordinates are the destination already accepted by `TransferCharacter` / the exact-position or NPC `warp` commit, and its address and port are the advertised login endpoint of this process.
+A client `CG::WARP` (`0x0305`) that tries to name its own destination stays fail-closed: no frames, no persist, and no visibility change.
 
 ## Failure and rollback behavior
 
@@ -222,8 +227,8 @@ For the current local-only ops surface:
 
 This slice still does not freeze:
 
-- any client-originated warp request packet
-- any final server packet for loading-screen choreography
+- a client-chosen warp destination (`CG::WARP` without the owned persist-before-commit policy stays fail-closed)
+- `PHASE(LOADING)` / `PHASE(GAME)` replay or any other loading-screen choreography
 - inter-channel migration
 - reconnect semantics across map transfer
 - NPC, mob, item, or generic entity transfer

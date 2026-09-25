@@ -7498,8 +7498,8 @@ func TestNewGameSessionFactoryTransferRebootstrapAppendsDestinationStaticActorFr
 	if err != nil {
 		t.Fatalf("unexpected transfer-triggering move error: %v", err)
 	}
-	if len(moveOut) != 7 {
-		t.Fatalf("expected 4 self bootstrap frames plus 3 destination static-actor frames, got %d", len(moveOut))
+	if len(moveOut) != 8 {
+		t.Fatalf("expected 4 self bootstrap frames plus 3 destination static-actor frames plus self GC::WARP, got %d", len(moveOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
 	if err != nil {
@@ -14254,8 +14254,8 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMove(t *testi
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames, got %d", len(moveOut))
+	if len(moveOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames plus self GC::WARP, got %d", len(moveOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
 	if err != nil {
@@ -14368,8 +14368,8 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPosition(
 	if err != nil {
 		t.Fatalf("unexpected sync_position error: %v", err)
 	}
-	if len(syncOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames from sync_position trigger, got %d", len(syncOut))
+	if len(syncOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames from sync_position trigger plus self GC::WARP, got %d", len(syncOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
 	if err != nil {
@@ -14436,8 +14436,8 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStati
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas, got %d", len(moveOut))
+	if len(moveOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas plus self GC::WARP, got %d", len(moveOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
 	if err != nil {
@@ -14542,8 +14542,8 @@ func TestNewGameSessionFactoryDueSpawnGroupReturnStepFlushesBeforeMoveTransferRe
 	if err != nil {
 		t.Fatalf("unexpected move transfer error before due return-step rebootstrap: %v", err)
 	}
-	if len(moveOut) != 7 {
-		t.Fatalf("expected transfer rebootstrap with one stepped static-actor burst, got %d frames", len(moveOut))
+	if len(moveOut) != 8 {
+		t.Fatalf("expected transfer rebootstrap with one stepped static-actor burst plus self GC::WARP, got %d frames", len(moveOut))
 	}
 	steppedAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
 	if err != nil {
@@ -14970,8 +14970,8 @@ func TestNewGameSessionFactoryDueStaticActorRespawnFlushesBeforeMoveTransferRebo
 	if err != nil {
 		t.Fatalf("unexpected move transfer error before due respawn rebootstrap: %v", err)
 	}
-	if len(moveOut) != 7 {
-		t.Fatalf("expected transfer rebootstrap with one live respawned static-actor burst, got %d frames", len(moveOut))
+	if len(moveOut) != 8 {
+		t.Fatalf("expected transfer rebootstrap with one live respawned static-actor burst plus self GC::WARP, got %d frames", len(moveOut))
 	}
 	respawnAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[4]))
 	if err != nil {
@@ -15086,8 +15086,8 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnMoveWithStill
 	if err != nil {
 		t.Fatalf("unexpected move error while transferring into dead dummy visibility: %v", err)
 	}
-	if len(moveOut) != 8 {
-		t.Fatalf("expected self transfer burst plus dead dummy replay after transfer, got %d frames", len(moveOut))
+	if len(moveOut) != 9 {
+		t.Fatalf("expected self transfer burst plus dead dummy replay after transfer plus self GC::WARP, got %d frames", len(moveOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moveOut[0]))
 	if err != nil {
@@ -15165,8 +15165,8 @@ func TestNewGameSessionFactoryAppliesExactPositionTransferTriggerOnSyncPositionW
 	if err != nil {
 		t.Fatalf("unexpected sync_position error: %v", err)
 	}
-	if len(syncOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas from sync_position, got %d", len(syncOut))
+	if len(syncOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames with static actor visibility deltas from sync_position plus self GC::WARP, got %d", len(syncOut))
 	}
 	selfAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, syncOut[0]))
 	if err != nil {
@@ -15299,8 +15299,8 @@ func TestNewGameSessionFactoryRoutesPostTransferChatAndMoveToDestinationMapPeers
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(transferOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames before post-transfer gameplay, got %d", len(transferOut))
+	if len(transferOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames before post-transfer gameplay plus self GC::WARP, got %d", len(transferOut))
 	}
 	_ = flushServerFrames(t, flowOne)
 	_ = flushServerFrames(t, flowTwo)
@@ -28977,8 +28977,8 @@ func TestGameRuntimeRetryEnterGameAfterTransferThenCloseUsesPersistedDestination
 	if err != nil {
 		t.Fatalf("unexpected owner transfer move error: %v", err)
 	}
-	if len(transferOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner, got %d", len(transferOut))
+	if len(transferOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner plus self GC::WARP, got %d", len(transferOut))
 	}
 	oldTransferExit := flushServerFrames(t, flowWatcherOld)
 	if len(oldTransferExit) != 1 {
@@ -29112,8 +29112,8 @@ func TestGameRuntimeCloseAfterTransferEmitsPeerDeleteWhenEntityRegistryEntryAlre
 	if err != nil {
 		t.Fatalf("unexpected owner transfer move error: %v", err)
 	}
-	if len(transferOut) != 8 {
-		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner, got %d", len(transferOut))
+	if len(transferOut) != 9 {
+		t.Fatalf("expected 8 self transfer-rebootstrap frames for owner plus self GC::WARP, got %d", len(transferOut))
 	}
 	oldTransferExit := flushServerFrames(t, flowWatcherOld)
 	if len(oldTransferExit) != 1 {
@@ -38459,8 +38459,8 @@ func TestGameSessionFlowTransferTriggerClosesOpenMerchantWindowBeforeRebootstrap
 	if err != nil {
 		t.Fatalf("unexpected transfer-trigger move error with open merchant window: %v", err)
 	}
-	if len(moveOut) != 6 {
-		t.Fatalf("expected transfer-triggered merchant close to prepend 1 SHOP END before 5 transfer/static-actor frames, got %d", len(moveOut))
+	if len(moveOut) != 7 {
+		t.Fatalf("expected transfer-triggered merchant close to prepend 1 SHOP END before 5 transfer/static-actor frames plus self GC::WARP, got %d", len(moveOut))
 	}
 	if err := shopproto.DecodeServerEnd(decodeSingleFrame(t, moveOut[0])); err != nil {
 		t.Fatalf("decode merchant shop end before transfer rebootstrap: %v", err)
@@ -41149,8 +41149,8 @@ func TestGameSessionFlowStaticActorQuestGatedWarpTransfersWhenRequirementMet(t *
 	if err != nil {
 		t.Fatalf("unexpected gated warp interaction error: %v", err)
 	}
-	if len(out) != 5 {
-		t.Fatalf("expected 5 gated warp interaction frames (4 self rebootstrap + 1 static actor delete), got %d", len(out))
+	if len(out) != 6 {
+		t.Fatalf("expected 5 gated warp interaction frames (4 self rebootstrap + 1 static actor delete) plus self GC::WARP, got %d", len(out))
 	}
 	connected := runtime.ConnectedCharacters()
 	if len(connected) != 1 || connected[0].MapIndex != 42 || connected[0].X != 1700 || connected[0].Y != 2800 {
@@ -41237,8 +41237,8 @@ func TestGameSessionFlowStaticActorWarpInteractionReturnsTransferRebootstrapFram
 	if err != nil {
 		t.Fatalf("unexpected warp interaction error: %v", err)
 	}
-	if len(out) != 5 {
-		t.Fatalf("expected 5 warp interaction frames (4 self rebootstrap + 1 static actor delete), got %d", len(out))
+	if len(out) != 6 {
+		t.Fatalf("expected 5 warp interaction frames (4 self rebootstrap + 1 static actor delete) plus self GC::WARP, got %d", len(out))
 	}
 	connected := runtime.ConnectedCharacters()
 	if len(connected) != 1 || connected[0].MapIndex != 42 || connected[0].X != 1700 || connected[0].Y != 2800 {
