@@ -10515,7 +10515,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					}
 					retaliation, ok, clearTarget := contentPracticeMobRetaliationPointChange(runtime, selectedPlayer, resolution.Actor, resolution.ClearActiveTarget)
 					if !ok {
-						maybeEnqueueSittingStandaloneDummyStun(pending, activeCharacterPosition, resolution)
+						maybeEnqueueSittingStandaloneDummyStun(runtime, sharedWorldID, pending, activeCharacterPosition, resolution)
 						return gameflow.AttackResult{Accepted: true, Frames: frames}
 					}
 					frames = append(frames, encodePlayerPointChangeFrame(previousSelected.VID, retaliation))
@@ -16306,7 +16306,7 @@ func drainPendingTargetCreateNew(flow service.SessionFlow) [][]byte {
 	}
 }
 
-func maybeEnqueueSittingStandaloneDummyStun(pending *pendingServerFrames, activeCharacterPosition uint8, resolution staticActorCombatAttackResolution) {
+func maybeEnqueueSittingStandaloneDummyStun(runtime *gameRuntime, subjectID uint64, pending *pendingServerFrames, activeCharacterPosition uint8, resolution staticActorCombatAttackResolution) {
 	if pending == nil || resolution.ClearActiveTarget || resolution.ActiveTargetVID == 0 {
 		return
 	}
@@ -16316,7 +16316,11 @@ func maybeEnqueueSittingStandaloneDummyStun(pending *pendingServerFrames, active
 	if !staticActorDamageInfoRuntimeEmissionOwned(resolution.Actor) {
 		return
 	}
-	pending.Enqueue([][]byte{worldproto.EncodeStun(worldproto.StunPacket{VID: resolution.ActiveTargetVID})})
+	stunFrame := worldproto.EncodeStun(worldproto.StunPacket{VID: resolution.ActiveTargetVID})
+	pending.Enqueue([][]byte{stunFrame})
+	if runtime != nil && runtime.sharedWorld != nil && subjectID != 0 && resolution.Actor.EntityID != 0 {
+		runtime.sharedWorld.EnqueueStaticActorFramesToVisiblePeers(resolution.Actor.EntityID, subjectID, [][]byte{stunFrame})
+	}
 }
 
 func staticActorInteractionFailureDelivery(failure string) *chatproto.ChatDeliveryPacket {
