@@ -30,8 +30,9 @@ const (
 
 	ClientAttackTypeNormal uint8 = 0
 
-	ServerDamageInfoFlagNone   uint8 = 0
-	ServerDamageInfoFlagNormal uint8 = 1 << 0
+	ServerDamageInfoFlagNone     uint8 = 0
+	ServerDamageInfoFlagNormal   uint8 = 1 << 0
+	ServerDamageInfoFlagCritical uint8 = 1 << 5
 
 	ServerPVPModeNone    uint8 = 0
 	ServerPVPModeAgree   uint8 = 1

@@ -165,8 +165,8 @@ func TestEncodeServerClearTargetUsesZeroTargetAndZeroHP(t *testing.T) {
 }
 
 func TestServerDamageInfoFlagNormalIsTheFirstOwnedPresentationBit(t *testing.T) {
-	if ServerDamageInfoFlagNone != 0 || ServerDamageInfoFlagNormal != 1<<0 {
-		t.Fatalf("unexpected DAMAGE_INFO presentation bits: none=%#02x normal=%#02x", ServerDamageInfoFlagNone, ServerDamageInfoFlagNormal)
+	if ServerDamageInfoFlagNone != 0 || ServerDamageInfoFlagNormal != 1<<0 || ServerDamageInfoFlagCritical != 1<<5 {
+		t.Fatalf("unexpected DAMAGE_INFO presentation bits: none=%#02x normal=%#02x critical=%#02x", ServerDamageInfoFlagNone, ServerDamageInfoFlagNormal, ServerDamageInfoFlagCritical)
 	}
 
 	raw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Flag: ServerDamageInfoFlagNormal, Damage: 1})
@@ -181,6 +181,19 @@ func TestServerDamageInfoFlagNormalIsTheFirstOwnedPresentationBit(t *testing.T) 
 	}
 	if decoded.VID != 0x02040107 || decoded.Flag != ServerDamageInfoFlagNormal || decoded.Damage != 1 {
 		t.Fatalf("unexpected server damage-info normal-flag packet: %+v", decoded)
+	}
+
+	criticalRaw := EncodeServerDamageInfo(ServerDamageInfoPacket{VID: 0x02040107, Flag: ServerDamageInfoFlagCritical, Damage: 1})
+	criticalExpected := frame.Encode(HeaderServerDamageInfo, []byte{0x07, 0x01, 0x04, 0x02, ServerDamageInfoFlagCritical, 0x01, 0x00, 0x00, 0x00})
+	if !bytes.Equal(criticalRaw, criticalExpected) {
+		t.Fatalf("unexpected server damage-info critical-flag encoding: got %x want %x", criticalRaw, criticalExpected)
+	}
+	criticalDecoded, err := DecodeServerDamageInfo(decodeSingleFrame(t, criticalRaw))
+	if err != nil {
+		t.Fatalf("decode server damage-info critical flag: %v", err)
+	}
+	if criticalDecoded.VID != 0x02040107 || criticalDecoded.Flag != ServerDamageInfoFlagCritical || criticalDecoded.Damage != 1 {
+		t.Fatalf("unexpected server damage-info critical-flag packet: %+v", criticalDecoded)
 	}
 }
 

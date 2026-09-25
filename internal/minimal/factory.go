@@ -16233,7 +16233,7 @@ func staticActorDamageInfoRuntimeEmissionOwned(actor StaticActorSnapshot) bool {
 
 func staticActorNonLethalDamageInfoFlag(actor StaticActorSnapshot) uint8 {
 	if actor.SpawnGroupRef == "" && actor.CombatProfile == worldruntime.StaticActorCombatProfilePracticeMob {
-		return combatproto.ServerDamageInfoFlagNormal
+		return combatproto.ServerDamageInfoFlagCritical | combatproto.ServerDamageInfoFlagNormal
 	}
 	return combatproto.ServerDamageInfoFlagNone
 }

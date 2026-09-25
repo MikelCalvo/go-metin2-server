@@ -41799,7 +41799,7 @@ func TestGameSessionFlowStaticActorAttackReturnsSelfOnlyDamageInfoForStandaloneP
 	if err != nil {
 		t.Fatalf("decode standalone practice-mob damage-info frame: %v", err)
 	}
-	if damage.VID != targetVID || damage.Flag != combatproto.ServerDamageInfoFlagNormal || damage.Damage != int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack) {
+	if damage.VID != targetVID || damage.Flag != combatproto.ServerDamageInfoFlagCritical|combatproto.ServerDamageInfoFlagNormal || damage.Damage != int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack) {
 		t.Fatalf("unexpected standalone practice-mob damage-info packet: %+v", damage)
 	}
 	if queued := flushServerFrames(t, flow); len(queued) != 0 {

@@ -65,7 +65,7 @@ func TestGameSessionFlowStandalonePracticeMobHitEmitsNormalDamageInfoFlag(t *tes
 	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
 		t.Fatalf("expected normal-flag presentation not to change practice-mob HP mutation, got %+v", refresh)
 	}
-	assertDamageInfoPresentationFlag(t, hitOut[1], targetVID, combatproto.ServerDamageInfoFlagNormal, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), "standalone practice-mob self hit")
+	assertDamageInfoPresentationFlag(t, hitOut[1], targetVID, combatproto.ServerDamageInfoFlagCritical|combatproto.ServerDamageInfoFlagNormal, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), "standalone practice-mob self hit")
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected standalone practice-mob hit not to queue extra owner frames, got %d", len(queued))
 	}
@@ -74,7 +74,7 @@ func TestGameSessionFlowStandalonePracticeMobHitEmitsNormalDamageInfoFlag(t *tes
 	if len(peerHitQueued) != 1 {
 		t.Fatalf("expected visible peer to receive only DAMAGE_INFO after standalone practice-mob hit, got %d", len(peerHitQueued))
 	}
-	assertDamageInfoPresentationFlag(t, peerHitQueued[0], targetVID, combatproto.ServerDamageInfoFlagNormal, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), "standalone practice-mob peer hit")
+	assertDamageInfoPresentationFlag(t, peerHitQueued[0], targetVID, combatproto.ServerDamageInfoFlagCritical|combatproto.ServerDamageInfoFlagNormal, int32(worldruntime.PracticeMobBootstrapDamagePerNormalAttack), "standalone practice-mob peer hit")
 }
 
 func TestGameSessionFlowStandaloneDummyHitKeepsPlainDamageInfoFlag(t *testing.T) {
