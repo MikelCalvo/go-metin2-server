@@ -1,6 +1,6 @@
 # Combat Target-Marker Bootstrap
 
-This note freezes the first owned server target-marker packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `TARGET_CREATE_NEW` presentation companion after an accepted non-zero client `TARGET`.
+This note freezes the first owned server target-marker packet shapes for `go-metin2-server` and the deliberately narrow runtime emission policy: one self-only `TARGET_CREATE_NEW` presentation companion after an accepted non-zero client `TARGET`, plus one self-only `TARGET_UPDATE` when that already-selected actor takes one successful same-map chase step.
 
 It sits next to:
 - `combat-training-dummy-bootstrap.md`
@@ -10,7 +10,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns the fixed server-to-client target-marker packet codecs plus the first combat-selection emission rule.
+This slice owns the fixed server-to-client target-marker packet codecs plus the first combat-selection emission rule and the first selected-target chase location update.
 
 The packets are map/UI presentation helpers consumed by the game client while already in `GAME`. They stay separate from the current selected-combat-target acknowledgement `TARGET(0x0A10)`, which remains the HP/selection carrier used by accepted target selection and normal attacks.
 
@@ -45,7 +45,7 @@ Encoding requires the name to fit the fixed 33-byte field with a terminating NUL
 - header: `0x0A11`
 - payload length: `12`
 - total frame length: `16`
-- status: documented and codec-owned in `internal/proto/combat`
+- status: documented, codec-owned in `internal/proto/combat`, and emitted once as a self-only companion on one successful same-map selected-target chase step
 
 Payload layout:
 1. `int32 id` (little-endian)
@@ -71,7 +71,7 @@ Client-source inspection of the TMP4-compatible client shows game-phase handlers
 - `TARGET_UPDATE` updates a marker location by id and coordinates.
 - `TARGET_DELETE` removes the marker by id.
 
-The same client dispatch table keeps these packets separate from the selected-target HP packet `TARGET(0x0A10)`. That distinction stays important: combat target selection continues to return `TARGET(0x0A10)` as the HP acknowledgement, while this first GREEN only queues one self-only `TARGET_CREATE_NEW` presentation companion after that accepted non-zero selection.
+The same client dispatch table keeps these packets separate from the selected-target HP packet `TARGET(0x0A10)`. That distinction stays important: combat target selection continues to return `TARGET(0x0A10)` as the HP acknowledgement, while this slice queues one self-only `TARGET_CREATE_NEW` presentation companion after that accepted non-zero selection and one self-only `TARGET_UPDATE` when that same selected actor later moves on the owned chase seam.
 
 ## Current runtime rule
 
@@ -85,13 +85,16 @@ On that accepted request the owner socket already receives:
 
 1. `GC TARGET(target_vid, current_hp_percent)`
 
-The same accepted selection then queues exactly one self-only `GC TARGET_CREATE_NEW` through the pending server-frame path. Visible peers receive no marker fanout in this first GREEN. Client `TARGET(0)` stays a silent clear with no HP echo and no marker companion. Hits, sit/stand, fly targeting, skill, death, restart, quest, and map paths still do not emit `TARGET_UPDATE` or `TARGET_DELETE`.
+The same accepted selection then queues exactly one self-only `GC TARGET_CREATE_NEW` through the pending server-frame path. Visible peers receive no marker fanout. Client `TARGET(0)` stays a silent clear with no HP echo and no marker companion. Hits, sit/stand, fly targeting, skill, death, restart, quest, and map paths still do not emit `TARGET_UPDATE` or `TARGET_DELETE`.
+
+One successful same-map pending-frame chase step that already queues retained-viewer `MOVE` for an actor the living owner still has selected now also queues exactly one self-only `GC TARGET_UPDATE` to that owner. The update uses the already-created marker id (`id = int32(target_vid)`) and the stepped coordinates (`x`, `y`). It is delivered on that same pending-frame flush after the chase `MOVE` and after any same-flush delayed-retaliation frames, using the owned codec. It does not replace `TARGET(0x0A10)` as the HP carrier, does not emit `TARGET_DELETE`, and does not fan the marker out to peers who can see the chase `MOVE` but do not hold that selection. A chase step with no living selected owner, a stationary complete plan, homeward, return-step, and operator/runtime position `MOVE` still omit `TARGET_UPDATE`. Owners already at the bootstrap `0`-HP floor stay skipped.
 
 The companion is presentation only, not a second combat simulation:
 
 - it does not replace `TARGET(0x0A10)` as the selected-target HP carrier
 - it does not mutate selected-target HP, cadence, retaliation, death, respawn, restart, inventory, points, or persistence
-- it does not invent PvP/duel, stun, quest/minimap lifecycle, or marker delete/update
+- it does not invent PvP/duel, stun, quest/minimap lifecycle, or marker delete
+- the chase companion only relocates the marker already created for that selected actor; it does not invent a second chase scheduler, pathfinding, pack AI, or cross-map `MOVE` / `GC WARP`
 
 Unsupported or rejected non-zero `TARGET` requests stay fail-closed with no HP ack and no marker companion.
 
@@ -103,7 +106,7 @@ Current accepted combat behavior stays on the already-owned surfaces:
 - zero-HP edges continue to use `DEAD(vid)` plus `TARGET(0, 0)`,
 - projectile, PvP, duel, stun, quest, and minimap marker lifecycle remain on their own slices.
 
-This first GREEN only adds the accepted non-zero `TARGET` → self-only `TARGET_CREATE_NEW` presentation companion. Later quest/minimap, peer-fanout, or `TARGET_UPDATE`/`TARGET_DELETE` slices must freeze their own policy instead of widening this seam by implication.
+This slice adds the accepted non-zero `TARGET` → self-only `TARGET_CREATE_NEW` presentation companion, then the already-selected same-map chase step → self-only `TARGET_UPDATE` location companion. Later quest/minimap, peer-fanout, or `TARGET_DELETE` slices must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
@@ -114,7 +117,8 @@ This slice does not freeze:
 - client-originated target marker requests,
 - replacing selected-combat-target `TARGET(0x0A10)` with marker packets,
 - using marker packets as combat hit, death, or reward feedback,
-- `TARGET_UPDATE` or `TARGET_DELETE` runtime emission.
+- `TARGET_DELETE` runtime emission,
+- emitting `TARGET_UPDATE` on hits, player `MOVE` / `SYNC_POSITION`, homeward, return-step, or operator position changes.
 
 ## Success definition
 
@@ -123,4 +127,5 @@ After this slice:
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
 - an accepted non-zero client `TARGET` still returns one self-only `GC TARGET(target_vid, hp_percent)` and then queues one self-only `GC TARGET_CREATE_NEW` using the already-owned actor name/VID and `type = character`,
-- client `TARGET(0)`, rejected selection, ordinary hits, and peer sockets still omit `TARGET_CREATE_NEW`, `TARGET_UPDATE`, and `TARGET_DELETE`.
+- one successful same-map chase step for that still-selected living owner queues exactly one self-only `GC TARGET_UPDATE(id = int32(target_vid), x, y)` at the stepped coordinates without replacing the HP carrier,
+- client `TARGET(0)`, rejected selection, ordinary hits, homeward/return-step movement, and peer sockets still omit `TARGET_CREATE_NEW`, `TARGET_UPDATE`, and `TARGET_DELETE`.

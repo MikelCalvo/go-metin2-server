@@ -2,11 +2,16 @@ package minimal
 
 import (
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
+	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
+	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	"github.com/MikelCalvo/go-metin2-server/internal/service"
+	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -116,6 +121,135 @@ func TestGameSessionFlowAcceptedNonZeroTargetQueuesSelfOnlyTargetCreateNew(t *te
 		t.Fatalf("expected visible peer to receive only DAMAGE_INFO after dummy hit, got %d", len(peerHitQueued))
 	}
 	assertDamageInfoFrame(t, peerHitQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "peer hit after marker presentation")
+}
+
+func TestGameSessionFlowSelectedChaseStepQueuesSelfOnlyTargetUpdate(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("MarkerChaseOwner", 0x010301B1, 0x020401B1, 1900, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	peer := peerVisibilityCharacter("MarkerChasePeer", 0x010301B2, 0x020401B2, 1880, 2800, 0, 102, 202)
+	peer.MapIndex = 42
+	peer.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "marker-chase-owner", 0xB1B1B1B1, owner)
+	issuePeerTicket(t, store, "marker-chase-peer", 0xB2B2B2B2, peer)
+	staticActorStore := staticstore.NewMemoryStore()
+	currentTime := time.Unix(1700005200, 0)
+
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(
+		config.Service{
+			LegacyAddr:           ":13000",
+			PublicAddr:           "127.0.0.1",
+			VisibilityMode:       "radius",
+			VisibilityRadius:     400,
+			VisibilitySectorSize: 200,
+		},
+		store,
+		nil,
+		staticActorStore,
+		interactionstore.NewMemoryStore(),
+	)
+	if err != nil {
+		t.Fatalf("new game runtime for selected chase target update: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref:           "practice.marker_chase_update",
+		Name:          "MarkerChaseMob",
+		MapIndex:      42,
+		X:             1700,
+		Y:             2800,
+		RaceNum:       20350,
+		CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import selected chase target-update spawn-group bundle: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.marker_chase_update")
+	if !ok {
+		t.Fatal("expected selected chase target-update spawn group to resolve by ref")
+	}
+	targetVID := uint32(group.EntityID)
+
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "marker-chase-owner", 0xB1B1B1B1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "marker-chase-peer", 0xB2B2B2B2)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil {
+		t.Fatalf("unexpected owner target error before selected chase target update: %v", err)
+	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "MarkerChaseMob", targetVID)
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected visible peer to receive no TARGET_CREATE_NEW before chase, got %d", len(queued))
+	}
+	if _, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal,
+		TargetVID:  targetVID,
+	}))); err != nil {
+		t.Fatalf("unexpected accepted hit before selected chase target update: %v", err)
+	}
+	if queued := flushServerFrames(t, ownerFlow); containsTargetUpdate(t, queued, int32(targetVID)) {
+		t.Fatalf("expected the arming hit to omit TARGET_UPDATE before the chase step")
+	}
+
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	if queued := flushServerFrames(t, ownerFlow); containsTargetUpdate(t, queued, int32(targetVID)) {
+		t.Fatalf("expected delayed retaliation to omit TARGET_UPDATE")
+	}
+
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	queued := flushServerFrames(t, ownerFlow)
+	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
+	if err != nil {
+		t.Fatalf("expected retained chase-step viewer to receive MOVE first, decode err=%v", err)
+	}
+	if moveAck.VID != targetVID || moveAck.X != 1800 || moveAck.Y != 2800 {
+		t.Fatalf("expected chase-step MOVE at planned +100 toward owner, got %+v", moveAck)
+	}
+	assertSelfOnlyTargetUpdate(t, queued, int32(targetVID), 1800, 2800)
+	if refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[0])); err == nil && refresh.TargetVID == targetVID {
+		t.Fatalf("expected chase TARGET_UPDATE not to replace the TARGET HP carrier, got %+v", refresh)
+	}
+
+	peerQueued := flushServerFrames(t, peerFlow)
+	if containsTargetUpdate(t, peerQueued, int32(targetVID)) {
+		t.Fatalf("expected visible unselected peer to receive no TARGET_UPDATE")
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("MarkerChaseOwner"); !ok || snapshot.TargetVID != targetVID {
+		t.Fatalf("expected chase TARGET_UPDATE to preserve selected combat target, ok=%v snapshot=%+v", ok, snapshot)
+	}
+}
+
+func containsTargetUpdate(t *testing.T, frames [][]byte, markerID int32) bool {
+	t.Helper()
+	for _, raw := range frames {
+		update, err := combatproto.DecodeServerTargetUpdate(decodeSingleFrame(t, raw))
+		if err == nil && update.ID == markerID {
+			return true
+		}
+	}
+	return false
+}
+
+func assertSelfOnlyTargetUpdate(t *testing.T, frames [][]byte, markerID int32, x int32, y int32) {
+	t.Helper()
+	found := 0
+	for _, raw := range frames {
+		update, err := combatproto.DecodeServerTargetUpdate(decodeSingleFrame(t, raw))
+		if err != nil {
+			continue
+		}
+		if update.ID != markerID || update.X != x || update.Y != y {
+			t.Fatalf("unexpected TARGET_UPDATE: %+v want id=%d x=%d y=%d", update, markerID, x, y)
+		}
+		found++
+	}
+	if found != 1 {
+		t.Fatalf("expected exactly one self-only TARGET_UPDATE, got %d among %d frames", found, len(frames))
+	}
 }
 
 func flushSelfOnlyTargetCreateNew(t *testing.T, flow service.SessionFlow, wantName string, targetVID uint32) {
