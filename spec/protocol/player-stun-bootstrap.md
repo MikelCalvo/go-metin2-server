@@ -1,6 +1,6 @@
 # Player Stun Bootstrap
 
-This note freezes the first owned server `STUN` packet shape for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only presentation companion on an evidence-backed, skill-less sitting dummy hit.
+This note freezes the first owned server `STUN` packet shape for `go-metin2-server` and the deliberately narrow runtime emission policy: one presentation companion on an evidence-backed, skill-less sitting dummy hit, delivered to the attacker and to currently visible live peers.
 
 It sits next to:
 - `player-death-bootstrap.md`
@@ -29,7 +29,7 @@ The `vid` identifies the currently visible actor whose stun state should be pres
 
 The current TMP4-compatible client registers `GC::STUN` in the game-phase handler table and reads one `uint32 vid` field before applying a stun presentation to the matching visible actor. The legacy behavior oracle also uses the same compact `{header, length, vid}` shape when a character enters the stunned state.
 
-This repository keeps that finding in project-owned terms. The first runtime policy reuses that already-owned codec on one existing seam: an accepted non-lethal standalone dummy hit while the owner is already in the owned ground-sit presentation. It does not invent a stun-chance table, duration, recovery timer, knockdown, skill, or PvP/duel path.
+This repository keeps that finding in project-owned terms. The runtime policy reuses that already-owned codec on one existing seam: an accepted non-lethal standalone dummy hit while the owner is already in the owned ground-sit presentation. The same `STUN` frame is queued to the attacker and to currently visible live peers of that dummy. It does not invent a stun-chance table, duration, recovery timer, knockdown, skill, or PvP/duel path.
 
 ## Current runtime rule
 
@@ -45,7 +45,7 @@ On that accepted hit the owner socket already receives:
 1. `GC TARGET(target_vid, updated_hp_percent)`
 2. `GC DAMAGE_INFO(vid = target_vid, flag = 0, damage = applied_bootstrap_damage)`
 
-The same accepted sitting hit then queues exactly one self-only `GC STUN(target_vid)` through the pending server-frame path. Visible peers keep the existing standalone `DAMAGE_INFO`-only fanout; they do not receive `STUN` in this first GREEN.
+The same accepted sitting hit then queues exactly one `GC STUN(target_vid)` through the pending server-frame path. Currently visible live peers of that dummy receive the existing standalone `DAMAGE_INFO` companion and one matching `GC STUN(target_vid)` through the same visibility gate that already fans `DAMAGE_INFO`. Connected recipients already at the bootstrap `0`-HP floor stay skipped. Peers still do not receive the attacker's `TARGET` refresh.
 
 The companion is skill-less presentation, not a second combat simulation:
 
@@ -63,7 +63,7 @@ Standing / general presentation hits stay on the previously owned `TARGET` + `DA
 - accepted non-lethal practice-mob and standing dummy hits continue to use `TARGET`, `PLAYER_POINT_CHANGE`, and `DAMAGE_INFO` according to the current combat docs,
 - killing hits, retaliation, death, respawn, and restart still do not add a stun companion.
 
-This first GREEN only adds the sitting standalone dummy-hit presentation companion. Later stun-chance, knockdown, or PvP slices must freeze their own policy instead of widening this seam by implication.
+This GREEN keeps the sitting standalone dummy-hit presentation companion and adds the matching peer queue. Later stun-chance, knockdown, or PvP slices must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
@@ -72,7 +72,7 @@ This slice does not freeze:
 - mob or player skill effects that cause stun,
 - knockdown / standing-up choreography,
 - interaction with player-death or non-player-death transitions,
-- peer fanout of `STUN` beyond the current self-only sitting-hit companion,
+- stun fanout beyond currently visible live peers of the sitting dummy hit,
 - PvP or duel stun presentation.
 
 Any later emitted stun must still reference a currently visible actor.
@@ -82,8 +82,8 @@ Any later emitted stun must still reference a currently visible actor.
 After this slice:
 - `internal/proto/world` can encode and decode `GC STUN(vid)` exactly,
 - malformed or wrong-header frames fail closed at the codec layer,
-- an accepted non-lethal standalone dummy hit while the owner is in the owned ground-sit presentation queues one self-only `GC STUN(target_vid)` after the ordinary `TARGET` + `DAMAGE_INFO` burst,
+- an accepted non-lethal standalone dummy hit while the owner is in the owned ground-sit presentation queues one `GC STUN(target_vid)` after the ordinary `TARGET` + `DAMAGE_INFO` burst,
 - that `vid` is the currently visible selected dummy, not the owner and not an invisible actor,
-- visible peers still receive only the matching `DAMAGE_INFO` companion,
+- currently visible live peers receive the matching `DAMAGE_INFO` companion plus one `GC STUN(target_vid)` naming that same dummy; recipients already at the bootstrap `0`-HP floor stay skipped,
 - standing hits, spawn-backed hits, killing hits, cadence-denied repeats, sit/stand presentation itself, death, respawn, restart, skill, and PvP still do not emit `STUN`,
 - later combat/stun slices can start from this tested packet shape and this first sitting-hit emission rule instead of re-discovering them.

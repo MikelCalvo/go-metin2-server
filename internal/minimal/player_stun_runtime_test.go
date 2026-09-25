@@ -129,10 +129,55 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 	}
 
 	peerHitQueued := flushServerFrames(t, peerFlow)
-	if len(peerHitQueued) != 1 {
-		t.Fatalf("expected visible peer to receive only DAMAGE_INFO after sitting dummy hit, got %d", len(peerHitQueued))
+	if len(peerHitQueued) != 2 {
+		t.Fatalf("expected visible peer to receive DAMAGE_INFO plus STUN after sitting dummy hit, got %d", len(peerHitQueued))
 	}
 	assertDamageInfoFrame(t, peerHitQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "sitting dummy peer hit")
+	peerStun, err := worldproto.DecodeStun(decodeSingleFrame(t, peerHitQueued[1]))
+	if err != nil {
+		t.Fatalf("decode peer STUN after sitting dummy hit: %v", err)
+	}
+	if peerStun.VID != targetVID {
+		t.Fatalf("expected peer STUN to name the visible dummy %#08x, got %#08x", targetVID, peerStun.VID)
+	}
+
+	floorPeer := peerVisibilityCharacter("StunFloorPeer", 0x01030183, 0x02040183, 1140, 2100, 0, 103, 203)
+	floorPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "stun-floor-peer", 0x83838383, floorPeer)
+	floorFlow, floorEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "stun-floor-peer", 0x83838383)
+	defer closeSessionFlow(t, floorFlow)
+	if len(floorEnter) == 0 {
+		t.Fatal("expected floor peer to enter")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	flushServerFrames(t, floorFlow)
+
+	currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+	repeatSittingHit, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil {
+		t.Fatalf("unexpected second sitting dummy attack error: %v", err)
+	}
+	if len(repeatSittingHit) != 2 {
+		t.Fatalf("expected second sitting dummy hit to keep target refresh plus damage-info, got %d", len(repeatSittingHit))
+	}
+	ownerRepeatQueued := flushServerFrames(t, ownerFlow)
+	if len(ownerRepeatQueued) != 1 {
+		t.Fatalf("expected one self STUN after second sitting dummy hit, got %d", len(ownerRepeatQueued))
+	}
+	if _, err := worldproto.DecodeStun(decodeSingleFrame(t, ownerRepeatQueued[0])); err != nil {
+		t.Fatalf("decode self STUN after second sitting dummy hit: %v", err)
+	}
+	livePeerRepeat := flushServerFrames(t, peerFlow)
+	if len(livePeerRepeat) != 2 {
+		t.Fatalf("expected live peer DAMAGE_INFO plus STUN after second sitting dummy hit, got %d", len(livePeerRepeat))
+	}
+	if _, err := worldproto.DecodeStun(decodeSingleFrame(t, livePeerRepeat[1])); err != nil {
+		t.Fatalf("decode live peer STUN after second sitting dummy hit: %v", err)
+	}
+	if floorQueued := flushServerFrames(t, floorFlow); len(floorQueued) != 0 {
+		t.Fatalf("expected zero-HP peer to receive no sitting dummy STUN, got %d", len(floorQueued))
+	}
 
 	deniedRepeat, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {
@@ -169,7 +214,7 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode standing dummy target refresh: %v", err)
 	}
-	if standingRefresh.TargetVID != targetVID || standingRefresh.HPPercent != 80 {
+	if standingRefresh.TargetVID != targetVID || standingRefresh.HPPercent != 70 {
 		t.Fatalf("expected standing hit after sitting stun to continue ordinary dummy HP mutation, got %+v", standingRefresh)
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
