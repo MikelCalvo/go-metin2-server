@@ -77,8 +77,8 @@ func TestGameSessionFlowAcceptedCharacterPositionEmitsSelfOnlyChangeSpeed(t *tes
 	}
 
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 1 {
-		t.Fatalf("expected visible peer to receive only CHARACTER_POSITION, got %d", len(peerQueued))
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected visible peer to receive CHARACTER_POSITION plus CHANGE_SPEED, got %d", len(peerQueued))
 	}
 	peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
 	if err != nil {
@@ -86,6 +86,13 @@ func TestGameSessionFlowAcceptedCharacterPositionEmitsSelfOnlyChangeSpeed(t *tes
 	}
 	if peerPosition.VID != owner.VID || peerPosition.Position != bootstrapCharacterPositionSittingGround {
 		t.Fatalf("unexpected peer ground-sit presentation: %+v", peerPosition)
+	}
+	peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode peer CHANGE_SPEED after sit: %v", err)
+	}
+	if peerSpeed.VID != owner.VID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("unexpected peer CHANGE_SPEED after sit: %+v", peerSpeed)
 	}
 
 	duplicateSit, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: bootstrapCharacterPositionSittingGround})))
@@ -136,8 +143,22 @@ func TestGameSessionFlowAcceptedCharacterPositionEmitsSelfOnlyChangeSpeed(t *tes
 		t.Fatalf("unexpected self CHANGE_SPEED after stand: %+v", standSpeed)
 	}
 	peerStand := flushServerFrames(t, peerFlow)
-	if len(peerStand) != 1 {
-		t.Fatalf("expected visible peer to receive only stand CHARACTER_POSITION, got %d", len(peerStand))
+	if len(peerStand) != 2 {
+		t.Fatalf("expected visible peer to receive stand CHARACTER_POSITION plus CHANGE_SPEED, got %d", len(peerStand))
+	}
+	peerStandPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerStand[0]))
+	if err != nil {
+		t.Fatalf("decode peer stand presentation: %v", err)
+	}
+	if peerStandPosition.VID != owner.VID || peerStandPosition.Position != bootstrapCharacterPositionGeneral {
+		t.Fatalf("unexpected peer stand presentation: %+v", peerStandPosition)
+	}
+	peerStandSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerStand[1]))
+	if err != nil {
+		t.Fatalf("decode peer CHANGE_SPEED after stand: %v", err)
+	}
+	if peerStandSpeed.VID != owner.VID || peerStandSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("unexpected peer CHANGE_SPEED after stand: %+v", peerStandSpeed)
 	}
 
 	unsupported, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 1})))

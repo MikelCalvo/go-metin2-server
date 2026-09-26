@@ -9926,10 +9926,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					activeCharacterPosition = packet.Position
 
 					frame := worldproto.EncodeCharacterPosition(worldproto.CharacterPositionPacket{VID: selected.VID, Position: packet.Position})
+					speedFrame := worldproto.EncodeChangeSpeed(ticketChangeSpeedPacket(selected))
 					if ownsLiveSharedWorldSession() {
-						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{frame})
+						sharedWorld.EnqueueToVisibleSessions(sharedWorldID, selected, [][]byte{frame, speedFrame})
 					}
-					pending.Enqueue([][]byte{worldproto.EncodeChangeSpeed(ticketChangeSpeedPacket(selected))})
+					pending.Enqueue([][]byte{speedFrame})
 					return gameflow.CharacterPositionResult{Accepted: true, Frames: [][]byte{frame}}
 				},
 				HandleInteraction: func(packet interactproto.RequestPacket) gameflow.InteractionResult {
