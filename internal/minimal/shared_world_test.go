@@ -12833,8 +12833,8 @@ func TestNewGameSessionFactoryCharacterPositionEmitsSelfAndPeerPresentationWitho
 			t.Fatalf("expected self character-position %d presentation for owner VID, got %+v", position, selfPosition)
 		}
 		peerQueued := flushServerFrames(t, peerFlow)
-		if len(peerQueued) != 1 {
-			t.Fatalf("expected visible peer to receive one character-position %d presentation frame, got %d", position, len(peerQueued))
+		if len(peerQueued) != 2 {
+			t.Fatalf("expected visible peer to receive character-position %d plus CHANGE_SPEED, got %d", position, len(peerQueued))
 		}
 		peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
 		if err != nil {
@@ -12842,6 +12842,13 @@ func TestNewGameSessionFactoryCharacterPositionEmitsSelfAndPeerPresentationWitho
 		}
 		if peerPosition.VID != owner.VID || peerPosition.Position != position {
 			t.Fatalf("expected peer character-position %d presentation for owner VID, got %+v", position, peerPosition)
+		}
+		peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerQueued[1]))
+		if err != nil {
+			t.Fatalf("decode peer CHANGE_SPEED for character-position %d: %v", position, err)
+		}
+		if peerSpeed.VID != owner.VID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+			t.Fatalf("expected peer CHANGE_SPEED %d for owner VID, got %+v", worldproto.BootstrapCharacterMovingSpeed, peerSpeed)
 		}
 	}
 
@@ -12970,8 +12977,8 @@ func TestNewGameSessionFactoryCharacterPositionChairRequestEmitsGroundSittingPre
 		t.Fatalf("expected chair-position request to present as ground-sit for owner VID, got %+v", selfPosition)
 	}
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 1 {
-		t.Fatalf("expected visible peer to receive one chair-position ground-sit frame, got %d", len(peerQueued))
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected visible peer to receive chair-position ground-sit plus CHANGE_SPEED, got %d", len(peerQueued))
 	}
 	peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
 	if err != nil {
@@ -12979,6 +12986,13 @@ func TestNewGameSessionFactoryCharacterPositionChairRequestEmitsGroundSittingPre
 	}
 	if peerPosition.VID != owner.VID || peerPosition.Position != 4 {
 		t.Fatalf("expected peer chair-position request to present as ground-sit for owner VID, got %+v", peerPosition)
+	}
+	peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode peer CHANGE_SPEED after chair-position: %v", err)
+	}
+	if peerSpeed.VID != owner.VID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("unexpected peer CHANGE_SPEED after chair-position: %+v", peerSpeed)
 	}
 
 	duplicateChair, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientCharacterPosition(combatproto.ClientCharacterPositionPacket{Position: 3})))

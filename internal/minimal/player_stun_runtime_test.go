@@ -67,8 +67,14 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 		t.Fatalf("decode self CHANGE_SPEED after sit: %v", err)
 	}
 	peerSitQueued := flushServerFrames(t, peerFlow)
-	if len(peerSitQueued) != 1 {
-		t.Fatalf("expected visible peer to receive only CHARACTER_POSITION after sit, got %d", len(peerSitQueued))
+	if len(peerSitQueued) != 2 {
+		t.Fatalf("expected visible peer to receive CHARACTER_POSITION plus CHANGE_SPEED after sit, got %d", len(peerSitQueued))
+	}
+	if _, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerSitQueued[0])); err != nil {
+		t.Fatalf("decode peer CHARACTER_POSITION after sit: %v", err)
+	}
+	if _, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerSitQueued[1])); err != nil {
+		t.Fatalf("decode peer CHANGE_SPEED after sit: %v", err)
 	}
 
 	skillOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientUseSkill(combatproto.ClientUseSkillPacket{SkillVnum: 0x23, TargetVID: targetVID})))
@@ -138,7 +144,16 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 1 {
 		t.Fatalf("expected one self-only CHANGE_SPEED after stand and no STUN, got %d", len(queued))
 	}
-	flushServerFrames(t, peerFlow)
+	peerStandQueued := flushServerFrames(t, peerFlow)
+	if len(peerStandQueued) != 2 {
+		t.Fatalf("expected visible peer to receive stand CHARACTER_POSITION plus CHANGE_SPEED, got %d", len(peerStandQueued))
+	}
+	if _, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerStandQueued[0])); err != nil {
+		t.Fatalf("decode peer stand CHARACTER_POSITION: %v", err)
+	}
+	if _, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerStandQueued[1])); err != nil {
+		t.Fatalf("decode peer CHANGE_SPEED after stand: %v", err)
+	}
 
 	standingHit, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
 	if err != nil {

@@ -282,8 +282,8 @@ func assertPostFloorCharacterPositionRecovered(t *testing.T, ownerFlow, peerFlow
 		t.Fatalf("unexpected %s self CHARACTER_POSITION: %+v", context, selfPosition)
 	}
 	peerQueued := flushServerFrames(t, peerFlow)
-	if len(peerQueued) != 1 {
-		t.Fatalf("expected %s CHARACTER_POSITION to queue one peer frame, got %d", context, len(peerQueued))
+	if len(peerQueued) != 2 {
+		t.Fatalf("expected %s CHARACTER_POSITION to queue stance plus CHANGE_SPEED, got %d", context, len(peerQueued))
 	}
 	peerPosition, err := worldproto.DecodeCharacterPosition(decodeSingleFrame(t, peerQueued[0]))
 	if err != nil {
@@ -291,5 +291,12 @@ func assertPostFloorCharacterPositionRecovered(t *testing.T, ownerFlow, peerFlow
 	}
 	if peerPosition.VID != owner.VID || peerPosition.Position != bootstrapCharacterPositionSittingGround {
 		t.Fatalf("unexpected %s peer CHARACTER_POSITION: %+v", context, peerPosition)
+	}
+	peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerQueued[1]))
+	if err != nil {
+		t.Fatalf("decode %s peer CHANGE_SPEED: %v", context, err)
+	}
+	if peerSpeed.VID != owner.VID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("unexpected %s peer CHANGE_SPEED: %+v", context, peerSpeed)
 	}
 }
