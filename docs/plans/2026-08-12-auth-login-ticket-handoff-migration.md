@@ -59,9 +59,22 @@ This slice is proven by:
 - `go test ./internal/minimal ./internal/ops -count=1` for runtime migration-plan/export wiring and ops response shape coverage,
 - the full repository test/vet/format checks before commit.
 
+## Named repository seam — 2026-09-26
+
+`loginticket.SQLRepository` is the named auth login-ticket repository beside FileStore issue/load/consume and the tip-0007 export. The 2026-08-20 `AuthLoginTicketHandoffExporter` / `MemoryStore` seam stays the hermetic export seam; this one is the caller-supplied SQL seam.
+
+1. The caller supplies a `database/sql` executor. This package does not select a driver, load a DSN, embed secrets, register a production engine, or mount `authd` / `gamed`.
+2. Schema preflight requires ledger version `7` / `auth_login_ticket_handoff` before Issue, Load, Consume, or Export.
+3. `Issue` inserts one active `auth_login_tickets` row (`consumed_at` NULL) after the same ticket validation FileStore uses. A second active row for that login key is `ErrTicketExists`.
+4. `Load` reads that active row. Login mismatch is `ErrTicketLoginMismatch`. Consumed historical rows are not a pending handoff.
+5. `Consume` returns the same active ticket and does not update or delete the SQL row. Destructive one-shot removal stays `FileStore.Consume` (delete the JSON file). A `consumed_at` update is not this slice.
+6. `ExportAuthLoginTicketHandoff` projects active rows only. Export identity stays `0007_auth_login_ticket_handoff`. Insert-only import and opt-in scoped replace stay `ImportAuthLoginTicketHandoff`.
+
+Proven by `go test ./internal/loginticket -run SQLRepository` and `go test -tags=sqlite_harness ./internal/loginticket -run SQLiteHarnessSQLRepository`.
+
 ## Next likely slices
 
-1. Extract a narrow login-ticket repository seam only when tests prove it reduces file-store coupling.
+1. ~~Extract a narrow login-ticket repository seam only when tests prove it reduces file-store coupling.~~ Done for opt-in `loginticket.SQLRepository` beside FileStore and tip-0007 export. SQL `Consume` still does not replace the destructive file delete.
 2. Add a driver-backed migration preflight harness before introducing apply/rollback tooling.
 3. Use `GET /local/db/migrations/ledger-snapshot` plus the existing offline planner to support operator runbooks that copy only ledger metadata into review/preflight workflows.
-4. Add import/quarantine tooling for the existing migration-shaped exports only after the repository seam is explicit.
+4. ~~Add import/quarantine tooling for the existing migration-shaped exports only after the repository seam is explicit.~~ Done earlier: tip-0007 quarantine, insert-only import, and opt-in scoped replace.

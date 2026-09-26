@@ -17,4 +17,6 @@ var (
 	_ AuthLoginTicketHandoffExporter = (*FileStore)(nil)
 	_ Store                          = (*MemoryStore)(nil)
 	_ AuthLoginTicketHandoffExporter = (*MemoryStore)(nil)
+	_ Store                          = (*SQLRepository)(nil)
+	_ AuthLoginTicketHandoffExporter = (*SQLRepository)(nil)
 )
