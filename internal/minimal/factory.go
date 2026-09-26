@@ -2476,7 +2476,7 @@ func (r *gameRuntime) syncSpawnGroupChaseStepScheduleForEntity(entityID uint64) 
 		r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 		return
 	}
-	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	ownerPos := r.sharedWorld.spawnAggroCandidatePositionLocked(owner)
 	if _, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID)); !ok {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.syncSpawnGroupHomewardStepScheduleForEntity(entityID)
@@ -2574,7 +2574,7 @@ func (r *gameRuntime) spawnGroupChaseStepStillEligible(entityID uint64) bool {
 	if !ok || characterAtBootstrapHPFloor(owner) {
 		return false
 	}
-	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	ownerPos := r.sharedWorld.spawnAggroCandidatePositionLocked(owner)
 	_, ok = r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, r.effectiveSpawnGroupMaxStep(entityID))
 	return ok
 }
@@ -2666,7 +2666,7 @@ func (r *gameRuntime) spawnGroupChaseStepSnapshot(entityID uint64, dueAt time.Ti
 	if !ok || characterAtBootstrapHPFloor(owner) {
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
-	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	ownerPos := r.sharedWorld.spawnAggroCandidatePositionLocked(owner)
 	maxStep := r.effectiveSpawnGroupMaxStep(entityID)
 	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, maxStep)
 	if !ok {
@@ -3591,7 +3591,7 @@ func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, resche
 		r.clearSpawnGroupHomewardStep(entityID)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	ownerPos := worldruntime.NewPosition(owner.MapIndex, owner.X, owner.Y)
+	ownerPos := r.sharedWorld.spawnAggroCandidatePositionLocked(owner)
 	plan, ok := r.sharedWorld.PlanSpawnGroupChaseStep(entityID, ownerPos, maxStep)
 	if !ok {
 		r.clearSpawnGroupChaseStep(entityID)
