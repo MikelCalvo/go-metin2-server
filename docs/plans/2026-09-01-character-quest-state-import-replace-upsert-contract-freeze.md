@@ -7,9 +7,12 @@ Freeze the next fail-closed **scoped replace** policy for quarantined tip-`0004`
 operators can re-backfill a retained quest-flag export without hitting
 insert-only primary-key conflicts.
 
-This freeze does **not** invent a stock production driver, live DB quest
-repository, catalog tip `0030`, quest UI / mall surfaces, or silent row-merge
-semantics.
+This freeze does **not** invent a stock production driver, catalog tip
+`0030`, quest UI / mall surfaces, or silent row-merge semantics. The first
+live DB quest-flag repository is the opt-in `SQLStore` beside FileStore:
+caller-supplied executor, tip-`0004` scoped replace, stock gamed still on
+FileStore until a caller selects `SQLStore`. It is not a production driver
+and not an upsert.
 
 ## Why docs-first
 
@@ -106,7 +109,9 @@ would invent policy mid-implementation. Freeze first; GREEN stays follow-on.
 ### E. Explicit non-goals
 
 - stock production DB driver registration in `gamed` / `authd` / `metin2-migrate`
-- live DB quest repository replacing FileStore rematerialize
+- replacing FileStore rematerialize for stock `gamed` (opt-in `SQLStore` is
+  the caller-supplied live repository beside it; stock construction stays on
+  FileStore)
 - catalog tip `0030` / retip of tip-`0004` / `0003` / `0015` / `0010` export
   identities
 - upsert / replace for roster (`0002`), points (`0011`), safebox (`0015`),
@@ -153,3 +158,11 @@ Docs/spec freeze landed first; tip-`0004` scoped replace GREEN is now owned by
 Follow-on tip-`0011` point-state scoped-replace freeze is owned by
 [character point-state import replace/upsert contract freeze](2026-09-01-character-point-state-import-replace-upsert-contract-freeze.md).
 Insert-only remains the default without the replace option / CLI confirmation.
+Opt-in `queststate.SQLStore` is the live DB-backed Load/Save repository beside
+that import and FileStore. A caller supplies the `database/sql` executor.
+Load joins tip-`0004` flags to roster names. Save scoped-replaces
+`character_quest_flags` for characters named in the snapshot, and
+`SaveReplacing` additionally wipes listed character ids whose last flag was
+cleared. Empty save with an empty scope does not truncate the table. Stock
+gamed rematerialize stays on FileStore until a caller selects `SQLStore`.
+This repository does not select a driver, upsert, or mount the daemon.
