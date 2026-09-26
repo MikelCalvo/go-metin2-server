@@ -11,6 +11,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -324,6 +325,32 @@ func TestGameRuntimeImplicitPartySharesKillRewardExperience(t *testing.T) {
 	flushServerFrames(t, mateFlow)
 	flushServerFrames(t, deadFlow)
 
+	const (
+		movedMateX   int32  = 1400
+		movedMateY   int32  = 2400
+		liveMateGold uint64 = 777
+		liveMateHP   int32  = 333
+	)
+	moveOut, err := mateFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{X: movedMateX, Y: movedMateY, Time: 0x51525354})))
+	if err != nil || len(moveOut) == 0 {
+		t.Fatalf("expected mate move before the kill to be accepted, frames=%d err=%v", len(moveOut), err)
+	}
+	flushServerFrames(t, killerFlow)
+	mateEntity, mateOK := runtime.sharedWorld.playerEntityByName(mate.Name)
+	if !mateOK {
+		t.Fatal("expected mate world entity after move")
+	}
+	liveMate := mateEntity.Character
+	liveMate.Gold = liveMateGold
+	liveMate.Points[bootstrapPlayerPointValueIndex] = liveMateHP
+	runtime.sharedWorld.UpdateCharacter(mateEntity.Entity.ID, liveMate)
+	if points, ok := runtime.PointsSnapshot(mate.Name); !ok || points.Points[bootstrapExperiencePointType] != 20 || points.Points[bootstrapPlayerPointValueIndex] != 750 {
+		t.Fatalf("expected mate session EXP/HP to stay at the entered account row before the kill, got %+v ok=%v", points, ok)
+	}
+	if currency, ok := runtime.CurrencySnapshot(mate.Name); !ok || currency.Gold != 0 {
+		t.Fatalf("expected mate session gold to stay at the entered account row before the kill, got %+v ok=%v", currency, ok)
+	}
+
 	shares := ShareKillRewardExperience(rewardExperience, 2, []int32{mate.Points[bootstrapExperiencePointType], killer.Points[bootstrapExperiencePointType]})
 	if len(shares) != 2 || shares[0]+shares[1] != rewardExperience {
 		t.Fatalf("expected equal implicit-party shares of %d, got %#v", rewardExperience, shares)
@@ -420,7 +447,23 @@ func TestGameRuntimeImplicitPartySharesKillRewardExperience(t *testing.T) {
 	if mateAccount.Characters[0].Points[bootstrapExperiencePointType] != 20+int32(mateShare) || mateAccount.Characters[0].Gold != 0 {
 		t.Fatalf("expected persisted mate EXP share without gold, got exp=%d gold=%d", mateAccount.Characters[0].Points[bootstrapExperiencePointType], mateAccount.Characters[0].Gold)
 	}
+	if mateAccount.Characters[0].X != movedMateX || mateAccount.Characters[0].Y != movedMateY || mateAccount.Characters[0].Points[bootstrapPlayerPointValueIndex] != 750 {
+		t.Fatalf("expected persisted mate row to keep the saved move and pre-share HP, got x=%d y=%d hp=%d", mateAccount.Characters[0].X, mateAccount.Characters[0].Y, mateAccount.Characters[0].Points[bootstrapPlayerPointValueIndex])
+	}
 	if deadAccount.Characters[0].Points[bootstrapExperiencePointType] != 30 {
 		t.Fatalf("expected dead member EXP to stay unchanged, got %d", deadAccount.Characters[0].Points[bootstrapExperiencePointType])
+	}
+	mateAfter, mateAfterOK := runtime.sharedWorld.playerEntityByName(mate.Name)
+	if !mateAfterOK || mateAfter.Character.X != movedMateX || mateAfter.Character.Y != movedMateY || mateAfter.Character.Gold != liveMateGold || mateAfter.Character.Points[bootstrapPlayerPointValueIndex] != liveMateHP || mateAfter.Character.Points[bootstrapExperiencePointType] != 20+int32(mateShare) {
+		t.Fatalf("expected world mate to keep the live move, gold, and HP while taking the EXP share, got %+v ok=%v", mateAfter.Character, mateAfterOK)
+	}
+	if points, ok := runtime.PointsSnapshot(mate.Name); !ok || points.Points[bootstrapExperiencePointType] != 20+int32(mateShare) || points.Points[bootstrapPlayerPointValueIndex] != mate.Points[bootstrapPlayerPointValueIndex] {
+		t.Fatalf("expected mate session to patch only EXP and keep session HP, got %+v ok=%v", points, ok)
+	}
+	if currency, ok := runtime.CurrencySnapshot(mate.Name); !ok || currency.Gold != 0 {
+		t.Fatalf("expected mate session gold to stay at the account row, got %+v ok=%v", currency, ok)
+	}
+	if where, ok := runtime.ConnectedCharacterSnapshot(mate.Name); !ok || where.X != movedMateX || where.Y != movedMateY {
+		t.Fatalf("expected mate session position to stay at the live move, got %+v ok=%v", where, ok)
 	}
 }

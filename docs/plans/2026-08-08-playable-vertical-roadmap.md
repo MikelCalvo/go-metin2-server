@@ -308,7 +308,7 @@ Next slices after PvE stabilizes:
 1. Party membership state.
 2. Invite/accept/leave/kick where packet evidence exists.
 3. Party chat scoping based on membership rather than bootstrap fanout.
-4. ~~Party EXP/drop sharing after reward ownership is stable.~~ Done for bootstrap scope: a single kill-reward drop uses the implicit-party FNV-1a owner, and kill-reward EXP is split in equal integer shares across that same connected live `GAME` set (skip `0`-HP). Contribution weights, guild EXP, and level-up choreography stay deferred.
+4. ~~Party EXP/drop sharing after reward ownership is stable.~~ Done for bootstrap scope: a single kill-reward drop uses the implicit-party FNV-1a owner, and kill-reward EXP is split in equal integer shares across that same connected live `GAME` set (skip `0`-HP). A member's share patches only that member's live EXP point and the matching account point, so a move or unsaved gold/HP since the last save stays on the session. Contribution weights, guild EXP, and level-up choreography stay deferred.
 5. Guild roster/rank state.
 6. Friend/messenger/block systems.
 

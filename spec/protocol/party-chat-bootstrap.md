@@ -34,7 +34,7 @@ The current bootstrap runtime behavior is:
 
 This slice intentionally treats all currently connected `GAME` sessions in the bootstrap runtime as one implicit temporary party.
 
-That same connected live `GAME` set, skipping still-connected `0`-HP owners, is the membership used for the first kill-reward ownership roll and for equal kill-reward EXP sharing frozen in `non-player-reward-bootstrap.md`.
+That same connected live `GAME` set, skipping still-connected `0`-HP owners, is the membership used for the first kill-reward ownership roll and for equal kill-reward EXP sharing frozen in `non-player-reward-bootstrap.md`. A member's EXP share patches only that member's live experience point; it does not replace the rest of the live character from the account row.
 
 That is a temporary bootstrap policy only.
 It is not a claim that real party membership/invite/link semantics already exist.

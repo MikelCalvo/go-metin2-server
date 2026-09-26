@@ -630,12 +630,14 @@ type liveCharacterStateSnapshot struct {
 
 type liveCharacterStateSnapshotter func() (liveCharacterStateSnapshot, bool)
 type liveCharacterPersistedSnapshotApplier func(loginticket.Character) bool
+type liveCharacterPointPatcher func(pointIndex uint8, value int32) (loginticket.Character, bool)
 
 type liveCharacterRegistration struct {
 	id                     uint64
 	login                  string
 	snapshotter            liveCharacterStateSnapshotter
 	applyPersistedSnapshot liveCharacterPersistedSnapshotApplier
+	patchLivePoint         liveCharacterPointPatcher
 }
 
 func NewGameRuntime(cfg config.Service) (*gameRuntime, error) {
@@ -3873,7 +3875,7 @@ func (r *gameRuntime) PointsSnapshot(name string) (CharacterPointsSnapshot, bool
 	return CharacterPointsSnapshot{Name: state.Name, Points: state.Points}, true
 }
 
-func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier) uint64 {
+func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string, snapshotter liveCharacterStateSnapshotter, applyPersistedSnapshot liveCharacterPersistedSnapshotApplier, patchLivePoint liveCharacterPointPatcher) uint64 {
 	if r == nil || snapshotter == nil {
 		return 0
 	}
@@ -3893,6 +3895,7 @@ func (r *gameRuntime) registerLiveCharacterSnapshotter(name string, login string
 		login:                  strings.TrimSpace(login),
 		snapshotter:            snapshotter,
 		applyPersistedSnapshot: applyPersistedSnapshot,
+		patchLivePoint:         patchLivePoint,
 	}
 	return registrationID
 }
@@ -3958,6 +3961,26 @@ func (r *gameRuntime) applyLiveCharacterPersistedSnapshot(name string, updated l
 		return false
 	}
 	return registration.applyPersistedSnapshot(updated)
+}
+
+// patchLiveCharacterPoint changes one live point on the named session and
+// returns that session's live character. It does not replace position, gold,
+// the other points, inventory, equipment, or quickslots from an account row.
+func (r *gameRuntime) patchLiveCharacterPoint(name string, pointIndex uint8, value int32) (loginticket.Character, bool) {
+	if r == nil {
+		return loginticket.Character{}, false
+	}
+	name = normalizeLiveCharacterName(name)
+	if name == "" {
+		return loginticket.Character{}, false
+	}
+	r.liveCharacterMu.RLock()
+	registration, ok := r.liveCharactersByName[name]
+	r.liveCharacterMu.RUnlock()
+	if !ok || registration.patchLivePoint == nil {
+		return loginticket.Character{}, false
+	}
+	return registration.patchLivePoint(pointIndex, value)
 }
 
 func (r *gameRuntime) liveCharacterLogin(name string) (string, bool) {
@@ -5467,6 +5490,30 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 				sessionTicket.Characters = updatedCharacters
 				selectedPlayer.ApplyPersistedSnapshot(updated)
 				return true
+			}, func(pointIndex uint8, value int32) (loginticket.Character, bool) {
+				stateMu.Lock()
+				defer stateMu.Unlock()
+				if !hasSelected || selectedPlayer == nil {
+					return loginticket.Character{}, false
+				}
+				current := selectedPlayer.LiveCharacter()
+				if current.ID == 0 || normalizeLiveCharacterName(current.Name) != name {
+					return loginticket.Character{}, false
+				}
+				if !selectedPlayer.SetLivePoint(pointIndex, value) {
+					return loginticket.Character{}, false
+				}
+				persisted := selectedPlayer.PersistedSnapshot()
+				persisted.Points[pointIndex] = value
+				link := selectedPlayer.SessionLink()
+				updatedCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, link.CharacterIndex, persisted)
+				if !ok {
+					selectedPlayer.SetLivePoint(pointIndex, current.Points[pointIndex])
+					return loginticket.Character{}, false
+				}
+				sessionTicket.Characters = updatedCharacters
+				selectedPlayer.SetPersistedSnapshot(persisted)
+				return selectedPlayer.LiveCharacter(), true
 			})
 		}
 		refreshSelectedPlayerFromAccountSnapshot := func() bool {
@@ -16239,9 +16286,11 @@ func commitImplicitPartyKillRewardExperience(runtime *gameRuntime, accounts acco
 	}
 	saved := []savedAccount{{login: sessionTicket.Login, empire: sessionTicket.Empire, previous: cloneCharacters(sessionTicket.Characters)}}
 	type liveRestore struct {
-		name     string
-		previous loginticket.Character
-		entityID uint64
+		name       string
+		pointIndex uint8
+		previous   int32
+		entityID   uint64
+		world      loginticket.Character
 	}
 	restores := make([]liveRestore, 0, len(plan.Peers))
 	rollback := func() {
@@ -16253,9 +16302,11 @@ func commitImplicitPartyKillRewardExperience(runtime *gameRuntime, accounts acco
 		sessionTicket.Characters = cloneCharacters(saved[0].previous)
 		sharedWorld.UpdateCharacter(killerID, killerPlayer.LiveCharacter())
 		for i := len(restores) - 1; i >= 0; i-- {
-			_ = runtime.applyLiveCharacterPersistedSnapshot(restores[i].name, restores[i].previous)
+			if _, ok := runtime.patchLiveCharacterPoint(restores[i].name, restores[i].pointIndex, restores[i].previous); !ok {
+				continue
+			}
 			if restores[i].entityID != 0 {
-				sharedWorld.UpdateCharacter(restores[i].entityID, restores[i].previous)
+				sharedWorld.UpdateCharacter(restores[i].entityID, restores[i].world)
 			}
 		}
 	}
@@ -16269,11 +16320,11 @@ func commitImplicitPartyKillRewardExperience(runtime *gameRuntime, accounts acco
 			rollback()
 			return false
 		}
-		var updated loginticket.Character
+		var persisted loginticket.Character
 		found := false
 		for _, character := range account.Characters {
 			if character.ID == peer.ID {
-				updated = character
+				persisted = character
 				found = true
 				break
 			}
@@ -16282,28 +16333,39 @@ func commitImplicitPartyKillRewardExperience(runtime *gameRuntime, accounts acco
 			rollback()
 			return false
 		}
-		previous := updated
-		updated.Points[bootstrapExperiencePointType] = peer.After
-		updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(account.Characters, peer.ID, updated)
+		previousPoint := persisted.Points[bootstrapExperiencePointType]
+		persisted.Points[bootstrapExperiencePointType] = peer.After
+		updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(account.Characters, peer.ID, persisted)
 		if !ok || !saveAccountSnapshot(accounts, account.Login, account.Empire, updatedCharacters) {
 			rollback()
 			return false
 		}
 		saved = append(saved, savedAccount{login: account.Login, empire: account.Empire, previous: account.Characters})
-		if runtime.applyLiveCharacterPersistedSnapshot(peer.Name, updated) {
-			restores = append(restores, liveRestore{name: peer.Name, previous: previous, entityID: peer.EntityID})
+		live, patched := runtime.patchLiveCharacterPoint(peer.Name, bootstrapExperiencePointType, peer.After)
+		if !patched || live.ID != peer.ID {
+			rollback()
+			return false
 		}
-		live := updated
-		if current, ok := sharedWorld.playerCharacter(peer.EntityID); ok && current.ID == updated.ID {
-			live = current
-			live.Points[bootstrapExperiencePointType] = peer.After
+		worldBefore, worldOK := sharedWorld.playerCharacter(peer.EntityID)
+		if !worldOK || worldBefore.ID != peer.ID {
+			worldBefore = live
+			worldBefore.Points[bootstrapExperiencePointType] = previousPoint
 		}
-		sharedWorld.UpdateCharacter(peer.EntityID, live)
+		restores = append(restores, liveRestore{
+			name:       peer.Name,
+			pointIndex: bootstrapExperiencePointType,
+			previous:   previousPoint,
+			entityID:   peer.EntityID,
+			world:      worldBefore,
+		})
+		worldAfter := worldBefore
+		worldAfter.Points[bootstrapExperiencePointType] = peer.After
+		sharedWorld.UpdateCharacter(peer.EntityID, worldAfter)
 		queued = append(queued, struct {
 			entityID uint64
 			frame    []byte
 		}{entityID: peer.EntityID, frame: worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
-			VID:    live.VID,
+			VID:    worldAfter.VID,
 			Type:   bootstrapExperiencePointType,
 			Amount: int32(peer.Share),
 			Value:  peer.After,
