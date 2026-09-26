@@ -65,6 +65,35 @@ when the ledger owns tip-`0015` + additive `0025` but not additive `0028`.
 - mall open/checkout / GD/DB myshop
 - tip-`0010` ground-item attribute SQL companion (separate follow-on)
 - a stock production database driver
+- upsert / auto-run of safebox rows from daemon startup
+
+## Follow-on: opt-in gamed rematerialize through SQLStore
+
+First GREEN for one explicit gamed constructor that rematerializes the warehouse
+through the already-owned `safeboxstore.SQLStore`, beside FileStore.
+
+Contract:
+
+1. `SelectRematerializeStore(fileStore, nil)` keeps FileStore. Stock
+   `NewGameRuntime` and the existing test constructors pass nil, so process
+   restart, backup, and `/local/safebox-store/*` stay on the JSON snapshot.
+2. `newGameRuntimeWithOptionalSafeboxSQL(..., sqlStore)` is the only opt-in.
+   A non-nil `*SQLStore` becomes that runtime's Load/Save seam: open, check-in,
+   password, and money use the same `LoadOrEmpty` / `ReplaceCharacterCells` /
+   `Save` calls already used for FileStore.
+3. The caller still supplies the `database/sql` executor. This slice does not
+   select a driver, load a DSN, embed secrets, register a production engine,
+   upsert, or auto-run migrations.
+4. Opt-in Save remains the already-owned whole-snapshot replace. It does not
+   write the sibling FileStore. A later runtime that does not pass `SQLStore`
+   stays on its own file.
+
+Proof: `go test ./internal/safeboxstore -run 'SelectRematerializeStore|StockRematerialize' -count=1`
+plus `go test -tags=sqlite_harness ./internal/safeboxstore -run SQLiteHarnessOptInSQLStore -count=1`
+plus `go test -tags=sqlite_harness ./internal/minimal -run TestGameRuntimeOptInSQLStoreRematerializesOpenCheckinPasswordAndMoney -count=1`.
+That last proof builds one runtime with a non-nil `SQLStore` and walks open,
+check-in, password, and money through it. A second stock `NewGameRuntime` in
+the same proof stays on FileStore, and the sibling file is not written.
 
 ## Follow-on: live DB-backed safebox repository
 
@@ -90,8 +119,10 @@ Contract:
    child rows, then insert the canonicalized export). This matches FileStore
    `Save` of a whole JSON snapshot; it is not insert-only import and not
    scoped replace. Parent `characters` rows must already exist (FK fail-closed).
-5. Stock `gamed` stays on FileStore. `SQLStore` is not a daemon mutation
-   route, backup/restore primitive, or remote-admin endpoint.
+5. Stock `gamed` stays on FileStore. `SQLStore` is not a backup/restore
+   primitive or remote-admin endpoint. One explicit runtime may opt in
+   through `newGameRuntimeWithOptionalSafeboxSQL`; that is not stock
+   rematerialize, a driver selection, or a silent cutover.
 
 Proof: `go test ./internal/safeboxstore -run 'SQLStore' -count=1` plus
 `go test -tags=sqlite_harness ./internal/safeboxstore -run SQLiteHarnessSQLStore -count=1`.
@@ -142,3 +173,11 @@ GREEN follow-on live repository: opt-in `safeboxstore.SQLStore` Load/Save agains
 the same tip-`0015`+`0025`+`0028` tables, beside FileStore and tip-`0028` SQL
 import (`feat(db): add live SQL safebox repository seam`). Stock `gamed` stays
 on FileStore; no stock production driver, remote admin, or secrets in git.
+
+GREEN follow-on opt-in gamed rematerialize: `SelectRematerializeStore` keeps
+FileStore unless `newGameRuntimeWithOptionalSafeboxSQL` is given a non-nil
+`*SQLStore`. That one runtime then open/check-in/password/money through the
+already-owned SQL Load/Save seam. The focused runtime proof is
+`TestGameRuntimeOptInSQLStoreRematerializesOpenCheckinPasswordAndMoney`.
+Stock `NewGameRuntime` still passes nil. No silent cutover, no stock
+production driver, no upsert/auto-run, no remote admin, and no secrets in git.

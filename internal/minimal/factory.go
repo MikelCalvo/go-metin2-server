@@ -4766,10 +4766,21 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 }
 
 // newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore is the deepest
-// test/runtime constructor. A non-nil questState is used as-is so hermetic
+// stock test/runtime constructor. A non-nil questState is used as-is so hermetic
 // gameplay tests can inject queststate.MemoryStore without construct-and-discard
 // of a path-isolated FileStore. Nil keeps the ordinary FileStore default.
+// Safebox rematerialize stays on FileStore. The SQL opt-in is the sibling
+// constructor below; stock NewGameRuntime does not call it.
 func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
+	return newGameRuntimeWithOptionalSafeboxSQL(cfg, store, accounts, staticActors, interactions, items, questState, transferTriggers, nil)
+}
+
+// newGameRuntimeWithOptionalSafeboxSQL is the explicit opt-in warehouse
+// constructor. safeboxSQL nil keeps FileStore, matching the stock constructor.
+// A non-nil SQLStore rematerializes open/check-in/password/money through that
+// already-owned store for this runtime only. It does not select a driver, load
+// a DSN, upsert, auto-run, or replace FileStore for any other runtime.
+func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger, safeboxSQL *safeboxstore.SQLStore) (*gameRuntime, error) {
 	if err := validateRuntimePersistenceConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -4816,7 +4827,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		// rematerialize into the next runtime via /tmp pollution.
 		safeboxPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-safebox-%d-%d", os.Getpid(), time.Now().UnixNano()), "safebox.json")
 	}
-	safeboxItems := safeboxstore.NewFileStore(safeboxPath)
+	safeboxItems := safeboxstore.SelectRematerializeStore(safeboxstore.NewFileStore(safeboxPath), safeboxSQL)
 	mallPath := safeboxstore.MallStorePathBesideSafebox(safeboxPath)
 	mallItems := safeboxstore.NewMallFileStore(mallPath)
 	cubeRecipePath := serviceCubeRecipeStorePath(cfg)
