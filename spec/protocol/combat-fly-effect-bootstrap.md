@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING`, the bootstrap presentation `USE_SKILL`, or the bootstrap presentation `SHOOT` against the currently selected visible combat target.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING`, the bootstrap presentation `USE_SKILL`, or the bootstrap presentation `SHOOT` against the currently selected visible combat target. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -85,11 +85,11 @@ The seams are:
 2. client `USE_SKILL(0x0402)` whose `skill_vnum` is the bootstrap presentation value `1`
 3. client `SHOOT(0x0403)` whose `shoot_type` is the bootstrap presentation value `1`; the packet has no target field, so the end VID is the already selected combat target
 
-On any accepted request the owner socket receives exactly one self-only:
+On any accepted request the owner socket receives exactly one:
 
 1. `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`
 
-Visible peers receive no fly-effect fanout in this first GREEN. The companion is presentation only, not a second combat simulation:
+An accepted client `FLY_TARGETING` also queues that same frame to currently visible live peers that can already see the selected combat target. Peers already at the bootstrap `0`-HP floor stay skipped. Bootstrap presentation `USE_SKILL` and `SHOOT` stay self-only; this slice does not widen those seams. The companion is presentation only, not a second combat simulation:
 
 - it does not mutate selected-target HP
 - it does not rewrite the selected target
@@ -107,7 +107,7 @@ Current accepted normal attacks still use the already-owned combat presentation 
 - content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
 - sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-This first GREEN adds the selected-target `FLY_TARGETING` → self-only `CREATE_FLY` presentation companion and reuses that same companion for one accepted bootstrap presentation `USE_SKILL` and one accepted bootstrap presentation `SHOOT`. Later skill resource/cooldown tables, hit-timing, shot-type catalogs, or peer-fanout slices must freeze their own policy instead of widening this seam by implication.
+This first GREEN adds the selected-target `FLY_TARGETING` → `CREATE_FLY` presentation companion, queues that same frame to currently visible live peers, and reuses the self-only companion for one accepted bootstrap presentation `USE_SKILL` and one accepted bootstrap presentation `SHOOT`. Later skill resource/cooldown tables, hit-timing, shot-type catalogs, skill/shoot peer fanout, or server `FLY_TARGETING` echoes must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
@@ -117,7 +117,7 @@ This slice does not freeze:
 - projectile hit timing or travel duration,
 - visual effect type meanings beyond bootstrap `CREATE_FLY` `type = 0`,
 - multi-target or chained projectile behavior, including client/server `ADD_FLY_TARGETING`,
-- peer fanout of fly effects,
+- peer fanout of bootstrap presentation `USE_SKILL` or `SHOOT` fly effects,
 - killing-hit fly effects,
 - server `FLY_TARGETING` / `ADD_FLY_TARGETING` runtime emission,
 - any replacement for `DAMAGE_INFO`, `TARGET`, or `DEAD` as the current combat result surfaces.
@@ -128,10 +128,11 @@ After this slice:
 - `FLY_TARGETING`, `ADD_FLY_TARGETING`, and `CREATE_FLY` remain listed in the packet matrix as documented server combat/fly-effect packet shapes,
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one self-only `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`,
+- an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)` to the owner and queues that same frame to currently visible live peers,
+- peers already at the bootstrap `0`-HP floor receive no fly-effect frame,
 - an accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target emits the same self-only `CREATE_FLY`,
 - an accepted client `SHOOT` with bootstrap presentation `shoot_type = 1` while that same target is selected emits the same self-only `CREATE_FLY`,
 - that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
-- visible peers receive no fly-effect frame,
+- visible peers receive no fly-effect frame from `USE_SKILL` or `SHOOT`,
 - unsupported `FLY_TARGETING` without the new policy, other `USE_SKILL` vnums, other `SHOOT` types, `ADD_FLY_TARGETING`, and ordinary `ATTACK` stay fail-closed for fly emission,
 - later ranged/projectile/skill slices can start from this tested packet shape and this first `FLY_TARGETING` emission rule instead of re-discovering them.

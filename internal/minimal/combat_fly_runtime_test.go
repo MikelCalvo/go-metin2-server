@@ -102,7 +102,7 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 		t.Fatalf("unexpected accepted fly-targeting error: %v", err)
 	}
 	if len(flyOut) != 1 {
-		t.Fatalf("expected one self-only CREATE_FLY after accepted fly-targeting, got %d", len(flyOut))
+		t.Fatalf("expected one self CREATE_FLY after accepted fly-targeting, got %d", len(flyOut))
 	}
 	selfFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, flyOut[0]))
 	if err != nil {
@@ -114,9 +114,29 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected accepted fly-targeting not to queue extra owner frames, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
-		t.Fatalf("expected visible peer to receive no CREATE_FLY, got %d", len(queued))
+	peerFlyQueued := flushServerFrames(t, peerFlow)
+	if len(peerFlyQueued) != 1 {
+		t.Fatalf("expected visible live peer to receive one CREATE_FLY, got %d", len(peerFlyQueued))
 	}
+	peerFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, peerFlyQueued[0]))
+	if err != nil {
+		t.Fatalf("decode peer CREATE_FLY after accepted fly-targeting: %v", err)
+	}
+	if peerFly != selfFly {
+		t.Fatalf("expected peer CREATE_FLY to match self %+v, got %+v", selfFly, peerFly)
+	}
+
+	floorPeer := peerVisibilityCharacter("FlyFloorPeer", 0x01030193, 0x02040193, 1140, 2100, 0, 103, 203)
+	floorPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "fly-floor-peer", 0x93939393, floorPeer)
+	floorFlow, floorEnter := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-floor-peer", 0x93939393)
+	defer closeSessionFlow(t, floorFlow)
+	if len(floorEnter) == 0 {
+		t.Fatal("expected floor peer to enter")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	flushServerFrames(t, floorFlow)
 
 	repeatFly, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID, X: 0, Y: 0})))
 	if err != nil {
@@ -131,6 +151,16 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	}
 	if repeatDecoded.Type != bootstrapCreateFlyType || repeatDecoded.StartVID != owner.VID || repeatDecoded.EndVID != targetVID {
 		t.Fatalf("unexpected repeat CREATE_FLY: %+v", repeatDecoded)
+	}
+	livePeerRepeat := flushServerFrames(t, peerFlow)
+	if len(livePeerRepeat) != 1 {
+		t.Fatalf("expected live peer to receive one repeat CREATE_FLY, got %d", len(livePeerRepeat))
+	}
+	if _, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, livePeerRepeat[0])); err != nil {
+		t.Fatalf("decode live peer repeat CREATE_FLY: %v", err)
+	}
+	if floorQueued := flushServerFrames(t, floorFlow); len(floorQueued) != 0 {
+		t.Fatalf("expected zero-HP peer to receive no CREATE_FLY, got %d", len(floorQueued))
 	}
 
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
