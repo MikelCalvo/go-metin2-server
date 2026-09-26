@@ -9832,7 +9832,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							}
 						}
 						if resolution.DeathReward.Experience != 0 || resolution.DeathReward.Gold != 0 {
-							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(worldruntime.StaticActorDeathReward{Experience: resolution.DeathReward.Experience, Gold: resolution.DeathReward.Gold})
+							reward, rewardOK := selectedPlayer.ApplyStaticActorDeathReward(resolution.DeathReward)
 							if !rewardOK || reward.GoldAfter > uint64(math.MaxInt32) || reward.GoldAfter < reward.GoldBefore || reward.Gold > uint64(math.MaxInt32) || reward.Experience > uint64(math.MaxInt32) {
 								selectedPlayer.SetLiveGold(previousSelected.Gold)
 								selectedPlayer.SetLivePoint(bootstrapExperiencePointType, previousSelected.Points[bootstrapExperiencePointType])
@@ -9854,6 +9854,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 									refreshLiveCharacterRegistration()
 									if ownsLiveSharedWorldSession() {
 										sharedWorld.UpdateCharacter(sharedWorldID, updatedSelected)
+									}
+									if reward.Experience != 0 && ownsLiveSharedWorldSession() {
+										if plan, planOK := planImplicitPartyKillRewardExperience(sharedWorld, sharedWorldID, previousSelected, resolution.DeathReward.Experience); planOK {
+											if commitImplicitPartyKillRewardExperience(runtime, accounts, sharedWorld, sharedWorldID, &sessionTicket, selectedPlayer, previousSelected, plan) {
+												reward.Experience = plan.KillerShare
+												reward.ExperienceAfter = selectedPlayer.LiveCharacter().Points[bootstrapExperiencePointType]
+											}
+										}
 									}
 									if reward.Experience != 0 {
 										frames = append(frames, worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
@@ -16131,6 +16139,183 @@ func (r *gameRuntime) persistPendingGroundItemsLocked() error {
 	r.groundItemPersistMu.Lock()
 	defer r.groundItemPersistMu.Unlock()
 	return r.groundItemStore.Save(r.sharedWorld.DurableGroundItemSnapshot())
+}
+
+// implicitPartyKillRewardExperiencePlan is one equal split of kill-reward EXP
+// across the same implicit party the single-drop ownership roll uses.
+// KillerShare is what the ordinary scalar path should apply to the killer.
+// Peer grants exclude the killer. Contribution weights stay deferred.
+type implicitPartyKillRewardExperiencePlan struct {
+	Active      bool
+	KillerShare uint64
+	Peers       []implicitPartyKillRewardExperiencePeer
+}
+
+type implicitPartyKillRewardExperiencePeer struct {
+	EntityID uint64
+	Login    string
+	Name     string
+	ID       uint32
+	VID      uint32
+	Share    uint64
+	After    int32
+}
+
+func planImplicitPartyKillRewardExperience(sharedWorld *sharedWorldRegistry, killerID uint64, killerBefore loginticket.Character, total uint64) (implicitPartyKillRewardExperiencePlan, bool) {
+	if sharedWorld == nil || killerID == 0 || total == 0 || killerBefore.ID == 0 {
+		return implicitPartyKillRewardExperiencePlan{}, false
+	}
+	members := sharedWorld.KillRewardPartyMembers()
+	if len(members) <= 1 {
+		return implicitPartyKillRewardExperiencePlan{}, false
+	}
+	killerIndex := -1
+	for i, member := range members {
+		if member.EntityID == killerID {
+			killerIndex = i
+			break
+		}
+	}
+	if killerIndex < 0 {
+		return implicitPartyKillRewardExperiencePlan{}, false
+	}
+	before := make([]int32, len(members))
+	for i, member := range members {
+		before[i] = member.Character.Points[bootstrapExperiencePointType]
+	}
+	before[killerIndex] = killerBefore.Points[bootstrapExperiencePointType]
+	shares := ShareKillRewardExperience(total, len(members), before)
+	if len(shares) != len(members) {
+		return implicitPartyKillRewardExperiencePlan{}, false
+	}
+	plan := implicitPartyKillRewardExperiencePlan{Active: true, KillerShare: shares[killerIndex]}
+	for i, member := range members {
+		if i == killerIndex || shares[i] == 0 {
+			continue
+		}
+		plan.Peers = append(plan.Peers, implicitPartyKillRewardExperiencePeer{
+			EntityID: member.EntityID,
+			Login:    member.Login,
+			Name:     member.Character.Name,
+			ID:       member.Character.ID,
+			VID:      member.Character.VID,
+			Share:    shares[i],
+			After:    before[i] + int32(shares[i]),
+		})
+	}
+	return plan, true
+}
+
+// commitImplicitPartyKillRewardExperience rewrites the killer's already-saved
+// full EXP down to KillerShare and persists every peer share. Any save failure
+// restores the killer's pre-share account snapshot and every peer touched in
+// this call, then returns false so the killing hit omits scalar point frames.
+// Gold committed beside the full EXP is preserved on the killer.
+func commitImplicitPartyKillRewardExperience(runtime *gameRuntime, accounts accountstore.Store, sharedWorld *sharedWorldRegistry, killerID uint64, sessionTicket *loginticket.Ticket, killerPlayer *player.Runtime, killerBefore loginticket.Character, plan implicitPartyKillRewardExperiencePlan) bool {
+	if runtime == nil || accounts == nil || sharedWorld == nil || sessionTicket == nil || killerPlayer == nil || killerID == 0 || !plan.Active {
+		return false
+	}
+	fullPersisted := killerPlayer.PersistedSnapshot()
+	fullLive := killerPlayer.LiveCharacter()
+	killerAfter := killerBefore.Points[bootstrapExperiencePointType]
+	if plan.KillerShare != 0 {
+		killerAfter += int32(plan.KillerShare)
+	}
+	if !killerPlayer.SetLivePoint(bootstrapExperiencePointType, killerAfter) {
+		return false
+	}
+	persisted := fullPersisted
+	persisted.Gold = fullLive.Gold
+	persisted.Points[bootstrapExperiencePointType] = killerAfter
+	killerCharacters, ok := selectedCharacterSnapshotUpdate(sessionTicket.Characters, killerPlayer.SessionLink().CharacterIndex, persisted)
+	if !ok || !saveAccountSnapshot(accounts, sessionTicket.Login, sessionTicket.Empire, killerCharacters) {
+		killerPlayer.SetLivePoint(bootstrapExperiencePointType, fullLive.Points[bootstrapExperiencePointType])
+		return false
+	}
+	type savedAccount struct {
+		login    string
+		empire   uint8
+		previous []loginticket.Character
+	}
+	saved := []savedAccount{{login: sessionTicket.Login, empire: sessionTicket.Empire, previous: cloneCharacters(sessionTicket.Characters)}}
+	type liveRestore struct {
+		name     string
+		previous loginticket.Character
+		entityID uint64
+	}
+	restores := make([]liveRestore, 0, len(plan.Peers))
+	rollback := func() {
+		killerPlayer.SetLivePoint(bootstrapExperiencePointType, fullLive.Points[bootstrapExperiencePointType])
+		killerPlayer.SetPersistedSnapshot(fullPersisted)
+		for i := len(saved) - 1; i >= 0; i-- {
+			_ = saveAccountSnapshot(accounts, saved[i].login, saved[i].empire, saved[i].previous)
+		}
+		sessionTicket.Characters = cloneCharacters(saved[0].previous)
+		sharedWorld.UpdateCharacter(killerID, killerPlayer.LiveCharacter())
+		for i := len(restores) - 1; i >= 0; i-- {
+			_ = runtime.applyLiveCharacterPersistedSnapshot(restores[i].name, restores[i].previous)
+			if restores[i].entityID != 0 {
+				sharedWorld.UpdateCharacter(restores[i].entityID, restores[i].previous)
+			}
+		}
+	}
+	queued := make([]struct {
+		entityID uint64
+		frame    []byte
+	}, 0, len(plan.Peers))
+	for _, peer := range plan.Peers {
+		account, err := accounts.Load(peer.Login)
+		if err != nil {
+			rollback()
+			return false
+		}
+		var updated loginticket.Character
+		found := false
+		for _, character := range account.Characters {
+			if character.ID == peer.ID {
+				updated = character
+				found = true
+				break
+			}
+		}
+		if !found {
+			rollback()
+			return false
+		}
+		previous := updated
+		updated.Points[bootstrapExperiencePointType] = peer.After
+		updatedCharacters, ok := selectedCharacterSnapshotByIDUpdate(account.Characters, peer.ID, updated)
+		if !ok || !saveAccountSnapshot(accounts, account.Login, account.Empire, updatedCharacters) {
+			rollback()
+			return false
+		}
+		saved = append(saved, savedAccount{login: account.Login, empire: account.Empire, previous: account.Characters})
+		if runtime.applyLiveCharacterPersistedSnapshot(peer.Name, updated) {
+			restores = append(restores, liveRestore{name: peer.Name, previous: previous, entityID: peer.EntityID})
+		}
+		live := updated
+		if current, ok := sharedWorld.playerCharacter(peer.EntityID); ok && current.ID == updated.ID {
+			live = current
+			live.Points[bootstrapExperiencePointType] = peer.After
+		}
+		sharedWorld.UpdateCharacter(peer.EntityID, live)
+		queued = append(queued, struct {
+			entityID uint64
+			frame    []byte
+		}{entityID: peer.EntityID, frame: worldproto.EncodePlayerPointChange(worldproto.PlayerPointChangePacket{
+			VID:    live.VID,
+			Type:   bootstrapExperiencePointType,
+			Amount: int32(peer.Share),
+			Value:  peer.After,
+		})})
+	}
+	sessionTicket.Characters = killerCharacters
+	killerPlayer.SetPersistedSnapshot(persisted)
+	sharedWorld.UpdateCharacter(killerID, killerPlayer.LiveCharacter())
+	for _, item := range queued {
+		sharedWorld.EnqueueToEntity(item.entityID, [][]byte{item.frame})
+	}
+	return true
 }
 
 func sequentialBytes32(start byte) [32]byte {

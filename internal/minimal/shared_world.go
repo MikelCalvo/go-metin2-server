@@ -4474,6 +4474,13 @@ func (r *sharedWorldRegistry) registerGroundItemAt(ownerID uint64, ownerLogin st
 }
 
 const killRewardPartyOwnerSeedPrefix = "kill_reward_party_owner"
+const killRewardPartyExpSeedPrefix = "kill_reward_party_exp"
+
+type killRewardPartyMember struct {
+	id        uint64
+	login     string
+	character loginticket.Character
+}
 
 type killRewardPartyOwnerPick struct {
 	EntityID  uint64
@@ -4513,15 +4520,23 @@ func (r *sharedWorldRegistry) PickKillRewardPartyOwner(vnum uint32, index int, f
 }
 
 func (r *sharedWorldRegistry) pickKillRewardPartyOwnerLocked(vnum uint32, index int) (killRewardPartyOwnerPick, bool) {
-	if r == nil || r.sessionDirectory == nil {
+	members := r.killRewardPartyMembersLocked()
+	if len(members) == 0 {
 		return killRewardPartyOwnerPick{}, false
 	}
-	type member struct {
-		id        uint64
-		login     string
-		character loginticket.Character
+	picked := members[killRewardPartyOwnerSlot(vnum, index, len(members))]
+	return killRewardPartyOwnerPick{EntityID: picked.id, Login: picked.login, Character: picked.character}, true
+}
+
+// killRewardPartyMembersLocked is the implicit-party set used by both the
+// single-drop ownership roll and equal kill-reward EXP sharing: connected live
+// GAME sessions, skip 0-HP, require a valid owner name and session login, then
+// sort by character name then VID. Contribution weights stay deferred.
+func (r *sharedWorldRegistry) killRewardPartyMembersLocked() []killRewardPartyMember {
+	if r == nil || r.sessionDirectory == nil {
+		return nil
 	}
-	members := make([]member, 0)
+	members := make([]killRewardPartyMember, 0)
 	for _, entityID := range r.sessionDirectory.EntityIDs() {
 		character, ok := r.playerCharacter(entityID)
 		if !ok || characterAtBootstrapHPFloor(character) || !validRewardDropOwnerNameMetadata(character.Name) {
@@ -4531,10 +4546,7 @@ func (r *sharedWorldRegistry) pickKillRewardPartyOwnerLocked(vnum uint32, index 
 		if !ok {
 			continue
 		}
-		members = append(members, member{id: entityID, login: login, character: character})
-	}
-	if len(members) == 0 {
-		return killRewardPartyOwnerPick{}, false
+		members = append(members, killRewardPartyMember{id: entityID, login: login, character: character})
 	}
 	sort.Slice(members, func(i int, j int) bool {
 		if members[i].character.Name == members[j].character.Name {
@@ -4542,8 +4554,96 @@ func (r *sharedWorldRegistry) pickKillRewardPartyOwnerLocked(vnum uint32, index 
 		}
 		return members[i].character.Name < members[j].character.Name
 	})
-	picked := members[killRewardPartyOwnerSlot(vnum, index, len(members))]
-	return killRewardPartyOwnerPick{EntityID: picked.id, Login: picked.login, Character: picked.character}, true
+	return members
+}
+
+// KillRewardPartyMembers returns the same implicit-party set the ownership roll
+// uses. Callers that are not inside the registry lock use this snapshot to
+// share kill-reward EXP without inventing a second membership rule.
+func (r *sharedWorldRegistry) KillRewardPartyMembers() []killRewardPartyOwnerPick {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	members := r.killRewardPartyMembersLocked()
+	out := make([]killRewardPartyOwnerPick, 0, len(members))
+	for _, member := range members {
+		out = append(out, killRewardPartyOwnerPick{EntityID: member.id, Login: member.login, Character: member.character})
+	}
+	return out
+}
+
+// ShareKillRewardExperience splits a kill-reward EXP total across the implicit
+// party in equal integer shares. Any remainder is handed out 1 point at a time, starting at
+// slot hash("kill_reward_party_exp:"+total) % count and walking forward through
+// the sorted party. That slot uses the same FNV-1a family as the drop-owner roll
+// and is not a contribution weight. A party of
+// one, or no live party, keeps the full total on the killer. A share that would
+// not fit the signed 32-bit point carrier is skipped, and that skipped amount
+// is offered 1 at a time to later members who can still accept it.
+func ShareKillRewardExperience(total uint64, memberCount int, before []int32) []uint64 {
+	if total == 0 || memberCount <= 0 || len(before) != memberCount {
+		return nil
+	}
+	shares := make([]uint64, memberCount)
+	if memberCount == 1 {
+		if killRewardExperienceFits(before[0], total) {
+			shares[0] = total
+		}
+		return shares
+	}
+	base := total / uint64(memberCount)
+	remainder := int(total % uint64(memberCount))
+	start := 0
+	if remainder != 0 {
+		start = killRewardPartyExpRemainderSlot(total, memberCount)
+	}
+	var leftover uint64
+	for i := 0; i < memberCount; i++ {
+		share := base
+		if remainder != 0 && (i+memberCount-start)%memberCount < remainder {
+			share++
+		}
+		if share == 0 || !killRewardExperienceFits(before[i], share) {
+			leftover += share
+			continue
+		}
+		shares[i] = share
+	}
+	for leftover > 0 {
+		progress := false
+		for step := 0; step < memberCount && leftover > 0; step++ {
+			i := (start + step) % memberCount
+			if !killRewardExperienceFits(before[i], shares[i]+1) {
+				continue
+			}
+			shares[i]++
+			leftover--
+			progress = true
+		}
+		if !progress {
+			break
+		}
+	}
+	return shares
+}
+
+func killRewardExperienceFits(before int32, share uint64) bool {
+	if share == 0 || share > uint64(1<<31-1) {
+		return false
+	}
+	next := int64(before) + int64(share)
+	return next <= int64(1<<31-1)
+}
+
+func killRewardPartyExpRemainderSlot(total uint64, memberCount int) int {
+	if memberCount <= 0 {
+		return 0
+	}
+	digest := fnv.New64a()
+	_, _ = digest.Write([]byte(fmt.Sprintf("%s:%d", killRewardPartyExpSeedPrefix, total)))
+	return int(digest.Sum64() % uint64(memberCount))
 }
 
 func validRewardOwnerMetadata(value string) bool {

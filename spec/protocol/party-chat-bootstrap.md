@@ -34,7 +34,7 @@ The current bootstrap runtime behavior is:
 
 This slice intentionally treats all currently connected `GAME` sessions in the bootstrap runtime as one implicit temporary party.
 
-That same connected live `GAME` set, skipping still-connected `0`-HP owners, is the membership used for the first kill-reward ownership roll frozen in `non-player-reward-bootstrap.md`.
+That same connected live `GAME` set, skipping still-connected `0`-HP owners, is the membership used for the first kill-reward ownership roll and for equal kill-reward EXP sharing frozen in `non-player-reward-bootstrap.md`.
 
 That is a temporary bootstrap policy only.
 It is not a claim that real party membership/invite/link semantics already exist.
@@ -51,6 +51,7 @@ This slice freezes:
 
 It does not yet freeze:
 - real party membership
+- contribution-weighted EXP, guild EXP, or level-up choreography
 - party invites
 - party add/remove/link/unlink packets
 - party parameter/state packets

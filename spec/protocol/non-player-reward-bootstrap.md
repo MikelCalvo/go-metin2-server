@@ -25,7 +25,7 @@ The current reward descriptor is intentionally tiny:
 
 It does **not** yet claim:
 - level-up choreography or stat recalculation
-- party invite/leave membership, contribution splits, last-hitter vs random tables, or drop-at-owner-feet
+- party invite/leave membership, contribution-weighted splits, guild EXP, last-hitter vs random tables, or drop-at-owner-feet
 - randomized loot tables or probabilities
 - corpse interaction beyond the shared bootstrap ground-item ownership / public-release / destroy-deadline path already owned by `item-drop-pickup-bootstrap.md`
 - quest credit, achievements, or scripted on-death hooks beyond the narrow spawn-group kill-quest credit fields documented in `quest-state-bootstrap.md`
@@ -107,7 +107,7 @@ After those frames, successful reward feedback is ordered as:
 2. optional gold `GC PLAYER_POINT_CHANGE`
 3. one `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` pair per configured drop, in normalized ascending drop-vnum order
 
-When that same accepted killing hit would also drive the engaged owner to the bootstrap `0`-HP floor through the ordinary immediate retaliation delta, those reward frames stay after dummy death / clear / hit-effect and before the owner-floor suffix. Ground-item registration therefore still sees a live killer snapshot. Currently visible live peers receive dummy `DEAD` plus dummy `DAMAGE_INFO`, then the ground-add / ownership pair, then owner `DEAD` plus owner `DAMAGE_INFO`; they still do not receive the killer's self-only EXP/gold point-changes.
+When that same accepted killing hit would also drive the engaged owner to the bootstrap `0`-HP floor through the ordinary immediate retaliation delta, those reward frames stay after dummy death / clear / hit-effect and before the owner-floor suffix. Ground-item registration therefore still sees a live killer snapshot. Currently visible live peers receive dummy `DEAD` plus dummy `DAMAGE_INFO`, then the ground-add / ownership pair, then owner `DEAD` plus owner `DAMAGE_INFO`; they still do not receive the killer's self-only EXP/gold point-changes. An implicit-party member's own EXP share is a separate self-only point-change on that member's session, not a copy of the killer's point-change.
 
 This ordering keeps combat lifecycle visible before reward side effects, and keeps reward registration from racing the owner-floor live-owner guard.
 
@@ -120,6 +120,7 @@ Current rules:
 - gold uses the bootstrap gold point type
 - each scalar reward is applied to the selected live player runtime first
 - the updated selected-character account snapshot is saved before the corresponding point-change frame is appended
+- when more than one implicit-party member is connected, kill-reward EXP is then rewritten into equal integer shares across that same set (connected live `GAME`, skip `0`-HP, sort by character name then `VID`). Each member's share starts at `total / count`. Any remainder is handed out one point at a time, starting at FNV-1a-64 slot `hash % count` with seed `kill_reward_party_exp:{total}` and walking forward through the sorted party. The killer's self `PLAYER_POINT_CHANGE` uses that killer share. Each other member receives the same self-only point-change on their own session and the share is saved on that member's account before the frame is queued. A member whose share would overflow the signed 32-bit carrier is skipped, and that skipped amount is offered one point at a time to later members who can still accept it. Gold stays with the killer. A party of one keeps the full EXP on the killer. Contribution weights, guild EXP, and level-up choreography stay deferred
 - if the player runtime rejects the scalar reward because the descriptor or resulting live values would overflow the signed 32-bit visible carriers, the accepted death/clear frames remain, scalar reward frames are omitted, the live EXP/gold scalar values stay at their pre-reward values, and independent valid drop rewards still continue through their normal ground-add / ownership path
 - dedicated runtime coverage freezes this independent-drop behavior for both overflowing EXP and overflowing gold rewards so either scalar channel can fail closed without suppressing valid item-shaped drop feedback
 - if account persistence fails after a scalar reward was tentatively applied, the accepted death/clear frames remain, scalar reward frames are omitted, and the live EXP/gold scalar values roll back to their pre-reward values; other live runtime state such as the current in-world position must not be clobbered, and independent valid item-shaped drop rewards still continue through their normal ground-add / ownership path
@@ -211,6 +212,7 @@ The repository can now say:
 - authored spawn groups may carry deterministic EXP, gold, and fixed drop-vnum descriptors directly or through authoring-only fixed reward tables that canonicalize into those same direct descriptor fields
 - registered formula-only combat profiles can drive both deterministic HP mutation and profile-default EXP/gold reward payout on the same accepted death edge
 - a single accepted kill can emit EXP, gold, and owned drop feedback together in documented order
+- kill-reward EXP is shared in equal integer parts across the same implicit party used for the single-drop ownership roll; gold stays with the killer, and contribution weights stay deferred
 - a combined last-hit that also floors the owner still emits those reward frames before the owner-floor suffix and still persists scalar EXP/gold plus HP `0`
 - the checked-in formula QA fixture now also owns that combined last-hit on its portable profile-default descriptor: four formula hits, then EXP/gold/drop before the authored `-2` owner-floor suffix (`TestGameSessionFlowAuthoredFormulaProfileKillingHitAlsoFloorsOwnerEmitsProfileDefaultRewardsBeforeOwnerFloor`)
 - same-socket `/restart_here` after that combined last-hit rematerializes still-pending kill-reward ground handles with self-only `ITEM_GROUND_ADD` + `ITEM_OWNERSHIP` after the still-dead dummy catch-up, then ordinary owner `ITEM_PICKUP` succeeds (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerRestartHereRematerializesKillRewardDrop`)
@@ -224,5 +226,5 @@ The repository can now say:
 - pending kill-reward ground handles rematerialize across `gamed` process restart from the dedicated ground-item FileStore with absolute ownership/despawn timers, the same way ordinary player drops do, including a combined last-hit that also floors the owner while the dummy is still dead (`TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerDaemonRestartRestartHereRematerializesKillRewardDrop`, `TestGameSessionFlowPracticeMobKillingHitAlsoFloorsOwnerDaemonRestartRestartTownRematerializesKillRewardDropOnSourceMapReselect`). The town-return twin now also pins those absolute `ownership_expires_at` / `despawn_at` values, process-local `OwnerID = 0` until matching owner Join rebind, and construction-time publicize of a still-pending handle whose ownership deadline has already passed.
 - timed respawn rebuild preserves authored reward descriptor metadata so later kills continue to use the same content contract
 
-Broader reward, loot-table, party, and level-up systems remain future work.
+Broader reward, loot-table, contribution-weighted party splits, guild EXP, and level-up systems remain future work.
 Authored spawn groups may now also carry the separate kill-quest credit fields documented in `quest-state-bootstrap.md`; that quest-flag apply path is intentionally outside this EXP/gold/drop reward descriptor.

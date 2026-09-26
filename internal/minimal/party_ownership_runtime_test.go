@@ -8,8 +8,10 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/player"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	itemproto "github.com/MikelCalvo/go-metin2-server/internal/proto/item"
+	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
@@ -229,5 +231,196 @@ func TestGameRuntimeMultiDropKillRewardKeepsKillerOwnership(t *testing.T) {
 		if err != nil || ownership.OwnerName != killer.Name {
 			t.Fatalf("expected multi-drop kill-reward ownership to stay on the killer, idx=%d got %+v err=%v", idx, ownership, err)
 		}
+	}
+}
+
+func TestShareKillRewardExperienceSplitsEqualPartsAcrossImplicitParty(t *testing.T) {
+	before := []int32{10, 20, 30}
+	shares := ShareKillRewardExperience(5, 3, before)
+	if len(shares) != 3 {
+		t.Fatalf("expected 3 shares, got %#v", shares)
+	}
+	start := killRewardPartyExpRemainderSlot(5, 3)
+	var sum uint64
+	for i, share := range shares {
+		sum += share
+		want := uint64(1)
+		if (i+3-start)%3 < 2 {
+			want = 2
+		}
+		if share != want {
+			t.Fatalf("share[%d]=%d, want %d (start slot %d)", i, share, want, start)
+		}
+	}
+	if sum != 5 {
+		t.Fatalf("expected shares to sum to 5, got %d start=%d shares=%#v", sum, start, shares)
+	}
+	solo := ShareKillRewardExperience(40, 1, []int32{7})
+	if len(solo) != 1 || solo[0] != 40 {
+		t.Fatalf("expected a party of one to keep the full total, got %#v", solo)
+	}
+	overflow := ShareKillRewardExperience(4, 2, []int32{1<<31 - 1, 3})
+	if len(overflow) != 2 || overflow[0] != 0 || overflow[1] != 4 {
+		t.Fatalf("expected a skipped overflow share to move to the member who can still accept it, got %#v", overflow)
+	}
+	bothFull := ShareKillRewardExperience(4, 2, []int32{1<<31 - 1, 1<<31 - 1})
+	if len(bothFull) != 2 || bothFull[0] != 0 || bothFull[1] != 0 {
+		t.Fatalf("expected EXP nobody can accept to be dropped, got %#v", bothFull)
+	}
+}
+
+func TestGameRuntimeImplicitPartySharesKillRewardExperience(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	actor := worldruntime.StaticEntity{
+		Entity:        worldruntime.Entity{ID: 0x01050280, Kind: worldruntime.EntityKindStaticActor, VID: 0x01050280, Name: "PartyExpRewardMob"},
+		Position:      worldruntime.NewPosition(bootstrapMapIndex, 1200, 2200),
+		RaceNum:       20350,
+		CombatProfile: worldruntime.StaticActorCombatProfileTrainingDummy,
+		CombatKind:    worldruntime.StaticActorCombatKindTrainingDummy,
+		SpawnGroupRef: "practice.party_exp_reward_mob",
+	}
+	killer := peerVisibilityCharacter("ZuluExpKiller", 0x01030180, 0x02040180, 1100, 2100, 0, 101, 201)
+	mate := peerVisibilityCharacter("AlphaExpMate", 0x01030181, 0x02040181, 1120, 2120, 1, 102, 202)
+	dead := peerVisibilityCharacter("AardvarkExpDead", 0x01030182, 0x02040182, 1110, 2110, 2, 103, 203)
+	killer.Points[bootstrapExperiencePointType] = 10
+	mate.Points[bootstrapExperiencePointType] = 20
+	dead.Points[bootstrapExperiencePointType] = 30
+	dead.Points[bootstrapPlayerPointValueIndex] = 0
+	const rewardExperience uint64 = 5
+	issuePeerTicket(t, store, "party-exp-killer", 0x80808080, killer)
+	issuePeerTicket(t, store, "party-exp-mate", 0x81818181, mate)
+	issuePeerTicket(t, store, "party-exp-dead", 0x82828282, dead)
+
+	accounts := accountstore.NewFileStore(t.TempDir())
+	if err := accounts.Save(accountstore.Account{Login: "party-exp-killer", Empire: killer.Empire, Characters: []loginticket.Character{killer}}); err != nil {
+		t.Fatalf("seed party-exp killer account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "party-exp-mate", Empire: mate.Empire, Characters: []loginticket.Character{mate}}); err != nil {
+		t.Fatalf("seed party-exp mate account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "party-exp-dead", Empire: dead.Empire, Characters: []loginticket.Character{dead}}); err != nil {
+		t.Fatalf("seed party-exp dead account: %v", err)
+	}
+	currentTime := time.Unix(1_700_000_780, 0)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
+	if err != nil {
+		t.Fatalf("new game runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	if _, ok := runtime.sharedWorld.registerStaticActor(actor.Entity.ID, actor.Entity.Name, actor.Position.MapIndex, actor.Position.X, actor.Position.Y, actor.RaceNum, "", "", actor.CombatKind, actor.SpawnGroupRef, worldruntime.StaticActorDeathReward{}); !ok {
+		t.Fatal("expected party-exp reward mob registration to succeed")
+	}
+	if !runtime.sharedWorld.overrideStaticActorDeathReward(actor.Entity.ID, worldruntime.StaticActorDeathReward{Experience: rewardExperience, Gold: 25}) {
+		t.Fatal("expected party-exp reward override to apply")
+	}
+
+	killerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "party-exp-killer", 0x80808080)
+	defer closeSessionFlow(t, killerFlow)
+	mateFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "party-exp-mate", 0x81818181)
+	defer closeSessionFlow(t, mateFlow)
+	deadFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "party-exp-dead", 0x82828282)
+	defer closeSessionFlow(t, deadFlow)
+	flushServerFrames(t, killerFlow)
+	flushServerFrames(t, mateFlow)
+	flushServerFrames(t, deadFlow)
+
+	shares := ShareKillRewardExperience(rewardExperience, 2, []int32{mate.Points[bootstrapExperiencePointType], killer.Points[bootstrapExperiencePointType]})
+	if len(shares) != 2 || shares[0]+shares[1] != rewardExperience {
+		t.Fatalf("expected equal implicit-party shares of %d, got %#v", rewardExperience, shares)
+	}
+	mateShare, killerShare := shares[0], shares[1]
+
+	targetVID := uint32(actor.Entity.ID)
+	if out, err := killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(out) != 1 {
+		t.Fatalf("expected target selection before party-exp kill to return 1 frame, got frames=%d err=%v", len(out), err)
+	}
+
+	var killOut [][]byte
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP); hit++ {
+		if hit > 1 {
+			currentTime = currentTime.Add(bootstrapNormalAttackCadenceWindow)
+		}
+		killOut, err = killerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+		if err != nil {
+			t.Fatalf("unexpected party-exp attack error on hit %d: %v", hit, err)
+		}
+	}
+	var killerExp *worldproto.PlayerPointChangePacket
+	var killerGold *worldproto.PlayerPointChangePacket
+	for _, raw := range killOut {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != worldproto.HeaderPlayerPointChange {
+			continue
+		}
+		change, err := worldproto.DecodePlayerPointChange(frame)
+		if err != nil {
+			t.Fatalf("decode killer point change: %v", err)
+		}
+		switch change.Type {
+		case player.ExperiencePointIndex:
+			killerExp = &change
+		case bootstrapGoldPointType:
+			killerGold = &change
+		}
+	}
+	if killerExp == nil || killerExp.VID != killer.VID || uint64(killerExp.Amount) != killerShare || killerExp.Value != 10+int32(killerShare) {
+		t.Fatalf("expected killer EXP share %d from 10, got %+v", killerShare, killerExp)
+	}
+	if killerGold == nil || killerGold.VID != killer.VID || killerGold.Amount != 25 {
+		t.Fatalf("expected killer to keep the full gold reward, got %+v", killerGold)
+	}
+
+	mateFrames := flushServerFrames(t, mateFlow)
+	var mateExp *worldproto.PlayerPointChangePacket
+	for _, raw := range mateFrames {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != worldproto.HeaderPlayerPointChange {
+			continue
+		}
+		change, err := worldproto.DecodePlayerPointChange(frame)
+		if err != nil {
+			t.Fatalf("decode mate point change: %v", err)
+		}
+		if change.Type == player.ExperiencePointIndex {
+			mateExp = &change
+		}
+		if change.Type == bootstrapGoldPointType {
+			t.Fatalf("expected gold to stay with the killer, mate received %+v", change)
+		}
+	}
+	if mateExp == nil || mateExp.VID != mate.VID || uint64(mateExp.Amount) != mateShare || mateExp.Value != 20+int32(mateShare) {
+		t.Fatalf("expected mate EXP share %d from 20, got %+v frames=%d", mateShare, mateExp, len(mateFrames))
+	}
+	for _, raw := range flushServerFrames(t, deadFlow) {
+		frame := decodeSingleFrame(t, raw)
+		if frame.Header != worldproto.HeaderPlayerPointChange {
+			continue
+		}
+		change, err := worldproto.DecodePlayerPointChange(frame)
+		if err == nil && change.Type == player.ExperiencePointIndex {
+			t.Fatalf("expected 0-HP member to be skipped for EXP share, got %+v", change)
+		}
+	}
+
+	killerAccount, err := accounts.Load("party-exp-killer")
+	if err != nil {
+		t.Fatalf("load party-exp killer account: %v", err)
+	}
+	mateAccount, err := accounts.Load("party-exp-mate")
+	if err != nil {
+		t.Fatalf("load party-exp mate account: %v", err)
+	}
+	deadAccount, err := accounts.Load("party-exp-dead")
+	if err != nil {
+		t.Fatalf("load party-exp dead account: %v", err)
+	}
+	if killerAccount.Characters[0].Points[bootstrapExperiencePointType] != 10+int32(killerShare) || killerAccount.Characters[0].Gold != 25 {
+		t.Fatalf("expected persisted killer share and full gold, got exp=%d gold=%d", killerAccount.Characters[0].Points[bootstrapExperiencePointType], killerAccount.Characters[0].Gold)
+	}
+	if mateAccount.Characters[0].Points[bootstrapExperiencePointType] != 20+int32(mateShare) || mateAccount.Characters[0].Gold != 0 {
+		t.Fatalf("expected persisted mate EXP share without gold, got exp=%d gold=%d", mateAccount.Characters[0].Points[bootstrapExperiencePointType], mateAccount.Characters[0].Gold)
+	}
+	if deadAccount.Characters[0].Points[bootstrapExperiencePointType] != 30 {
+		t.Fatalf("expected dead member EXP to stay unchanged, got %d", deadAccount.Characters[0].Points[bootstrapExperiencePointType])
 	}
 }
