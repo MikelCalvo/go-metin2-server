@@ -150,3 +150,38 @@ func TestWrapOpsAccessLogRecordsDurationAfterSlowHandler(t *testing.T) {
 		t.Fatalf("method = %v, want POST", got)
 	}
 }
+
+func TestMountLocalMetricsNilIsNil(t *testing.T) {
+	if MountLocalMetrics(nil) != nil {
+		t.Fatal("nil metrics mounted a handler")
+	}
+}
+
+func TestWrapOpsAccessLogRecordsMountedLocalMetrics(t *testing.T) {
+	metrics := NewOpsMetrics()
+	metrics.SetService("gamed")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/local/build-info", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle(LocalMetricsPath, MountLocalMetrics(metrics))
+	handler := WrapOpsAccessLog(nil, mux)
+
+	for _, path := range []string{"/local/build-info", "/healthz", "/debug/pprof/", "/local/persistence/status", LocalMetricsPath} {
+		req := httptest.NewRequest(http.MethodGet, path, strings.NewReader("secret-body"))
+		req.RemoteAddr = "127.0.0.1:9"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+	}
+
+	snap := metrics.Snapshot()
+	if snap.LocalRequestsTotal != 1 || snap.LocalRequestsByPath["/local/build-info"] != 1 {
+		t.Fatalf("snapshot = %+v", snap)
+	}
+	if snap.LocalErrorsTotal != 0 {
+		t.Fatalf("errors = %d, want 0", snap.LocalErrorsTotal)
+	}
+}

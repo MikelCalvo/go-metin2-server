@@ -124,10 +124,11 @@ Rules:
    an empty body.
 4. A nil `*OpsMetrics` is a passthrough: `Wrap(nil)` stays nil, `Wrap(next)`
    returns `next`, and `ObserveLocalRequest` does not panic.
-5. This slice does **not** mount the handler on `authd` or `gamed`. Operators
-   cannot curl it on a running daemon until a later slice registers
-   `OpsMetrics.Handler` on the ops mux. The type is the contract and the test
-   surface.
+5. The gamed ops mux registers this handler at `/local/metrics`. `serveOps`
+   already wraps that mux with `WrapOpsAccessLog`, which records one clean
+   `/local/<name>` response on the same snapshot. Reading `/local/metrics`
+   does not count itself. authd does not register the path. Request bodies,
+   query strings, Prometheus text, and export stay out.
 
 Example safe snapshot shape:
 
@@ -188,7 +189,6 @@ Example safe trace shape with no exporter configured:
 
 ## What this is not yet
 
-- mounting `/local/metrics` on the daemon ops mux
 - mounting `/local/trace` on the daemon ops mux
 - Prometheus `/metrics` exposition or any other pull exporter
 - shipping OpenTelemetry spans off the host (in-memory loopback spans only)

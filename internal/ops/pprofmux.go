@@ -23,6 +23,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/itemstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	"github.com/MikelCalvo/go-metin2-server/internal/observability"
 	"github.com/MikelCalvo/go-metin2-server/internal/queststate"
 	"github.com/MikelCalvo/go-metin2-server/internal/safeboxstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -6159,6 +6160,25 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 		})
 	}
 
+	return mountGamedLocalMetrics(mux, serviceName)
+}
+
+// mountGamedLocalMetrics registers the already-owned loopback JSON
+// /local/metrics companion on the gamed ops mux that cmd/gamed listens on.
+//
+// authd and every other service name are unchanged, so /local/metrics stays
+// unregistered there. The document is observability.OpsMetrics: metadata-only
+// counters, no Prometheus text, no OpenTelemetry export, and no remote log
+// shipping. /healthz and /debug/pprof/* are not counted. Request bodies are
+// never read. The returned mux is the same pointer, so later RegisterLocal*
+// calls keep working.
+func mountGamedLocalMetrics(mux *http.ServeMux, serviceName string) *http.ServeMux {
+	if mux == nil || serviceName != "gamed" {
+		return mux
+	}
+	metrics := observability.NewOpsMetrics()
+	metrics.SetService("gamed")
+	mux.Handle(observability.LocalMetricsPath, observability.MountLocalMetrics(metrics))
 	return mux
 }
 
