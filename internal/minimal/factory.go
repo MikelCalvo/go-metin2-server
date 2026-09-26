@@ -15420,6 +15420,10 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	if r.sharedWorld != nil {
 		r.sharedWorld.suppressStaticActorFanout = false
 	}
+	if replaceErr == nil && r.sharedWorld != nil {
+		r.sharedWorld.remapSpawnGroupCombatState(previousActors, previousCombatState)
+		replaceErr = r.rematerializeLiveSpawnPositions(previousActors)
+	}
 	if replaceErr == nil {
 		replaceErr = r.replaceQuestStateFromBundle(queststate.Snapshot{Flags: normalized.QuestState})
 	}
@@ -15464,9 +15468,6 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 			return contentbundle.Bundle{}, errors.Join(replaceErr, rollbackErr)
 		}
 		return contentbundle.Bundle{}, replaceErr
-	}
-	if r.sharedWorld != nil {
-		r.sharedWorld.remapSpawnGroupCombatState(previousActors, previousCombatState)
 	}
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
@@ -15833,6 +15834,32 @@ func (r *gameRuntime) replaceStaticActorsFromBundle(bundle contentbundle.Bundle)
 		killQuestCredit := staticActorKillQuestCredit{QuestRef: spawnGroup.RewardQuestRef, QuestFlag: spawnGroup.RewardQuestFlag, QuestFrom: spawnGroup.RewardQuestFrom, QuestTo: spawnGroup.RewardQuestTo, Text: spawnGroup.RewardQuestText, RequireQuestRef: spawnGroup.RequireQuestRef, RequireQuestFlag: spawnGroup.RequireQuestFlag, RequireQuestFrom: spawnGroup.RequireQuestFrom}
 		spawnHome := worldruntime.PositionSnapshot{MapIndex: spawnGroup.MapIndex, X: spawnGroup.X, Y: spawnGroup.Y}
 		if _, ok := r.registerStaticActorWithInteractionCombatProfileSpawnGroupRefHomeRewardAndKillQuestCredit(spawnGroup.Name, spawnGroup.MapIndex, spawnGroup.X, spawnGroup.Y, spawnGroup.RaceNum, "", "", spawnGroup.CombatProfile, spawnGroup.Ref, &spawnHome, deathReward, killQuestCredit); !ok {
+			return ErrContentBundleUnavailable
+		}
+	}
+	return nil
+}
+
+func (r *gameRuntime) rematerializeLiveSpawnPositions(previousActors []StaticActorSnapshot) error {
+	if r == nil || len(previousActors) == 0 {
+		return nil
+	}
+	for _, previous := range previousActors {
+		ref := strings.TrimSpace(previous.SpawnGroupRef)
+		if ref == "" || previous.MapIndex == 0 {
+			continue
+		}
+		if previous.SpawnHome != nil && previous.SpawnHome.MapIndex == previous.MapIndex && previous.SpawnHome.X == previous.X && previous.SpawnHome.Y == previous.Y {
+			continue
+		}
+		registered, ok := r.SpawnGroupByRef(ref)
+		if !ok {
+			continue
+		}
+		if registered.MapIndex == previous.MapIndex && registered.X == previous.X && registered.Y == previous.Y {
+			continue
+		}
+		if _, ok := r.UpdateStaticActor(registered.EntityID, registered.Name, previous.MapIndex, previous.X, previous.Y, registered.RaceNum); !ok {
 			return ErrContentBundleUnavailable
 		}
 	}

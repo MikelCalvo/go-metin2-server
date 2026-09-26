@@ -120,7 +120,9 @@ This slice does **not** yet implement:
 - inventing cross-map return MOVE / `GC WARP` choreography (cross-map return is frozen as delete/readd / direct-home rebuild in the later section below)
 - pathfinding, patrol routes, sectors, or navmesh logic
 - aggro radius acquisition or target switching
-- persistence of live mob position distinct from authored spawn position
+- pathfinding, pack AI, or a live SQL world repository
+
+Persistence of one live spawn-backed actor position distinct from authored spawn position is now owned beside the already-owned FileStore static-actor snapshot and content spawn coordinates. A successful non-identical `ImportContentBundle` that keeps the same authored `spawn_group_ref` rematerializes that actor at the previous live current position when it differs from authored home; authored home stays the leash origin, and content-bundle export continues to publish authored home rather than the displaced current position. Dead / `return_required` actors stay on the already-owned death-coord restore and do not arm return-step or homeward from that rematerialize. Identical no-op reimports and daemon-restart FileStore rematerialize stay on their already-owned paths.
 
 The existing content-loaded practice mobs use the already-owned target -> attack -> death -> respawn lifecycle while they classify `at_home` or `within_radius`, plus the current capped return-step recovery path and the first pending-frame chase-step executor for already-engaged owners. Successful same-map chase steps, same-map return-step / return-home recovery, and same-map live spawn-backed operator/runtime position-only updates now replicate retained-viewer movement with server `MOVE`, while presentation/name/race refreshes, respawn rebuild, content-bundle replacement, and cross-map return-home still use delete/readd visibility. A materialized spawn-backed actor that already classifies `return_required` is kept visible/debuggable but is not accepted as a combat target again until an owned respawn, operator return-home, operator return-step, update, or server-owned return-step executor places it back inside leash; runtime attempt callers can now distinguish this specific gate as `target_return_required`. The exact and map-local `GET` leash endpoints are only read-only inspection bridges over that classifier, while the `POST` return-step and return-home endpoints are controlled local triggers for QA and lifecycle recovery, not final mob AI. The exact return-home trigger can also be used on a live `within_radius` mob to restore exact authored placement and reset selected-target/engagement ownership without changing HP or reward metadata; the one-step trigger leaves already-`within_radius` mobs untouched and selected, and the server-owned return-step executor stops re-arming as soon as a step brings the actor back inside that radius.
 
@@ -236,7 +238,6 @@ Current implementation status:
 Explicit non-goals for this chase-step executor freeze:
 - navmesh, patrol, multi-step search, or multi-actor flocking beyond one occupancy detour
 - chasing while `return_required` or across map boundaries
-- persisting a live mob position schema distinct from the current static-actor snapshot path
 - operator POST chase-step triggers
 
 ## First owned occupancy-avoiding chase-step seam
