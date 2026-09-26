@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING`, the bootstrap presentation `USE_SKILL`, or the bootstrap presentation `SHOOT` against the currently selected visible combat target. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING`, the bootstrap presentation `USE_SKILL`, or the bootstrap presentation `SHOOT` against the currently selected visible combat target. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers, and the owner socket receives one self-only server `FLY_TARGETING` echo beside that projectile.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -19,7 +19,7 @@ The packets are:
 - phase: `GAME`
 - header: `0x0411`
 - payload length: `16`
-- status: documented and codec-owned in `internal/proto/combat`
+- status: documented, codec-owned in `internal/proto/combat`, and emitted as one self-only echo
 
 Payload layout:
 1. `uint32 shooter_vid` (little-endian)
@@ -27,7 +27,7 @@ Payload layout:
 3. `int32 x` (little-endian)
 4. `int32 y` (little-endian)
 
-The shipped runtime still does not emit this server packet. Accepted client `FLY_TARGETING` uses `CREATE_FLY` as the first projectile presentation, not a server `FLY_TARGETING` echo.
+An accepted client `FLY_TARGETING` echoes this packet once to the owner socket beside the already-owned `CREATE_FLY`. `shooter_vid` is the selected owner's visible VID, `target_vid` is the currently selected combat target, and `x` / `y` are the client request coordinates copied through unchanged. The echo is self-only: currently visible peers still receive only the already-owned `CREATE_FLY`. Bootstrap presentation `USE_SKILL`, `SHOOT`, ordinary `ATTACK`, and unsupported `FLY_TARGETING` do not emit it.
 
 ### `ADD_FLY_TARGETING`
 
@@ -66,7 +66,7 @@ Client-source inspection of the TMP4-compatible client shows separate game-phase
 - `FLY_TARGETING` and `ADD_FLY_TARGETING` both identify a shooter, an optional target, and fallback world coordinates.
 - `CREATE_FLY` identifies a fly/effect type plus start and end actor VIDs.
 
-The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as `GAME` ingress. This note keeps `ADD_FLY_TARGETING` fail-closed and reuses the already-owned `CREATE_FLY` codec on three existing seams: an accepted client `FLY_TARGETING` whose `target_vid` matches the session's currently selected visible combat target, one accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target, and one accepted client `SHOOT` whose `shoot_type` is the bootstrap presentation value `1` while that same target is already selected. The `SHOOT` packet carries only `shoot_type`, so the target stays the session's current selection.
+The same source also shows client-originated `FLY_TARGETING` / `ADD_FLY_TARGETING` and `SHOOT` requests from bow-style event handlers. Those client packets are already owned as `GAME` ingress. This note keeps `ADD_FLY_TARGETING` fail-closed and reuses the already-owned `CREATE_FLY` codec on three existing seams: an accepted client `FLY_TARGETING` whose `target_vid` matches the session's currently selected visible combat target, one accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target, and one accepted client `SHOOT` whose `shoot_type` is the bootstrap presentation value `1` while that same target is already selected. The `SHOOT` packet carries only `shoot_type`, so the target stays the session's current selection. The accepted `FLY_TARGETING` seam also echoes one self-only server `FLY_TARGETING` using the request coordinates as the fallback world position already named by that packet.
 
 It does not invent skill resource or cooldown tables, projectile travel duration, hit-timing formulas, a type catalog beyond bootstrap `type = 0`, or a second damage path.
 
@@ -81,23 +81,28 @@ The shipped runtime now emits `CREATE_FLY` on three presentation-only seams that
 
 The seams are:
 
-1. client `FLY_TARGETING(0x0404)`; the request coordinates are ignored in this first GREEN
+1. client `FLY_TARGETING(0x0404)`; the request coordinates are copied into the self-only server echo and are not used as hit timing, travel, or a second target
 2. client `USE_SKILL(0x0402)` whose `skill_vnum` is the bootstrap presentation value `1`
 3. client `SHOOT(0x0403)` whose `shoot_type` is the bootstrap presentation value `1`; the packet has no target field, so the end VID is the already selected combat target
 
-On any accepted request the owner socket receives exactly one:
+On any accepted request the owner socket receives:
 
 1. `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`
 
-An accepted client `FLY_TARGETING` also queues that same frame to currently visible live peers that can already see the selected combat target. Peers already at the bootstrap `0`-HP floor stay skipped. Bootstrap presentation `USE_SKILL` and `SHOOT` stay self-only; this slice does not widen those seams. The companion is presentation only, not a second combat simulation:
+An accepted client `FLY_TARGETING` also returns, on that same owner socket and before the projectile:
+
+1. `GC FLY_TARGETING(shooter_vid = owner_vid, target_vid = target_vid, x = request_x, y = request_y)`
+
+That echo stays self-only. The same accepted request still queues only `CREATE_FLY` to currently visible live peers that can already see the selected combat target. Peers already at the bootstrap `0`-HP floor stay skipped. Bootstrap presentation `USE_SKILL` and `SHOOT` stay one self-only `CREATE_FLY` and do not emit server `FLY_TARGETING`. The companions are presentation only, not a second combat simulation:
 
 - it does not mutate selected-target HP
 - it does not rewrite the selected target
 - it does not change normal-attack cadence, retaliation, death, respawn, restart, inventory, points, or persistence
 - it does not spend skill points, start a cooldown, or apply hit timing
-- it does not emit server `FLY_TARGETING`, `ADD_FLY_TARGETING`, knockdown, or PvP/duel packets
+- it does not emit server `ADD_FLY_TARGETING`, knockdown, or PvP/duel packets
+- the server `FLY_TARGETING` echo does not replace `CREATE_FLY`, `DAMAGE_INFO`, `TARGET`, or `DEAD`
 
-Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. `USE_SKILL` uses the same fail-closed rule, and any `skill_vnum` other than bootstrap presentation `1` also stays fail-closed. `SHOOT` uses the same selected-target rule, and any `shoot_type` other than bootstrap presentation `1` also stays fail-closed. Client `ADD_FLY_TARGETING` and ordinary `ATTACK` still do not emit `CREATE_FLY`. A repeat of the same accepted `USE_SKILL` or `SHOOT` emits another presentation `CREATE_FLY`; this slice does not own a skill cooldown or a shot cooldown.
+Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. `USE_SKILL` uses the same fail-closed rule, and any `skill_vnum` other than bootstrap presentation `1` also stays fail-closed. `SHOOT` uses the same selected-target rule, and any `shoot_type` other than bootstrap presentation `1` also stays fail-closed. Client `ADD_FLY_TARGETING` and ordinary `ATTACK` still do not emit `CREATE_FLY` or server `FLY_TARGETING`. A repeat of the same accepted client `FLY_TARGETING` emits another self-only echo beside another `CREATE_FLY`. A repeat of the same accepted `USE_SKILL` or `SHOOT` emits another presentation `CREATE_FLY` and still omits the server echo; this slice does not own a skill cooldown or a shot cooldown.
 
 ## Relationship to current combat slices
 
@@ -107,7 +112,7 @@ Current accepted normal attacks still use the already-owned combat presentation 
 - content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
 - sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-This first GREEN adds the selected-target `FLY_TARGETING` → `CREATE_FLY` presentation companion, queues that same frame to currently visible live peers, and reuses the self-only companion for one accepted bootstrap presentation `USE_SKILL` and one accepted bootstrap presentation `SHOOT`. Later skill resource/cooldown tables, hit-timing, shot-type catalogs, skill/shoot peer fanout, or server `FLY_TARGETING` echoes must freeze their own policy instead of widening this seam by implication.
+This first GREEN adds the selected-target `FLY_TARGETING` → `CREATE_FLY` presentation companion, queues that same `CREATE_FLY` frame to currently visible live peers, returns one self-only server `FLY_TARGETING` echo beside it, and reuses the self-only `CREATE_FLY` companion for one accepted bootstrap presentation `USE_SKILL` and one accepted bootstrap presentation `SHOOT`. Later skill resource/cooldown tables, hit-timing, shot-type catalogs, skill/shoot peer fanout, peer fanout of the server `FLY_TARGETING` echo, or server `ADD_FLY_TARGETING` echoes must freeze their own policy instead of widening this seam by implication.
 
 ## Non-goals
 
@@ -118,8 +123,9 @@ This slice does not freeze:
 - visual effect type meanings beyond bootstrap `CREATE_FLY` `type = 0`,
 - multi-target or chained projectile behavior, including client/server `ADD_FLY_TARGETING`,
 - peer fanout of bootstrap presentation `USE_SKILL` or `SHOOT` fly effects,
+- peer fanout of the server `FLY_TARGETING` echo,
 - killing-hit fly effects,
-- server `FLY_TARGETING` / `ADD_FLY_TARGETING` runtime emission,
+- server `ADD_FLY_TARGETING` runtime emission,
 - any replacement for `DAMAGE_INFO`, `TARGET`, or `DEAD` as the current combat result surfaces.
 
 ## Success definition
@@ -128,8 +134,8 @@ After this slice:
 - `FLY_TARGETING`, `ADD_FLY_TARGETING`, and `CREATE_FLY` remain listed in the packet matrix as documented server combat/fly-effect packet shapes,
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)` to the owner and queues that same frame to currently visible live peers,
-- peers already at the bootstrap `0`-HP floor receive no fly-effect frame,
+- an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one self-only `GC FLY_TARGETING(shooter_vid = owner_vid, target_vid = target_vid, x = request_x, y = request_y)` followed by one `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`, and queues only that `CREATE_FLY` frame to currently visible live peers,
+- peers already at the bootstrap `0`-HP floor receive no fly-effect frame, and no peer receives the server `FLY_TARGETING` echo,
 - an accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target emits the same self-only `CREATE_FLY`,
 - an accepted client `SHOOT` with bootstrap presentation `shoot_type = 1` while that same target is selected emits the same self-only `CREATE_FLY`,
 - that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
