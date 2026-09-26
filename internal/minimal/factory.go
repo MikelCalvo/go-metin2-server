@@ -639,6 +639,8 @@ type gameRuntime struct {
 	spawnHomewardStepDueAt  map[uint64]time.Time
 	chaseSpeedMu            sync.Mutex
 	chaseSpeeds             []spawnGroupChaseChangeSpeedDelivery
+	homewardSpeedMu         sync.Mutex
+	homewardSpeeds          []spawnGroupChaseChangeSpeedDelivery
 	chaseMarkerMu           sync.Mutex
 	chaseMarkers            []spawnGroupChaseTargetMarkerDelivery
 	now                     func() time.Time
@@ -3047,11 +3049,12 @@ func (r *gameRuntime) stepSpawnGroupHomeward(entityID uint64, maxStep int32, res
 	if !r.persistStaticActorSnapshot(target) {
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	stepped, ok := r.sharedWorld.StepSpawnGroupHomeward(entityID, maxStep)
+	stepped, ok, speedDeliveries := r.sharedWorld.StepSpawnGroupHomeward(entityID, maxStep)
 	if !ok {
 		_ = r.persistStaticActorSnapshot(current)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
+	r.queueSpawnGroupHomewardChangeSpeed(speedDeliveries)
 	if stepped.Step.Complete || stepped.Actor.SpawnLeash == nil || stepped.Actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius || !r.spawnGroupHomewardStepStillEligible(entityID) {
 		r.clearSpawnGroupHomewardStep(entityID)
 	} else if reschedule {
@@ -3402,6 +3405,34 @@ func (r *gameRuntime) flushPendingSpawnGroupChaseChangeSpeed() {
 	deliveries := r.chaseSpeeds
 	r.chaseSpeeds = nil
 	r.chaseSpeedMu.Unlock()
+	r.enqueueDeferredSpawnGroupChangeSpeed(deliveries)
+	r.flushPendingSpawnGroupChaseTargetMarker()
+}
+
+func (r *gameRuntime) queueSpawnGroupHomewardChangeSpeed(deliveries []spawnGroupChaseChangeSpeedDelivery) {
+	if r == nil || len(deliveries) == 0 {
+		return
+	}
+	r.homewardSpeedMu.Lock()
+	defer r.homewardSpeedMu.Unlock()
+	r.homewardSpeeds = append(r.homewardSpeeds, deliveries...)
+}
+
+func (r *gameRuntime) flushPendingSpawnGroupHomewardChangeSpeed() {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
+	r.homewardSpeedMu.Lock()
+	deliveries := r.homewardSpeeds
+	r.homewardSpeeds = nil
+	r.homewardSpeedMu.Unlock()
+	r.enqueueDeferredSpawnGroupChangeSpeed(deliveries)
+}
+
+func (r *gameRuntime) enqueueDeferredSpawnGroupChangeSpeed(deliveries []spawnGroupChaseChangeSpeedDelivery) {
+	if r == nil || r.sharedWorld == nil {
+		return
+	}
 	for _, delivery := range deliveries {
 		if delivery.entityID == 0 || len(delivery.frame) == 0 {
 			continue
@@ -3412,7 +3443,6 @@ func (r *gameRuntime) flushPendingSpawnGroupChaseChangeSpeed() {
 		}
 		r.sharedWorld.EnqueueToEntity(delivery.entityID, [][]byte{delivery.frame})
 	}
-	r.flushPendingSpawnGroupChaseTargetMarker()
 }
 
 func markerTargetVID(actor worldruntime.StaticEntity) uint32 {
@@ -6213,6 +6243,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 						runtime.flushReadyStaticActorRespawns()
 						runtime.flushDueSpawnGroupReturnSteps()
 						runtime.flushDueSpawnGroupHomewardSteps()
+						runtime.flushPendingSpawnGroupHomewardChangeSpeed()
 						runtime.flushDueSpawnGroupChaseSteps()
 						runtime.flushPendingSpawnGroupChaseChangeSpeed()
 						runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -7386,6 +7417,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 					runtime.flushReadyStaticActorRespawns()
 					runtime.flushDueSpawnGroupReturnSteps()
 					runtime.flushDueSpawnGroupHomewardSteps()
+					runtime.flushPendingSpawnGroupHomewardChangeSpeed()
 					runtime.flushDueSpawnGroupChaseSteps()
 					runtime.flushPendingSpawnGroupChaseChangeSpeed()
 					runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -8476,6 +8508,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
+							runtime.flushPendingSpawnGroupHomewardChangeSpeed()
 							runtime.flushDueSpawnGroupChaseSteps()
 							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -8539,6 +8572,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 							runtime.flushReadyStaticActorRespawns()
 							runtime.flushDueSpawnGroupReturnSteps()
 							runtime.flushDueSpawnGroupHomewardSteps()
+							runtime.flushPendingSpawnGroupHomewardChangeSpeed()
 							runtime.flushDueSpawnGroupChaseSteps()
 							runtime.flushPendingSpawnGroupChaseChangeSpeed()
 							runtime.flushProximitySpawnGroupAggroAcquisition()
@@ -11014,6 +11048,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 			runtime.flushReadyStaticActorRespawns()
 			runtime.flushDueSpawnGroupReturnSteps()
 			runtime.flushDueSpawnGroupHomewardSteps()
+			runtime.flushPendingSpawnGroupHomewardChangeSpeed()
 			runtime.flushDueSpawnGroupChaseSteps()
 			runtime.flushProximitySpawnGroupAggroAcquisition()
 			if runtime.sharedWorld != nil {
