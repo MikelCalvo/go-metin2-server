@@ -135,11 +135,63 @@ Example safe snapshot shape:
 {"service":"gamed","local_requests_total":3,"local_errors_total":1,"local_requests_by_path":{"/local/build-info":2,"/local/notice":1}}
 ```
 
+## Loopback OpenTelemetry span companion
+
+`observability.OpsTrace` is the first trace companion beside the process
+logger, `WrapOpsAccessLog`, and `OpsMetrics`. It records one in-memory
+OpenTelemetry-shaped span for each completed `/local/*` request. It does
+not replace the JSON logs or the metrics snapshot.
+
+`GET /local/trace` (`observability.LocalTracePath`) is loopback-only and
+metadata-only:
+
+| Field | Meaning |
+| --- | --- |
+| `service` | daemon name set with `SetService` (`authd` or `gamed`); empty until set |
+| `scope` | instrumentation scope `go-metin2-server/ops` |
+| `exporter` | `fail-closed` until `SetExporter` accepts a loopback target; then `loopback` |
+| `span_count` | spans still held in memory (ring of 8, newest last) |
+| `spans` | one `ops.local.request` server span per counted request |
+
+Each span carries `trace_id`, `span_id`, `name` (`ops.local.request`),
+`kind` (`SPAN_KIND_SERVER`), `start_unix_nano`, `end_unix_nano`,
+`status_code` (`1` OK, `2` ERROR when HTTP status is `>= 400`), and
+attributes limited to `service.name`, `http.method`, and `http.target`.
+
+Rules:
+
+1. `Wrap` records a span only when `URL.Path` has prefix `/local/` and the
+   path is one clean segment (`/local/build-info`). Query strings, fragments,
+   bodies, header values, and remote addresses are never stored.
+2. `/healthz`, `/debug/pprof/*`, any other non-`/local/` path, paths containing
+   `..`, and multi-segment paths are not traced.
+3. `Handler` allows `GET` from loopback (`127.0.0.1`, `::1`, `localhost`) only.
+   Other methods return `405` and non-loopback callers return `403`, both with
+   an empty body.
+4. A nil `*OpsTrace` is a passthrough: `Wrap(nil)` stays nil, `Wrap(next)`
+   returns `next`, and `StartSpan` / `FinishSpan` do not panic.
+5. Missing exporter config stays fail-closed. `Export` returns no spans until
+   `SetExporter` is given `http://127.0.0.1:<port>/v1/traces` or the same shape
+   on `::1` / `localhost`. HTTPS, remote hosts, wildcard binds, query strings,
+   and any other path are refused. Accepted export copies the in-memory spans
+   only; this slice never dials a collector.
+6. This slice does **not** mount the handler on `authd` or `gamed`. Operators
+   cannot curl it on a running daemon until a later slice registers
+   `OpsTrace.Handler` on the ops mux. The type is the contract and the test
+   surface. Prometheus exposition and remote log shipping stay out.
+
+Example safe trace shape with no exporter configured:
+
+```json
+{"service":"gamed","scope":"go-metin2-server/ops","exporter":"fail-closed","span_count":1,"spans":[{"trace_id":"...","span_id":"...","name":"ops.local.request","kind":"SPAN_KIND_SERVER","start_unix_nano":1,"end_unix_nano":2,"attributes":{"http.method":"GET","http.target":"/local/build-info","service.name":"gamed"},"status_code":1}]}
+```
+
 ## What this is not yet
 
 - mounting `/local/metrics` on the daemon ops mux
+- mounting `/local/trace` on the daemon ops mux
 - Prometheus `/metrics` exposition or any other pull exporter
-- OpenTelemetry traces or span export
+- shipping OpenTelemetry spans off the host (in-memory loopback spans only)
 - remote log shipping / SIEM sinks
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging

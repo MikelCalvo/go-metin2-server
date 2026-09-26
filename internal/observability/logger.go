@@ -65,7 +65,8 @@ func normalizeAttrKey(key string) string {
 //
 // It is not a Prometheus exporter, not an OpenTelemetry endpoint, and not a
 // remote admin surface. Daemons do not register it until a later slice mounts
-// Handler on the ops mux.
+// Handler on the ops mux. Loopback trace spans live on OpsTrace
+// (LocalTracePath), not here.
 const LocalMetricsPath = "/local/metrics"
 
 const maxMetricsPathLen = 128
