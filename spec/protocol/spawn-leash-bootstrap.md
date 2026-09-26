@@ -162,6 +162,7 @@ The first live chase executor deliberately mirrors the return-step pending-frame
 Arming rules:
 - arm one pending chase-step deadline only for a live spawn-backed practice mob that currently holds aggro-lite engagement ownership and still classifies `at_home` or `within_radius`
 - arm from the owned post-hit engagement gate, from proximity aggro-radius acquisition that newly establishes that same engagement ownership, and from any later same-engagement accepted hit that keeps that ownership, using a bootstrap chase delay of `5s` and the same fixed `max_step = 100` / default leash radius family as return-step scheduling
+- proximity acquisition compares the actor's current map with the owner's effective map: a stored player map index of `0` is the bootstrap map (`1`), not a different map, so a nearby owner can lock without a prior hit; a real other map stays fail-closed, and the chase planner uses that same effective position
 - the chase delay is intentionally longer than the owned `1s` delayed retaliation beat so multi-beat hostility cadence remains independently observable before the first chase step
 - never arm chase while the actor classifies `return_required`, is dead/waiting on respawn, lacks `spawn_group_ref`, or has no live same-map engaged owner
 - return-step ownership always wins: if an actor becomes `return_required`, clear any pending chase deadline and leave recovery to the already-owned return-step executor

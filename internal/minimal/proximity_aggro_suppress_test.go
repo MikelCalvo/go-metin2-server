@@ -1184,3 +1184,60 @@ func TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart(t *t
 		t.Fatalf("expected leave/re-enter after rematerialized daemon-restart suppress to reacquire engagement for entity %d", afterRestart.EntityID)
 	}
 }
+
+func TestAcquireProximitySpawnGroupAggroTreatsZeroMapIndexAsBootstrapMap(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	actor := registerPracticeSpawnForAggroTest(t, registry, "BootstrapMapAggroMob", "practice.bootstrap_map_aggro")
+
+	owner := peerVisibilityCharacter("BootstrapMapAggroOwner", 0x010301b1, 0x020401b1, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 0
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	if id, _ := registry.Join(owner, &pendingServerFrames{}, nil); id == 0 {
+		t.Fatal("expected zero-map owner to join the bootstrap map")
+	}
+
+	acquired, _ := registry.AcquireProximitySpawnGroupAggro()
+	if len(acquired) != 1 || acquired[0] != actor.EntityID {
+		t.Fatalf("expected zero-map owner inside aggro radius to acquire the bootstrap-map mob, got %+v", acquired)
+	}
+	ownerEntity, ok := registry.playerEntityByName(owner.Name)
+	if !ok || !registry.StaticActorCombatEngagedBySubject(actor.EntityID, ownerEntity.Entity.ID) {
+		t.Fatalf("expected bootstrap-map proximity acquisition to engage owner %d", ownerEntity.Entity.ID)
+	}
+	if _, ok := registry.CombatTargetSnapshotByName(owner.Name); ok {
+		t.Fatal("expected proximity acquisition not to invent a selected combat target")
+	}
+
+	foreign := peerVisibilityCharacter("ForeignMapAggroOwner", 0x010301b2, 0x020401b2, 1850, 2800, 0, 101, 201)
+	foreign.MapIndex = bootstrapMapIndex + 1
+	foreign.Points[bootstrapPlayerPointValueIndex] = 50
+	foreignRegistry := newSharedWorldRegistry()
+	_ = registerPracticeSpawnForAggroTest(t, foreignRegistry, "ForeignMapAggroMob", "practice.foreign_map_aggro")
+	if id, _ := foreignRegistry.Join(foreign, &pendingServerFrames{}, nil); id == 0 {
+		t.Fatal("expected foreign-map owner to join")
+	}
+	if acquired, _ := foreignRegistry.AcquireProximitySpawnGroupAggro(); len(acquired) != 0 {
+		t.Fatalf("expected a real other map to stay fail-closed for proximity acquisition, got %+v", acquired)
+	}
+}
+
+func registerPracticeSpawnForAggroTest(t *testing.T, registry *sharedWorldRegistry, name string, ref string) StaticActorSnapshot {
+	t.Helper()
+	actor, ok := registry.registerStaticActor(
+		0,
+		name,
+		bootstrapMapIndex,
+		1700,
+		2800,
+		20350,
+		"",
+		"",
+		string(worldruntime.StaticActorCombatProfilePracticeMob),
+		ref,
+		worldruntime.StaticActorDeathReward{},
+	)
+	if !ok || actor.EntityID == 0 || actor.SpawnGroupRef != ref {
+		t.Fatalf("expected spawn-backed practice mob %s to register, got ok=%v actor=%+v", ref, ok, actor)
+	}
+	return actor
+}

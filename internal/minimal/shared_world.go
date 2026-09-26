@@ -2278,7 +2278,7 @@ func (r *sharedWorldRegistry) ReleaseProximitySpawnGroupEngagementsOutsideAggroR
 	if !ok || characterAtBootstrapHPFloor(subject) {
 		return nil
 	}
-	subjectPos := worldruntime.PositionFromCharacter(subject)
+	subjectPos := r.spawnAggroCandidatePositionLocked(subject)
 	if !subjectPos.Valid() {
 		return nil
 	}
@@ -2448,7 +2448,7 @@ func (r *sharedWorldRegistry) seedProximityAggroSuppressForInsideCandidatesLocke
 		if !ok || characterAtBootstrapHPFloor(player) {
 			continue
 		}
-		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, worldruntime.PositionFromCharacter(player), worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
+		evaluation, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, r.spawnAggroCandidatePositionLocked(player), worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
 		if !ok || !evaluation.Acquired {
 			continue
 		}
@@ -3135,7 +3135,7 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint
 		}
 		candidates = append(candidates, worldruntime.SpawnAggroCandidate{
 			EntityID: sessionID,
-			Position: worldruntime.PositionFromCharacter(player),
+			Position: r.spawnAggroCandidatePositionLocked(player),
 		})
 	}
 	if len(candidates) == 0 {
@@ -7025,6 +7025,17 @@ func (r *sharedWorldRegistry) playerEntity(id uint64) (worldruntime.PlayerEntity
 		return worldruntime.PlayerEntity{}, false
 	}
 	return r.entities.Player(id)
+}
+
+// spawnAggroCandidatePositionLocked resolves a live player onto the same
+// effective map the visibility / leash consumers already use. A zero stored
+// map index is the bootstrap map, not a different map, so proximity acquire
+// and leave-radius release stay fail-closed only for a real map mismatch.
+func (r *sharedWorldRegistry) spawnAggroCandidatePositionLocked(character loginticket.Character) worldruntime.Position {
+	if r == nil {
+		return worldruntime.PositionFromCharacter(character)
+	}
+	return worldruntime.NewPosition(r.topology.EffectiveMapIndex(character), character.X, character.Y)
 }
 
 func (r *sharedWorldRegistry) playerCharacter(id uint64) (loginticket.Character, bool) {
