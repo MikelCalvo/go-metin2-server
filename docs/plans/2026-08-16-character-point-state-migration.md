@@ -28,15 +28,18 @@ The slice adds a read-only migration-shaped projection:
 - programmatic runtime: `ExportCharacterPointState()`
 - loopback-only ops: `GET /local/account-store/exports/character-point-state`
 
-The projection reads committed bootstrap account snapshots, validates them through the same roster boundary used by `0002`, and emits deterministic rows ordered by account, select-screen slot, and point index. It does not open a database, emit SQL, apply migrations, mutate account snapshots, or make the account runtime DB-backed.
+The projection reads committed bootstrap account snapshots, validates them through the same roster boundary used by `0002`, and emits deterministic rows ordered by account, select-screen slot, and point index. The projection itself does not open a database, emit SQL, apply migrations, or mutate account snapshots.
+
+FileStore remains the stock rematerialize path. Beside that path, opt-in `accountstore.SQLPointStateStore` is a caller-supplied Load/Save seam for `character_points` only. A caller that uses the store does read the fixed-width `0..254` vector from `character_points` and scoped-replaces those rows for characters in the supplied snapshot. The store does not select a production driver, mount `gamed`, or write item-use, equip, or combat mutations.
 
 ## What this is not yet
 
 This slice deliberately does not add:
 
-- a DB-backed account or character repository;
-- runtime reads from `character_points`;
+- a DB-backed account or character roster repository;
+- stock `gamed` runtime reads or writes of `character_points` (FileStore stays rematerialize; the SQL store is opt-in and not mounted);
 - DB writes for item-use/equip/combat point mutations;
+- a combined atomic roster, item-state, point-state, and quest-state commit;
 - import/quarantine execution tooling for the export;
 - final legacy stat derivation policy;
 - a daemon-local mutating migration endpoint.
@@ -59,6 +62,6 @@ Focused coverage for this slice should prove:
 ## Follow-up options
 
 1. Add import/quarantine tooling that verifies a point-state export against the migration shape without mutating current account snapshots.
-2. Extract a repository seam for account/character/player-point state only after export/import preflight proves the boundary reduces file coupling.
-3. Add DB-backed point writes only when roster, item-state, point-state, and quest-state repositories can be committed atomically for one selected character.
+2. The narrow point-vector repository seam is owned by opt-in `accountstore.SQLPointStateStore` (Load/Save of `character_points` only, beside FileStore rematerialize and tip-`0011` import/scoped replace). A combined account/character/item/quest repository, and any seam that writes more than `character_points`, stays deferred.
+3. Point writes that can be committed atomically with roster, item-state, and quest-state for one selected character stay deferred. Opt-in `accountstore.SQLPointStateStore` is not that commit: it is a caller-supplied executor with tip-`0011` schema preflight and a scoped replace of `character_points` only for characters in the supplied snapshot. Roster, item, and quest rows stay untouched, export identity stays tip-`0011`, and FileStore remains stock rematerialize. A stock production driver stays out of scope.
 4. Keep daemon migration surfaces read-only; use CLI-only apply/rollback for mutating migration runs.

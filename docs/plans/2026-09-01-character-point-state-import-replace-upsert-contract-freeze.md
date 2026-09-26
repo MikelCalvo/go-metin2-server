@@ -160,3 +160,31 @@ Insert-only remains the default without the replace option / CLI confirmation.
 This freeze also folds the missing Track E / migration-contract Done marker for
 already-landed tip-`0015` scoped replace GREEN so operator next-slice pointers
 stop skipping that ownership.
+
+## Live point repository (opt-in, not a cutover)
+
+The live DB point repository is **not** already owned by FileStore rematerialize,
+by `ImportCharacterPointState`, or by tip-`0011` scoped replace. Those stay the
+restart path and the offline import path.
+
+`accountstore.SQLPointStateStore` is the first caller-supplied Load/Save seam
+beside them:
+
+1. The caller supplies a `database/sql` executor. This package does not select a
+   driver, load a DSN, embed secrets, or register a production engine.
+2. Schema preflight requires ledger version `11` / `character_point_state`
+   before any Load or Save. Tip-`0002` roster rows are a read-only parent, not
+   a write target.
+3. Load returns roster shells (login, empire, character id, name, level,
+   map index) plus the fixed-width `0..254` point vector, including zeros and
+   negative values. Empty point tables are an all-zero vector, not a missing
+   FileStore. Inventory, equipment, quickslots, gold, and other roster columns
+   are not loaded from SQL.
+4. Save replaces `character_points` only for character ids present in the
+   supplied account set: delete that character's rows, then insert the complete
+   255-row vector. Characters absent from the set are left untouched. Roster,
+   inventory, equipment, and quickslot rows are not inserted, updated, or
+   deleted. There is no per-index upsert and no `ON CONFLICT` merge.
+5. Export identity stays `0011_character_point_state`.
+6. Stock `gamed` rematerialize stays on FileStore. This store is not mounted,
+   does not add a remote-admin or daemon mutation route, and does not auto-run.
