@@ -101,10 +101,17 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected accepted fly-targeting error: %v", err)
 	}
-	if len(flyOut) != 1 {
-		t.Fatalf("expected one self CREATE_FLY after accepted fly-targeting, got %d", len(flyOut))
+	if len(flyOut) != 2 {
+		t.Fatalf("expected self FLY_TARGETING echo plus CREATE_FLY after accepted fly-targeting, got %d", len(flyOut))
 	}
-	selfFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, flyOut[0]))
+	selfEcho, err := combatproto.DecodeServerFlyTargeting(decodeSingleFrame(t, flyOut[0]))
+	if err != nil {
+		t.Fatalf("decode self FLY_TARGETING echo after accepted fly-targeting: %v", err)
+	}
+	if selfEcho.ShooterVID != owner.VID || selfEcho.TargetVID != targetVID || selfEcho.X != 123456 || selfEcho.Y != -234567 {
+		t.Fatalf("unexpected self FLY_TARGETING echo after accepted fly-targeting: %+v", selfEcho)
+	}
+	selfFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, flyOut[1]))
 	if err != nil {
 		t.Fatalf("decode self CREATE_FLY after accepted fly-targeting: %v", err)
 	}
@@ -142,10 +149,17 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected repeat fly-targeting error: %v", err)
 	}
-	if len(repeatFly) != 1 {
-		t.Fatalf("expected repeat accepted fly-targeting to emit one CREATE_FLY, got %d", len(repeatFly))
+	if len(repeatFly) != 2 {
+		t.Fatalf("expected repeat accepted fly-targeting to emit one FLY_TARGETING echo plus one CREATE_FLY, got %d", len(repeatFly))
 	}
-	repeatDecoded, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, repeatFly[0]))
+	repeatEcho, err := combatproto.DecodeServerFlyTargeting(decodeSingleFrame(t, repeatFly[0]))
+	if err != nil {
+		t.Fatalf("decode repeat FLY_TARGETING echo: %v", err)
+	}
+	if repeatEcho.ShooterVID != owner.VID || repeatEcho.TargetVID != targetVID || repeatEcho.X != 0 || repeatEcho.Y != 0 {
+		t.Fatalf("unexpected repeat FLY_TARGETING echo: %+v", repeatEcho)
+	}
+	repeatDecoded, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, repeatFly[1]))
 	if err != nil {
 		t.Fatalf("decode repeat CREATE_FLY: %v", err)
 	}

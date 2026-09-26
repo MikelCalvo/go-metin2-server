@@ -105,6 +105,15 @@ func encodeBootstrapCreateFly(startVID, endVID uint32) []byte {
 	})
 }
 
+func encodeBootstrapFlyTargetingEcho(shooterVID, targetVID uint32, x, y int32) []byte {
+	return combatproto.EncodeServerFlyTargeting(combatproto.ServerFlyTargetingPacket{
+		ShooterVID: shooterVID,
+		TargetVID:  targetVID,
+		X:          x,
+		Y:          y,
+	})
+}
+
 const bootstrapTargetMarkerType = combatproto.ServerTargetMarkerTypeCharacter
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
@@ -10381,7 +10390,10 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 					}
 					return gameflow.FlyTargetingResult{
 						Accepted: true,
-						Frames:   [][]byte{flyFrame},
+						Frames: [][]byte{
+							encodeBootstrapFlyTargetingEcho(startVID, endVID, packet.X, packet.Y),
+							flyFrame,
+						},
 					}
 				},
 				HandleUseSkill: func(packet combatproto.ClientUseSkillPacket) gameflow.UseSkillResult {
