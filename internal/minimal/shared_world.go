@@ -6197,29 +6197,30 @@ func (r *sharedWorldRegistry) PlanSpawnGroupHomewardStep(entityID uint64, maxSte
 
 // StepSpawnGroupHomeward applies one planned within-radius homeward step toward
 // authored home for an unengaged live spawn-backed actor. Same-map retained
-// viewers reuse server MOVE replication; engagement/selected-target ownership
-// stay cleared (homeward never invents chase-style preservation).
-func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+// viewers reuse server MOVE replication; a successful retained MOVE also
+// returns one deferred GC CHANGE_SPEED companion at the bootstrap moving
+// speed. Engagement/selected-target ownership stay cleared.
+func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool, []spawnGroupChaseChangeSpeedDelivery) {
 	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	actor, ok := r.entities.StaticActor(entityID)
 	if !ok || actor.SpawnGroupRef == "" {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	currentHP, ok := r.ensureStaticActorCombatCurrentHPLocked(actor)
 	if !ok || currentHP == 0 {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	plan, ok := worldruntime.PlanStaticActorSpawnLeashHomewardStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 	if !ok {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	if plan.Complete && plan.Next.Equal(actor.Position) {
 		return SpawnGroupReturnStepSnapshot{
@@ -6229,7 +6230,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep in
 				Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
 				Complete:           true,
 			},
-		}, true
+		}, true, nil
 	}
 
 	steppedActor := actor
@@ -6237,16 +6238,28 @@ func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep in
 	targetDiff := r.scopesLocked().RelocateStaticActorTargetDiff(actor, steppedActor)
 	updated, ok := r.entities.UpdateStaticActor(steppedActor)
 	if !ok {
-		return SpawnGroupReturnStepSnapshot{}, false
+		return SpawnGroupReturnStepSnapshot{}, false, nil
 	}
 	r.syncStaticActorCombatStateLocked(updated)
 
+	var speedDeliveries []spawnGroupChaseChangeSpeedDelivery
 	if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
 		for _, target := range targetDiff.RetainedVisibleTargets {
 			if characterAtBootstrapHPFloor(target.Character) {
 				continue
 			}
 			r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+		}
+		if speedRaw, speedEncodable := encodeStaticActorChangeSpeedFrame(updated); speedEncodable {
+			for _, target := range targetDiff.RetainedVisibleTargets {
+				if characterAtBootstrapHPFloor(target.Character) {
+					continue
+				}
+				speedDeliveries = append(speedDeliveries, spawnGroupChaseChangeSpeedDelivery{
+					entityID: target.Entity.ID,
+					frame:    append([]byte(nil), speedRaw...),
+				})
+			}
 		}
 	}
 	deleteRaw, deleteEncodable := encodeStaticActorDeleteFrame(actor)
@@ -6281,7 +6294,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep in
 			Next:               worldruntime.PositionSnapshotFromPosition(plan.Next),
 			Complete:           plan.Complete,
 		},
-	}, true
+	}, true, speedDeliveries
 }
 
 // StepSpawnGroupChase applies one planned chase step toward the engaged owner.
