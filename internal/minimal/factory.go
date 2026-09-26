@@ -6007,29 +6007,29 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		ownsLiveSharedWorldSession := func() bool {
 			return joinedSharedWorld && sharedWorldID != 0 && sharedWorld.HasLiveSession(sharedWorldID)
 		}
-		selectedTargetCreateFlyPresentation := func(targetVID uint32) (uint32, uint32, bool) {
+		selectedTargetCreateFlyPresentation := func(targetVID uint32) (uint32, uint32, uint64, bool) {
 			if !ownsLiveSharedWorldSession() {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
 			selectedPlayer, ok := currentSelectedPlayer()
 			if !ok || selectedPlayerAtBootstrapHPFloor(selectedPlayer) {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
 			selected := selectedPlayer.LiveCharacter()
 			if selected.ID == 0 || selected.VID == 0 {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
 			if targetVID == 0 || targetVID != activeCombatTargetVID {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
 			resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, targetVID)
 			if !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID != targetVID {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
 			if resolution.SnapshotVersion != activeCombatTargetSnapshotVersion {
-				return 0, 0, false
+				return 0, 0, 0, false
 			}
-			return selected.VID, targetVID, true
+			return selected.VID, targetVID, resolution.Actor.EntityID, true
 		}
 		myShopBagUseBusyOpen := func() bool {
 			return hasActiveMerchantBuy || hasActiveSafeboxOpen || hasActiveRefineDialog || hasActiveMyShopOpen || hasActiveCubeOpen ||
@@ -10360,13 +10360,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					stateMu.Lock()
 					defer stateMu.Unlock()
 
-					startVID, endVID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					startVID, endVID, actorEntityID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
 					if !ok {
 						return gameflow.FlyTargetingResult{Accepted: false}
 					}
+					flyFrame := encodeBootstrapCreateFly(startVID, endVID)
+					if sharedWorld != nil && actorEntityID != 0 {
+						sharedWorld.EnqueueStaticActorFramesToVisiblePeers(actorEntityID, sharedWorldID, [][]byte{flyFrame})
+					}
 					return gameflow.FlyTargetingResult{
 						Accepted: true,
-						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
+						Frames:   [][]byte{flyFrame},
 					}
 				},
 				HandleUseSkill: func(packet combatproto.ClientUseSkillPacket) gameflow.UseSkillResult {
@@ -10376,7 +10380,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if packet.SkillVnum != bootstrapUseSkillPresentationVnum {
 						return gameflow.UseSkillResult{Accepted: false}
 					}
-					startVID, endVID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					startVID, endVID, _, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
 					if !ok {
 						return gameflow.UseSkillResult{Accepted: false}
 					}
@@ -10392,7 +10396,7 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if packet.ShootType != bootstrapShootPresentationType {
 						return gameflow.ShootResult{Accepted: false}
 					}
-					startVID, endVID, ok := selectedTargetCreateFlyPresentation(activeCombatTargetVID)
+					startVID, endVID, _, ok := selectedTargetCreateFlyPresentation(activeCombatTargetVID)
 					if !ok {
 						return gameflow.ShootResult{Accepted: false}
 					}
