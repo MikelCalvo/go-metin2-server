@@ -92,8 +92,9 @@ claiming DB-backed live static-actor / interaction loading.
    - open a DSN itself or register a production driver;
    - expose a `gamed` / `authd` ops mutation route;
    - invent upsert / merge / truncate-and-reload policy;
-   - claim DB-backed runtime content loading (JSON FileStores remain the restart
-     path).
+   - claim DB-backed runtime content loading (JSON FileStores remain the stock
+     restart path; opt-in `staticstore.SQLStore` is the first live exception
+     beside this import, and it is not mounted as stock gamed rematerialize).
 7. Build-tagged proof (`//go:build sqlite_harness`) applies the catalog at least
    through `0013` on a temp SQLite DB, imports a quarantined sample export
    covering tip-`0008`/`0012`/`0013` shapes (info/talk/warp/shop_preview,
@@ -112,7 +113,22 @@ claiming DB-backed live static-actor / interaction loading.
 - `metin2-migrate` CLI import command
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- DB-backed runtime repositories for static actors / interactions / combat profiles
+- DB-backed runtime repositories for static actors / interactions / combat
+  profiles as the stock gamed rematerialize path. Opt-in `staticstore.SQLStore`
+  is now the first live exception: a caller-supplied `database/sql` executor,
+  schema preflight before Load/Save, and a whole-snapshot replace of
+  `static_actors`, reward drops, combat profiles, and death-reward drops on
+  tip-`0013` plus additive `0016`–`0020`. Interaction-definition rows stay
+  owned by the interaction FileStore and by tip-`0013` import; SQL Save does
+  not delete them. `SelectRematerializeStore` keeps FileStore unless
+  that SQL store is passed. It does not select a production driver, upsert,
+  auto-run, mount `gamed`, or call `RegisterStaticActorCombatProfile`.
+  `combat_current_hp`, `respawn_ready_at`, and `proximity_suppress_vids` stay
+  FileStore-only because tip-`0013` has no columns for them; a SQL save that
+  carries any of those fields fails closed. Interaction definitions stay on
+  `interactionstore` FileStore: this repository loads and saves the static-actor
+  snapshot, and its SQL export reads whatever tip-`0013` interaction rows are
+  already present without treating the static-actor snapshot as their owner.
 - loopback ops mutation endpoint
 - FreeBSD port / `pkg` enable defaults
 - remote admin, secrets in git, metrics/tracing
