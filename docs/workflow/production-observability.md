@@ -232,6 +232,43 @@ metin2_ops_local_requests_by_path{service="gamed",path="/local/build-info"} 2
 metin2_ops_local_requests_by_path{service="gamed",path="/local/notice"} 1
 ```
 
+## Opt-in loopback log sink
+
+`NewServiceLogger` still writes one redacted JSON line to the daemon writer
+(`os.Stdout`). `NewServiceLoggerWithRemoteSink` is the first opt-in copy of
+that same line to one loopback UDP `host:port`. It is disabled until a caller
+passes a loopback endpoint. Missing config does not call it, so the line
+stays on local stdout only.
+
+Rules:
+
+1. Missing sink config stays on local stdout. `RemoteLogConfigured` is false
+   until `SetRemoteLogSink` accepts `127.0.0.1:<port>`, `[::1]:<port>`, or
+   `localhost:<port>`. The port is numeric and non-zero. `localhost` is
+   rewritten to `127.0.0.1`. An accepted `[::1]` sink is dialed from `::1`,
+   so the copy is delivered on that listener.
+2. Remote hosts, wildcard binds, hostnames that are not `localhost`, schemes,
+   paths, service-name ports, and query strings are refused. A refused
+   endpoint returns an error, does not build a logger, and does not enable
+   the package sink. The error text is the constant `remote log sink refused`
+   and does not include the endpoint.
+3. An accepted sink copies the already-rendered JSON datagram. Sensitive
+   attribute keys stay `<redacted>` on both stdout and the copy. The endpoint
+   itself is never written into the record.
+4. A failed or oversized copy (over 2048 bytes) does not change the local
+   write and is not retried. This slice never dials a collector, never speaks
+   syslog framing, and never stores the line anywhere else.
+5. This slice does **not** change `authd` or `gamed` startup. Both daemons
+   keep `NewServiceLogger(..., os.Stdout)`. Operators cannot turn the sink on
+   from the process environment in this slice. Prometheus text, OpenTelemetry
+   export, and SIEM sinks stay out.
+
+Example safe line, identical on stdout and on the loopback copy:
+
+```json
+{"time":"...","level":"INFO","msg":"ops server listening","service":"gamed","version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-20T15:30:45Z","addr":"127.0.0.1:6060"}
+```
+
 Example safe trace shape with no exporter configured:
 
 ```json
@@ -243,7 +280,8 @@ Example safe trace shape with no exporter configured:
 - mounting `/local/trace` on the daemon ops mux
 - mounting `/local/metrics/prometheus` on the daemon ops mux (library only; disabled until a loopback exporter is set)
 - shipping OpenTelemetry spans off the host (in-memory loopback spans only)
-- remote log shipping / SIEM sinks
+- turning the loopback UDP log sink on from `authd` / `gamed` startup (library only; missing sink config stays on local stdout)
+- SIEM sinks, syslog framing, or any non-loopback log destination
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging
 - log sampling / rate limits
