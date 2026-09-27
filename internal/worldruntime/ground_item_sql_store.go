@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
+	"github.com/MikelCalvo/go-metin2-server/internal/inventory"
 )
 
 // SQLGroundItemStore is the first live DB-backed pending ground-item repository.
@@ -26,9 +27,16 @@ import (
 //
 // The package does not select a driver, load a DSN, embed secrets, register
 // a production engine, or expose a daemon mutation route.
+//
+// Load and Save adapt the same rows onto the durable gamed snapshot. That
+// adapter is opt-in: stock construction keeps the ground-item FileStore.
+// Process-local item ids are not columns, so a SQL load borrows the visible
+// VID as the durable item id instead of storing one.
 type SQLGroundItemStore struct {
 	executor dbmigrations.SQLMigrationExecutor
 }
+
+var _ GroundItemStore = (*SQLGroundItemStore)(nil)
 
 // NewSQLGroundItemStore returns an opt-in SQL pending-ground repository.
 // A nil executor fails closed on Load/Save/Export rather than at construction.
@@ -100,6 +108,109 @@ func (s *SQLGroundItemStore) ExportBootstrapGroundItemState() (BootstrapGroundIt
 		return BootstrapGroundItemStateExport{}, err
 	}
 	return ExportBootstrapGroundItemState(snapshots)
+}
+
+// Load reads pending SQL rows as the durable snapshot gamed rematerializes.
+// An empty table is an empty pending set. Tip-0010 has no process-local item
+// id column, so an item-shaped row borrows its visible VID as the durable
+// item id. That value is not the original process-local id and is not stored.
+func (s *SQLGroundItemStore) Load() (DurableGroundItemSnapshot, error) {
+	snapshots, err := s.LoadGroundItems()
+	if err != nil {
+		return DurableGroundItemSnapshot{}, err
+	}
+	records := make([]DurableGroundItemRecord, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		record, err := durableGroundItemRecordFromOperatorSnapshot(snapshot)
+		if err != nil {
+			return DurableGroundItemSnapshot{}, err
+		}
+		records = append(records, record)
+	}
+	normalized := NormalizeDurableGroundItemSnapshot(DurableGroundItemSnapshot{GroundItems: records})
+	if err := ValidateDurableGroundItemSnapshot(normalized); err != nil {
+		return DurableGroundItemSnapshot{}, err
+	}
+	return normalized, nil
+}
+
+// Save replaces the pending SQL snapshot with the durable handles gamed
+// persists. It drops process-local item ids. A nil or empty snapshot clears
+// the table. This is whole-snapshot replace, not an upsert.
+func (s *SQLGroundItemStore) Save(snapshot DurableGroundItemSnapshot) error {
+	normalized := NormalizeDurableGroundItemSnapshot(snapshot)
+	if err := ValidateDurableGroundItemSnapshot(normalized); err != nil {
+		return err
+	}
+	return s.SaveGroundItems(DurableGroundItemRecordsToSnapshots(normalized.GroundItems))
+}
+
+// SelectRematerializeStore chooses the gamed pending-ground Load/Save seam.
+// A nil SQL store keeps the FileStore. A non-nil SQL store is the explicit
+// opt-in for that one runtime. Nil file store with a nil opt-in stays nil.
+// This does not select a driver, load a DSN, upsert, auto-run, or replace
+// any other runtime's file.
+func SelectRematerializeStore(fileStore GroundItemStore, sqlStore *SQLGroundItemStore) GroundItemStore {
+	if sqlStore != nil {
+		return sqlStore
+	}
+	return fileStore
+}
+
+func durableGroundItemRecordFromOperatorSnapshot(snapshot GroundItemSnapshot) (DurableGroundItemRecord, error) {
+	record := DurableGroundItemRecord{
+		VID:                snapshot.VID,
+		Vnum:               snapshot.Vnum,
+		OwnerLogin:         snapshot.OwnerLogin,
+		OwnerCharacterID:   snapshot.OwnerCharacterID,
+		OwnerVID:           snapshot.OwnerVID,
+		OwnerName:          snapshot.OwnerName,
+		MapIndex:           snapshot.MapIndex,
+		X:                  snapshot.X,
+		Y:                  snapshot.Y,
+		Z:                  snapshot.Z,
+		PickupRange:        snapshot.PickupRange,
+		HasSockets:         snapshot.HasSockets,
+		Socket0:            snapshot.Socket0,
+		Socket1:            snapshot.Socket1,
+		Socket2:            snapshot.Socket2,
+		OwnershipExclusive: snapshot.OwnershipExclusive,
+		OwnershipExpiresAt: copyUTCTimePtr(snapshot.OwnershipExpiresAt),
+	}
+	if snapshot.DespawnAt != nil {
+		record.DespawnAt = snapshot.DespawnAt.UTC()
+	}
+	if snapshot.GoldAmount != 0 {
+		gold := snapshot.GoldAmount
+		record.GoldAmount = &gold
+		record.Vnum = 1
+		record.HasSockets = false
+		record.Socket0 = 0
+		record.Socket1 = 0
+		record.Socket2 = 0
+	} else if snapshot.Count != 0 {
+		count := snapshot.Count
+		record.ItemCount = &count
+		record.ItemID = uint64(snapshot.VID)
+		if snapshot.HasAttributes {
+			attrs := inventory.AttributeValues{
+				{Type: snapshot.Attr0Type, Value: snapshot.Attr0Value},
+				{Type: snapshot.Attr1Type, Value: snapshot.Attr1Value},
+				{Type: snapshot.Attr2Type, Value: snapshot.Attr2Value},
+				{Type: snapshot.Attr3Type, Value: snapshot.Attr3Value},
+				{Type: snapshot.Attr4Type, Value: snapshot.Attr4Value},
+				{Type: snapshot.Attr5Type, Value: snapshot.Attr5Value},
+				{Type: snapshot.Attr6Type, Value: snapshot.Attr6Value},
+			}
+			record.HasAttributes = true
+			record.Attributes = &attrs
+		}
+	}
+	record = normalizeDurableGroundItemRecord(record)
+	if err := validateDurableGroundItemRecord(record); err != nil {
+		return DurableGroundItemRecord{}, err
+	}
+	return record, nil
 }
 
 func replaceBootstrapGroundItemSnapshot(ctx context.Context, tx *sql.Tx, rows []BootstrapGroundItemStateRow) error {

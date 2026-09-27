@@ -4808,8 +4808,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemStore(cfg config.Service,
 // stock test/runtime constructor. A non-nil questState is used as-is so hermetic
 // gameplay tests can inject queststate.MemoryStore without construct-and-discard
 // of a path-isolated FileStore. Nil keeps the ordinary FileStore default.
-// Safebox rematerialize stays on FileStore. The SQL opt-in is the sibling
-// constructor below; stock NewGameRuntime does not call it.
+// Safebox and pending ground rematerialize stay on FileStore. The SQL opt-ins
+// are the sibling constructors below; stock NewGameRuntime does not call them.
 func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger) (*gameRuntime, error) {
 	return newGameRuntimeWithOptionalSafeboxSQL(cfg, store, accounts, staticActors, interactions, items, questState, transferTriggers, nil)
 }
@@ -4817,9 +4817,19 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 // newGameRuntimeWithOptionalSafeboxSQL is the explicit opt-in warehouse
 // constructor. safeboxSQL nil keeps FileStore, matching the stock constructor.
 // A non-nil SQLStore rematerializes open/check-in/password/money through that
-// already-owned store for this runtime only. It does not select a driver, load
-// a DSN, upsert, auto-run, or replace FileStore for any other runtime.
+// already-owned store for this runtime only. Pending ground stays on FileStore.
+// It does not select a driver, load a DSN, upsert, auto-run, or replace
+// FileStore for any other runtime.
 func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger, safeboxSQL *safeboxstore.SQLStore) (*gameRuntime, error) {
+	return newGameRuntimeWithOptionalGroundSQL(cfg, store, accounts, staticActors, interactions, items, questState, transferTriggers, safeboxSQL, nil)
+}
+
+// newGameRuntimeWithOptionalGroundSQL is the explicit opt-in pending-ground
+// constructor. groundSQL nil keeps the ground-item FileStore. A non-nil
+// SQLGroundItemStore rematerializes pending ground handles through that
+// already-owned store for this runtime only. It does not select a driver,
+// load a DSN, upsert, auto-run, or replace FileStore for any other runtime.
+func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.Store, accounts accountstore.Store, staticActors staticstore.Store, interactions interactionstore.Store, items itemcatalog.Store, questState queststate.Store, transferTriggers []bootstrapTransferTrigger, safeboxSQL *safeboxstore.SQLStore, groundSQL *worldruntime.SQLGroundItemStore) (*gameRuntime, error) {
 	if err := validateRuntimePersistenceConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -4858,7 +4868,7 @@ func newGameRuntimeWithOptionalSafeboxSQL(cfg config.Service, store loginticket.
 		// rematerialize into the next runtime via /tmp pollution.
 		groundItemPath = filepath.Join(os.TempDir(), fmt.Sprintf("go-metin2-ground-items-%d-%d", os.Getpid(), time.Now().UnixNano()), "ground-items.json")
 	}
-	groundItems := worldruntime.NewGroundItemFileStore(groundItemPath)
+	groundItems := worldruntime.SelectRematerializeStore(worldruntime.NewGroundItemFileStore(groundItemPath), groundSQL)
 	safeboxPath := serviceSafeboxStorePath(cfg)
 	if strings.TrimSpace(cfg.SafeboxStorePath) == "" {
 		// Hermetic constructors that omit an explicit path must not share the

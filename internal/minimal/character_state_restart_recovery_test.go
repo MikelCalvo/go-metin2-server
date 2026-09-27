@@ -1,11 +1,16 @@
 package minimal
 
 import (
+	"context"
+	"database/sql"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
+	_ "modernc.org/sqlite"
+
+	dbmigrations "github.com/MikelCalvo/go-metin2-server/db/migrations"
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
@@ -1962,4 +1967,185 @@ func TestGameRuntimePracticeMobKillRewardDropRematerializesAcrossDaemonRestart(t
 	if len(afterPickup.GroundItems) != 0 {
 		t.Fatalf("expected FileStore to clear rematerialized kill-reward after pickup, got %#v", afterPickup.GroundItems)
 	}
+}
+
+func TestStockGameRuntimeKeepsGroundItemFileStoreBesideOptionalSQL(t *testing.T) {
+	cfg := config.Service{
+		PprofAddr:  "127.0.0.1:6060",
+		LegacyAddr: ":13000",
+		PublicAddr: "127.0.0.1",
+	}
+	runtime, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected stock runtime error: %v", err)
+	}
+	if _, ok := runtime.groundItemStore.(*worldruntime.FileStore); !ok {
+		t.Fatalf("stock runtime store = %T, want *worldruntime.FileStore", runtime.groundItemStore)
+	}
+	if _, ok := worldruntime.SelectRematerializeStore(runtime.groundItemStore, nil).(*worldruntime.FileStore); !ok {
+		t.Fatal("nil SQL opt-in replaced the ground-item FileStore")
+	}
+}
+
+func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *testing.T) {
+	root := t.TempDir()
+	groundItemPath := filepath.Join(root, "ground", "ground-items.json")
+	db := openSQLiteGroundSQLOptInRuntimeDB(t)
+	defer db.Close()
+
+	ctx := context.Background()
+	if _, err := dbmigrations.ApplyToVersion(ctx, db, nil, worldruntime.BootstrapGroundItemOwnershipTimerMigrationVersion); err != nil {
+		t.Fatalf("apply ground schema: %v", err)
+	}
+
+	owner := peerVisibilityCharacter("GroundSQLOptIn", 0x01030931, 0x02040931, 1100, 2100, 0, 101, 201)
+	login := "ground-sql-optin"
+	const loginKey uint32 = 0x93939331
+	ticketStore := loginticket.NewFileStore(filepath.Join(root, "tickets"))
+	accounts := accountstore.NewFileStore(filepath.Join(root, "accounts"))
+	issuePeerTicket(t, ticketStore, login, loginKey, owner)
+	account := accountstore.Account{Login: login, Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}
+	if err := accounts.Save(account); err != nil {
+		t.Fatalf("seed opt-in ground account: %v", err)
+	}
+	roster, err := accountstore.ExportAccountCharacterRoster([]accountstore.Account{account})
+	if err != nil {
+		t.Fatalf("export opt-in ground roster: %v", err)
+	}
+	if _, err := accountstore.ImportAccountCharacterRoster(ctx, db, roster); err != nil {
+		t.Fatalf("seed opt-in ground SQL roster: %v", err)
+	}
+
+	fileStore := worldruntime.NewGroundItemFileStore(groundItemPath)
+	count := uint16(1)
+	seeded := worldruntime.DurableGroundItemSnapshot{GroundItems: []worldruntime.DurableGroundItemRecord{{
+		VID: 0x07000932, Vnum: 11200, ItemCount: &count, ItemID: 11,
+		OwnerLogin: login, OwnerCharacterID: owner.ID, OwnerVID: owner.VID, OwnerName: owner.Name,
+		MapIndex: bootstrapMapIndex, X: 1100, Y: 2100, PickupRange: 300,
+		DespawnAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
+	}}}
+	if err := fileStore.Save(seeded); err != nil {
+		t.Fatalf("save sibling FileStore: %v", err)
+	}
+
+	cfg := config.Service{
+		PprofAddr:           "127.0.0.1:6060",
+		LegacyAddr:          ":13000",
+		PublicAddr:          "127.0.0.1",
+		LoginTicketStoreDir: filepath.Join(root, "tickets"),
+		AccountStoreDir:     filepath.Join(root, "accounts"),
+		GroundItemStorePath: groundItemPath,
+	}
+	sqlStore := worldruntime.NewSQLGroundItemStore(db)
+	runtime, err := newGameRuntimeWithOptionalGroundSQL(cfg, ticketStore, accounts, nil, nil, nil, nil, nil, nil, sqlStore)
+	if err != nil {
+		t.Fatalf("unexpected opt-in SQL ground runtime error: %v", err)
+	}
+	if _, ok := runtime.groundItemStore.(*worldruntime.SQLGroundItemStore); !ok {
+		t.Fatalf("opt-in runtime store = %T, want *worldruntime.SQLGroundItemStore", runtime.groundItemStore)
+	}
+	stock, err := NewGameRuntime(cfg)
+	if err != nil {
+		t.Fatalf("unexpected stock runtime error: %v", err)
+	}
+	if _, ok := stock.groundItemStore.(*worldruntime.FileStore); !ok {
+		t.Fatalf("stock runtime store = %T, want *worldruntime.FileStore", stock.groundItemStore)
+	}
+	if len(runtime.sharedWorld.DurableGroundItemSnapshot().GroundItems) != 0 {
+		t.Fatal("opt-in SQL runtime rematerialized the sibling FileStore")
+	}
+
+	currentTime := time.Date(2026, 9, 27, 11, 0, 0, 0, time.UTC)
+	runtime.now = func() time.Time { return currentTime }
+	runtime.sharedWorld.now = runtime.now
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, ownerFlow)
+	ownerEntity, ok := runtime.sharedWorld.playerEntityByName(owner.Name)
+	if !ok || ownerEntity.Entity.ID == 0 {
+		t.Fatal("expected owner shared-world entity id after enter-game")
+	}
+	ownerID := ownerEntity.Entity.ID
+	const (
+		itemVID = uint32(0x07000931)
+		goldVID = uint32(0x07000933)
+		itemID  = uint64(0x30010931)
+	)
+	if !runtime.sharedWorld.RegisterGroundItemWithPickupRange(ownerID, login, owner, itemVID, inventory.ItemInstance{ID: itemID, Vnum: 27001, Count: 2}, 450) {
+		t.Fatal("expected opt-in SQL ground-item registration")
+	}
+	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(ownerID, login, owner, goldVID, 75, 300) {
+		t.Fatal("expected opt-in SQL ground-gold registration")
+	}
+	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
+	closeSessionFlow(t, ownerFlow)
+
+	reloaded, err := newGameRuntimeWithOptionalGroundSQL(cfg, ticketStore, accounts, nil, nil, nil, nil, nil, nil, worldruntime.NewSQLGroundItemStore(db))
+	if err != nil {
+		t.Fatalf("unexpected post-restart opt-in SQL ground runtime error: %v", err)
+	}
+	reloaded.now = func() time.Time { return currentTime.Add(5 * time.Second) }
+	reloaded.sharedWorld.now = reloaded.now
+	snapshot := reloaded.sharedWorld.DurableGroundItemSnapshot()
+	if len(snapshot.GroundItems) != 2 {
+		t.Fatalf("expected SQL rematerialized snapshot with 2 rows, got %#v", snapshot.GroundItems)
+	}
+	itemRow := snapshot.GroundItems[0]
+	goldRow := snapshot.GroundItems[1]
+	if itemRow.VID != itemVID || itemRow.ItemID != uint64(itemVID) || itemRow.ItemCount == nil || *itemRow.ItemCount != 2 || itemRow.Vnum != 27001 || !itemRow.OwnershipExclusive {
+		t.Fatalf("unexpected SQL rematerialized item row: %#v", itemRow)
+	}
+	if goldRow.VID != goldVID || goldRow.GoldAmount == nil || *goldRow.GoldAmount != 75 || !goldRow.OwnershipExclusive {
+		t.Fatalf("unexpected SQL rematerialized gold row: %#v", goldRow)
+	}
+
+	ownerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, loginKey)
+	defer closeSessionFlow(t, ownerRestartFlow)
+	ownerEntity, ok = reloaded.sharedWorld.playerEntityByName(owner.Name)
+	if !ok || ownerEntity.Entity.ID == 0 {
+		t.Fatal("expected rematerialized owner entity id")
+	}
+	items, mapOK := reloaded.GroundItemsForMap(bootstrapMapIndex)
+	if !mapOK || len(items) != 2 {
+		t.Fatalf("expected rematerialized SQL handles on the occupied map, ok=%v items=%#v", mapOK, items)
+	}
+	pickup, ok := reloaded.sharedWorld.GroundItemPickupFor(ownerEntity.Entity.ID, owner, itemVID)
+	if !ok || pickup.Item.Vnum != 27001 || pickup.Item.Count != 2 || pickup.Item.ID != uint64(itemVID) {
+		t.Fatalf("expected owner pickup of SQL rematerialized item with borrowed ground id, ok=%v pickup=%+v", ok, pickup)
+	}
+	if !reloaded.sharedWorld.RemoveGroundItem(ownerEntity.Entity.ID, owner, itemVID) {
+		t.Fatal("expected owner to remove SQL rematerialized ground item")
+	}
+	afterPickup, err := worldruntime.NewSQLGroundItemStore(db).Load()
+	if err != nil {
+		t.Fatalf("reload SQL ground items after pickup: %v", err)
+	}
+	if len(afterPickup.GroundItems) != 1 || afterPickup.GroundItems[0].VID != goldVID {
+		t.Fatalf("expected only gold handle to remain in SQL after item pickup, got %#v", afterPickup.GroundItems)
+	}
+	fileAfter, err := fileStore.Load()
+	if err != nil {
+		t.Fatalf("reload sibling FileStore: %v", err)
+	}
+	if len(fileAfter.GroundItems) != 1 || fileAfter.GroundItems[0].VID != 0x07000932 {
+		t.Fatalf("opt-in SQL runtime wrote the sibling FileStore: %#v", fileAfter.GroundItems)
+	}
+}
+
+func openSQLiteGroundSQLOptInRuntimeDB(t *testing.T) *sql.DB {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "ground-sql-optin-runtime.sqlite")
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatalf("sql.Open(sqlite): %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		t.Fatalf("ping sqlite opt-in ground runtime: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		db.Close()
+		t.Fatalf("enable foreign_keys: %v", err)
+	}
+	return db
 }
