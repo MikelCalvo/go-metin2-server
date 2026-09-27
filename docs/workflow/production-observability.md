@@ -127,8 +127,9 @@ Rules:
 5. The gamed ops mux registers this handler at `/local/metrics`. `serveOps`
    already wraps that mux with `WrapOpsAccessLog`, which records one clean
    `/local/<name>` response on the same snapshot. Reading `/local/metrics`
-   does not count itself. authd does not register the path. Request bodies,
-   query strings, Prometheus text, and export stay out.
+   does not count itself. authd does not register the path. Request bodies
+   and query strings stay out. Prometheus text is a separate opt-in companion
+   below and is not this JSON document.
 
 Example safe snapshot shape:
 
@@ -179,7 +180,57 @@ Rules:
 6. This slice does **not** mount the handler on `authd` or `gamed`. Operators
    cannot curl it on a running daemon until a later slice registers
    `OpsTrace.Handler` on the ops mux. The type is the contract and the test
-   surface. Prometheus exposition and remote log shipping stay out.
+   surface. Remote log shipping stays out.
+
+## Opt-in loopback Prometheus text
+
+`OpsMetrics.PrometheusHandler` is the first Prometheus text companion beside
+the JSON `/local/metrics` document. It renders the same in-memory counters.
+It does not replace that JSON handler, and it is not mounted on `authd` or
+`gamed`.
+
+`GET /local/metrics/prometheus` (`observability.LocalPrometheusPath`) is
+loopback-only and disabled until `SetPrometheusExporter` accepts a loopback
+target:
+
+| Line | Meaning |
+| --- | --- |
+| `metin2_ops_local_requests_total` | `local_requests_total` |
+| `metin2_ops_local_errors_total` | `local_errors_total` |
+| `metin2_ops_local_requests_by_path` | one sample per clean `/local/<name>` path |
+
+Rules:
+
+1. Missing exporter config stays fail-closed. `PrometheusText` returns no
+   body and `PrometheusHandler` returns `404` with an empty body.
+2. The only accepted target is `http://127.0.0.1:<port>/metrics`, or the same
+   shape on `::1` / `localhost`, with path empty or `metrics`. HTTPS, remote
+   hosts, wildcard binds, query strings, and any other path are refused.
+   Accepted config only unlocks the local text; this slice never dials a
+   scraper and never echoes the endpoint.
+3. `PrometheusHandler` allows `GET` from loopback (`127.0.0.1`, `::1`,
+   `localhost`) only. Other methods return `405` and non-loopback callers
+   return `403`, both with an empty body.
+4. The text carries the daemon `service` label and the clean path label.
+   Query strings, bodies, header values, remote addresses, and secrets are
+   never written. `/healthz` and `/debug/pprof/*` stay absent.
+5. This slice does **not** mount the handler on the daemon ops mux. JSON
+   `/local/metrics` on gamed stays the mounted document. OpenTelemetry export
+   and remote log shipping stay out.
+
+Example with no exporter configured: `GET` from loopback returns `404` and
+an empty body. Example after `SetPrometheusExporter` accepts
+`http://127.0.0.1:9090/metrics`:
+
+```text
+# TYPE metin2_ops_local_requests_total counter
+metin2_ops_local_requests_total{service="gamed"} 3
+# TYPE metin2_ops_local_errors_total counter
+metin2_ops_local_errors_total{service="gamed"} 1
+# TYPE metin2_ops_local_requests_by_path counter
+metin2_ops_local_requests_by_path{service="gamed",path="/local/build-info"} 2
+metin2_ops_local_requests_by_path{service="gamed",path="/local/notice"} 1
+```
 
 Example safe trace shape with no exporter configured:
 
@@ -190,7 +241,7 @@ Example safe trace shape with no exporter configured:
 ## What this is not yet
 
 - mounting `/local/trace` on the daemon ops mux
-- Prometheus `/metrics` exposition or any other pull exporter
+- mounting `/local/metrics/prometheus` on the daemon ops mux (library only; disabled until a loopback exporter is set)
 - shipping OpenTelemetry spans off the host (in-memory loopback spans only)
 - remote log shipping / SIEM sinks
 - logging `/healthz` or `/debug/pprof/*`

@@ -84,11 +84,12 @@ type OpsMetricsSnapshot struct {
 // OpsMetrics counts completed /local/* HTTP requests. Nil receivers are safe
 // no-ops so callers can wire the companion beside an optional process logger.
 type OpsMetrics struct {
-	mu      sync.Mutex
-	service string
-	total   uint64
-	errors  uint64
-	byPath  map[string]uint64
+	mu         sync.Mutex
+	service    string
+	total      uint64
+	errors     uint64
+	byPath     map[string]uint64
+	prometheus LoopbackPrometheusExporter
 }
 
 // NewOpsMetrics returns an empty counter set. Service stays blank until
