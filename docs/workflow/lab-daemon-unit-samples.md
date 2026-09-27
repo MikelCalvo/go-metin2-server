@@ -45,7 +45,15 @@ contrib/lab-daemons/
   systemd/gamed.service.d/lab-store.conf.sample
   newsyslog.conf.d/metin2-daemons.conf.sample
   logrotate.d/metin2-daemons.conf.sample
+  env/metin2-auth-host.env.sample
+  env/metin2-game-host.env.sample
+  rc.d/rc.conf.multihost.sample
+  metin2-print-multihost-split.sh
+  metin2-check-multihost-split.sh
 ```
+
+The last five files are the two-host split. They do not replace the
+single-host units above. See [Two-host lab split](#two-host-lab-split).
 
 ## Env contract (no secrets)
 
@@ -70,6 +78,29 @@ gamed (`env/metin2-gamed.env.sample`) adds dedicated file stores:
 
 `authd` and `gamed` must share the same login-ticket and account-store dirs.
 Samples intentionally omit every `METIN2_*_DB_DSN` / `METIN2_*_DB_DRIVER`.
+
+## Two-host lab split
+
+The single-host env files above stay the default. A reviewed two-host lab
+puts `authd` on one machine and `gamed` on another without new unit files:
+
+1. Auth host: review `env/metin2-auth-host.env.sample`, then copy it to
+   `/etc/metin2/metin2-authd.env`. Install only the existing `authd` unit
+   sample. Leave `gamed` uninstalled on that host.
+2. Game host: review `env/metin2-game-host.env.sample`, then copy it to
+   `/etc/metin2/metin2-gamed.env`. Install only the existing `gamed` unit
+   sample. Run `metin2-migrate` on this host, not from a unit.
+3. Both env files name the same `/var/metin2/shared/login-tickets` and
+   `/var/metin2/shared/accounts`. The operator mount is outside this tree.
+4. `rc.d/rc.conf.multihost.sample` keeps `authd_enable="NO"`,
+   `gamed_enable="NO"`, `metin2_auth_host_enable="NO"`, and
+   `metin2_game_host_enable="NO"`. Do not flip those from packaging.
+5. `metin2-print-multihost-split.sh` writes a review note under
+   `/var/metin2/ops-prints/` and exits. It does not start a daemon.
+   `metin2-check-multihost-split.sh` checks that the samples stay disabled.
+
+Ops addresses stay `127.0.0.1:6061` and `127.0.0.1:6060` on whichever host
+runs that daemon. Public client addresses stay commented.
 
 ## FreeBSD rc.d
 
@@ -155,7 +186,8 @@ Linux `logrotate.d/metin2-daemons.conf.sample`:
 - FreeBSD port / `pkg` that installs **enabled** `rc.d` / systemd units
 - flipping `authd_enable` / `gamed_enable` to `YES` by default
 - DB driver/DSN embedding or daemon startup auto-migration
-- remote admin, metrics exporters, or multi-host orchestration
+- remote admin, metrics exporters, or multi-host orchestration beyond the
+  print-only two-host split (no shards, no channel farms, no Kubernetes)
 - automatic / scheduled artifact GC deletion
 - remote log shipping / SIEM sinks
 

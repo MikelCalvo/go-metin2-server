@@ -21,6 +21,15 @@ FreeBSD `rc.d` samples append stdout/stderr with `daemon -f -H -o
 Retention / GC print-only samples remain under
 [`contrib/lab-retention-gc/`](../lab-retention-gc/).
 
+A two-host auth/game lab sits beside these single-host units and stays
+disabled. Role env files are `env/metin2-auth-host.env.sample` and
+`env/metin2-game-host.env.sample`. `rc.d/rc.conf.multihost.sample` keeps
+`metin2_auth_host_enable="NO"` and `metin2_game_host_enable="NO"` next to
+the single-host `authd_enable="NO"` / `gamed_enable="NO"`.
+`metin2-print-multihost-split.sh` only writes a review note; it does not
+start daemons or install units. See
+[`docs/workflow/lab-deployment-topology.md`](../../docs/workflow/lab-deployment-topology.md).
+
 ## Install (manual, review first)
 
 ```bash
@@ -103,6 +112,8 @@ install -m 0644 \
 - FreeBSD port / `pkg` enable defaults
 - flipping `authd_enable` / `gamed_enable` to `YES` by default
 - DB driver/DSN embedding or daemon startup auto-migration
-- remote admin, metrics exporters, or multi-host orchestration
+- remote admin, metrics exporters, or orchestrated multi-host deploy
+  (the print-only two-host auth/game split is documented beside these units
+  and stays disabled; shards, channel farms, and Kubernetes are not)
 - automatic / scheduled artifact GC deletion (see `contrib/lab-retention-gc/`)
 - remote log shipping / SIEM sinks

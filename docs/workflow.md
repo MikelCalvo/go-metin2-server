@@ -142,6 +142,16 @@ FreeBSD-native OCI images may still be useful for:
 
 These experiments are auxiliary, not the primary release target.
 
+## Lab host layout
+
+Day-to-day development still runs `authd` and `gamed` on one machine.
+[Lab deployment topology](workflow/lab-deployment-topology.md) is that
+single-host contract. A two-host auth/game split is documented beside it
+for operators who want login and world on different lab machines. It is
+print-only and disabled by default: role knobs stay `NO`, ops stay on
+loopback, and no unit is installed enabled. FreeBSD port / `pkg` enable
+defaults and Kubernetes stay out of this layout.
+
 ## What not to do
 
 - do not copy legacy protocol headers into this repository

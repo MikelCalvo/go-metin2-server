@@ -2,7 +2,7 @@
 
 ## Objective
 
-Freeze the first production-ops host layout for local PvE reconnect/restart and migration windows. This is a lab topology contract, not a claim that the server is production-ready or multi-host.
+Freeze the first production-ops host layout for local PvE reconnect/restart and migration windows. This is a lab topology contract, not a claim that the server is production-ready. The default remains one host. One documented two-host auth/game lab split sits beside it and stays print-only and disabled by default.
 
 ## Host layout
 
@@ -21,6 +21,51 @@ Rules:
 3. `PublicAddr` may advertise a LAN/VPN address to clients, but ops remain on loopback (SSH tunnel when needed).
 4. Mutating migration apply stays outside daemon ops surfaces; use `metin2-migrate` on the same host or an operator workstation that can reach the DB target.
 5. Host-local SQL dumps live **beside** `/var/metin2/{backups,migration-runs,exports}/`, never inside this repository and never with a DSN. Prove restoreability before `apply`. Preferred rollback is restore that dump; FileStores stay on the JSON backup/restore drill.
+
+## Two-host auth/game lab split
+
+The single-host table above remains the default. Operators who need login on one machine and the world on another may review this split. Nothing in the tree starts it.
+
+| Host | Processes | Legacy bind | Ops bind | Stores |
+| --- | --- | --- | --- | --- |
+| auth host | `authd` only | `:11002` | `127.0.0.1:6061` | shared login-ticket + account dirs |
+| game host | `gamed` and CLI `metin2-migrate` | `:13000` | `127.0.0.1:6060` | the same two shared dirs, plus this host's file stores |
+
+Rules for the split:
+
+1. Leave it disabled. `authd_enable` and `gamed_enable` stay `NO`. The role knobs `metin2_auth_host_enable` and `metin2_game_host_enable` also stay `NO` until an operator reviews them. A host runs at most one role.
+2. Both hosts must see the same login-ticket directory and the same account directory. The documented paths are `/var/metin2/shared/login-tickets` and `/var/metin2/shared/accounts`. This repository does not create, export, or mount that share.
+3. Game-only file stores stay on the game host under `/var/metin2/data/`, each with its own parent. Do not put them on the auth host.
+4. Ops listeners stay on each host's loopback. Reach `/local/*` with an SSH tunnel. Do not bind a wildcard or a public hostname for ops.
+5. `METIN2_AUTHD_PUBLIC_ADDR` / `METIN2_GAMED_PUBLIC_ADDR` may name the LAN/VPN address clients should use. Samples leave those lines commented.
+6. Migration apply stays on the game host CLI. Do not apply from `authd`, from a daemon unit, or from the print helper.
+7. The print helper `contrib/lab-daemons/metin2-print-multihost-split.sh` only writes a review note under `/var/metin2/ops-prints/`. It refuses to run when a role knob is not `NO`.
+
+Role samples (still `.sample`, still not installed):
+
+```text
+contrib/lab-daemons/env/metin2-auth-host.env.sample
+contrib/lab-daemons/env/metin2-game-host.env.sample
+contrib/lab-daemons/rc.d/rc.conf.multihost.sample
+contrib/lab-daemons/metin2-print-multihost-split.sh
+contrib/lab-daemons/metin2-check-multihost-split.sh
+```
+
+Print a disabled auth-host note without starting anything:
+
+```bash
+install -d -m 0750 /var/metin2/ops-prints
+METIN2_LAB_ROLE=auth \
+METIN2_AUTH_HOST_ENABLE=NO \
+METIN2_GAME_HOST_ENABLE=NO \
+  contrib/lab-daemons/metin2-print-multihost-split.sh
+```
+
+Check the samples themselves:
+
+```bash
+sh contrib/lab-daemons/metin2-check-multihost-split.sh
+```
 
 ## Absolute store paths
 
@@ -312,7 +357,7 @@ See also:
 - [CLI artifact-retention GC printer plan](../plans/2026-08-22-cli-artifact-retention-gc-printer.md)
 - [CLI artifact GC-aside purge printer](../plans/2026-08-25-cli-artifact-gc-aside-purge-printer.md)
 - [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md)
-- [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md)
+- [lab daemon rc.d / systemd unit samples](lab-daemon-unit-samples.md) (single-host units; the two-host split above reuses them and does not add enabled units)
 - [lab daemon JSON stdout capture](../plans/2026-08-24-lab-daemon-json-stdout-capture.md)
 - [CLI daemon log retention correlation](../plans/2026-08-24-cli-daemon-log-retention-correlation.md)
 - [ops docs ground-item lab topology / tip sync](../plans/2026-08-22-ops-docs-ground-item-lab-topology-tip-sync.md)
@@ -349,7 +394,7 @@ See
 
 ## What this is not yet
 
-- multi-host auth/game split
+- ~~multi-host auth/game split~~ Done for one print-only, disabled-by-default two-host lab beside the single-host table (auth host / game host, shared login-ticket and account dirs, loopback ops). See [Two-host auth/game lab split](#two-host-authgame-lab-split). Load-balanced shards, channel farms, and orchestrated deploy automation stay deferred.
 - load-balanced shards or channel farms
 - Kubernetes / packaging that installs **enabled** systemd / `rc.d` units or cron entries by default (print-only `.sample` units that only dump printer stdout are owned in [lab retention / GC print-only unit samples](lab-retention-gc-unit-samples.md); disabled-by-default tree fragments live under [`contrib/lab-retention-gc/`](../../contrib/lab-retention-gc/), including FreeBSD `periodic(8)` weekly + `periodic.conf.sample` gated on `weekly_metin2_artifact_retention_gc_print_enable="NO"`; disabled-by-default `authd` / `gamed` FreeBSD `rc.d` + systemd samples live under [`contrib/lab-daemons/`](../../contrib/lab-daemons/) gated on `authd_enable="NO"` / `gamed_enable="NO"` — see [lab daemon unit samples](lab-daemon-unit-samples.md))
 - remote admin APIs

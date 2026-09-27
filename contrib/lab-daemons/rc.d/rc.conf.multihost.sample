@@ -1,0 +1,22 @@
+# FreeBSD rc.conf fragment for a two-host auth/game lab split.
+# Copy reviewed knobs into /etc/rc.conf only after an operator chooses a role.
+# The single-host fragment rc.conf.sample stays the default and stays NO.
+# This fragment does not install units and does not start daemons.
+# Never put DSNs, passwords, login keys, or executable SQL here.
+
+# Single-host switches stay off on every host.
+authd_enable="NO"
+gamed_enable="NO"
+
+# Role gate. Leave NO until the operator has reviewed the matching env file.
+# Only one of the two role knobs may be YES, and only after review.
+metin2_auth_host_enable="NO"
+metin2_game_host_enable="NO"
+
+# Which role this host would print. Uncomment one after review.
+# metin2_lab_role="auth"
+# metin2_lab_role="game"
+
+# Shared directory names. The operator mount is outside this repository.
+# metin2_shared_login_tickets="/var/metin2/shared/login-tickets"
+# metin2_shared_accounts="/var/metin2/shared/accounts"
