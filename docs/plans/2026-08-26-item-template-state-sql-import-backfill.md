@@ -68,8 +68,9 @@ item-template loading.
    - open a DSN itself or register a production driver;
    - expose a `gamed` / `authd` ops mutation route;
    - invent upsert / merge / truncate-and-reload policy;
-   - claim DB-backed runtime template loading (FileStore remains the restart
-     path).
+   - claim DB-backed runtime template loading (FileStore remains the stock
+     restart path; opt-in `itemstore.SQLStore` is the first live exception
+     beside this import, and it is not mounted as stock gamed rematerialize).
 7. Build-tagged proof (`//go:build sqlite_harness`) applies the catalog at least
    through `0009` on a temp SQLite DB, imports a quarantined sample export
    (templates + sockets/attributes/effects/refine rows including
@@ -86,7 +87,13 @@ item-template loading.
 - SQL import for `0007` login-ticket / `0008`+`0012`+`0013` static-actor content
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- DB-backed runtime repositories for item templates
+- DB-backed runtime repositories for item templates as the stock gamed
+  rematerialize path. Opt-in `itemstore.SQLStore` is now the first live
+  exception: a caller-supplied `database/sql` executor, schema preflight
+  before Load/Save, and a whole-snapshot replace of tip-`0009` plus additive
+  `0021`/`0022`. It does not select a production driver, upsert, auto-run, or
+  mount `gamed`. `myshop_reject_message` stays FileStore-only because tip-`0009`
+  has no column for it.
 - loopback ops mutation endpoint
 - FreeBSD port / `pkg` enable defaults
 - remote admin, secrets in git, metrics/tracing
