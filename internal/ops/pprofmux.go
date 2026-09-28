@@ -6188,10 +6188,12 @@ func mountGamedLocalMetrics(mux *http.ServeMux, serviceName string) *http.ServeM
 //
 // authd and every other service name stay unregistered. The document is
 // observability.OpsTrace: in-memory spans only. Missing exporter config
-// stays fail-closed and this mount never dials. Remote span export and
-// remote admin stay off. /healthz and /debug/pprof/* are not traced.
-// Request bodies are never read. The returned mux is the same pointer, so
-// later RegisterLocal* calls keep working.
+// stays fail-closed and this mount does not call SetExporter, so it never
+// dials. An accepted loopback exporter can POST from Export; this mount
+// does not set one. Remote span export and remote admin stay off. /healthz
+// and /debug/pprof/* are not traced. Request bodies are never read. The
+// returned mux is the same pointer, so later RegisterLocal* calls keep
+// working.
 func mountGamedLocalTrace(mux *http.ServeMux, serviceName string) *http.ServeMux {
 	if mux == nil || serviceName != "gamed" {
 		return mux

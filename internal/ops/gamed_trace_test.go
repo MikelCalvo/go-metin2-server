@@ -2,10 +2,12 @@ package ops
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/observability"
 )
@@ -89,6 +91,60 @@ func TestGamedOpsMuxMountsLocalTrace(t *testing.T) {
 	}
 	if status != http.StatusOK || strings.Contains(forbidden, "10.1.2.3") {
 		t.Fatal("loopback trace read changed")
+	}
+
+	trace := observability.MountedOpsTrace(mux)
+	if trace == nil {
+		t.Fatal("gamed mux lost the trace document")
+	}
+	if _, ok := trace.Export(); ok {
+		t.Fatal("mounted trace exported without an exporter")
+	}
+	trace.SetExporter(&observability.LoopbackTraceExporter{Endpoint: "http://10.1.2.3:4318/v1/traces"})
+	if _, ok := trace.Export(); ok {
+		t.Fatal("mounted trace accepted a remote exporter")
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	gotPost := make(chan struct{}, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 64)
+		_, _ = conn.Read(buf)
+		gotPost <- struct{}{}
+	}()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace.SetExporter(&observability.LoopbackTraceExporter{Endpoint: "http://127.0.0.1:" + port + "/v1/traces"})
+	status, after := getLocal(handler, "/local/build-info")
+	if status != http.StatusOK {
+		t.Fatalf("build-info after exporter = %d", status)
+	}
+	select {
+	case <-gotPost:
+		t.Fatalf("recording a span dialed the collector: %s", after)
+	case <-time.After(50 * time.Millisecond):
+	}
+	spans, ok := trace.Export()
+	if !ok || len(spans) == 0 {
+		t.Fatalf("opt-in export ok=%v spans=%d", ok, len(spans))
+	}
+	select {
+	case <-gotPost:
+	case <-time.After(2 * time.Second):
+		t.Fatal("opt-in loopback export did not POST")
+	}
+	if observability.MountedOpsTrace(NewPprofMux("gamed")).Snapshot().Exporter != "fail-closed" {
+		t.Fatal("a fresh gamed mount inherited the exporter")
 	}
 }
 

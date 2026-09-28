@@ -228,12 +228,21 @@ func (m *localMetricsMount) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // MountLocalTrace serves the already-owned loopback JSON document and marks
 // the handler so WrapOpsAccessLog can record other /local/<name> requests
 // on the same in-memory spans. A nil trace returns nil. Missing exporter
-// config stays fail-closed inside the document; this mount never dials.
+// config stays fail-closed inside the document; this mount never calls
+// SetExporter and never dials.
 func MountLocalTrace(trace *OpsTrace) http.Handler {
 	if trace == nil {
 		return nil
 	}
 	return &localTraceMount{trace: trace, handler: trace.Handler()}
+}
+
+// MountedOpsTrace returns the OpsTrace document already registered at
+// LocalTracePath, or nil when that path is not the JSON trace mount.
+// Callers use it to attach an opt-in loopback exporter to the same spans.
+// It does not create a second span ring and does not set an exporter.
+func MountedOpsTrace(mux *http.ServeMux) *OpsTrace {
+	return mountedOpsTrace(mux)
 }
 
 func mountedOpsTrace(next http.Handler) *OpsTrace {

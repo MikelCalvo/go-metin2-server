@@ -181,15 +181,18 @@ Rules:
 5. Missing exporter config stays fail-closed. `Export` returns no spans until
    `SetExporter` is given `http://127.0.0.1:<port>/v1/traces` or the same shape
    on `::1` / `localhost`. HTTPS, remote hosts, wildcard binds, query strings,
-   and any other path are refused. Accepted export copies the in-memory spans
-   only; this slice never dials a collector. The gamed mount does not call
-   `SetExporter`.
+   and any other path are refused. An accepted exporter copies the in-memory
+   spans and POSTs that same metadata-only JSON once to the loopback
+   collector. A refused dial keeps the in-memory spans and does not retry.
+   The POST body never includes the endpoint, a query string, a request body,
+   or a secret. The gamed mount does not call `SetExporter`, so a running
+   daemon never dials.
 6. The gamed ops mux registers this handler at `/local/trace`. `serveOps`
    already wraps that mux with `WrapOpsAccessLog`, which records one clean
    `/local/<name>` span on the same snapshot. Reading `/local/trace` does
    not record itself. authd does not register the path. Request bodies and
-   query strings stay out. Remote span export stays out. Prometheus text is
-   the separate opt-in companion below.
+   query strings stay out. The opt-in loopback span POST is not enabled by
+   this mount. Prometheus text is the separate opt-in companion below.
 
 ## Opt-in loopback Prometheus text
 
@@ -232,7 +235,9 @@ Rules:
    document as JSON `/local/metrics`. The mount does not set an exporter and
    never dials a scraper. Missing or non-loopback exporter config stays
    `404` with an empty body. JSON `/local/metrics` is unchanged.
-   OpenTelemetry export and remote log shipping stay out.
+   OpenTelemetry span export is the separate opt-in companion above: the
+   gamed mount does not set it, so missing config stays in memory. Remote
+   log shipping stays out.
 
 Example with no exporter configured: `GET /local/metrics/prometheus` on the
 gamed ops mux from loopback returns `404` and an empty body. Example after
@@ -277,8 +282,8 @@ Rules:
    syslog framing, and never stores the line anywhere else.
 5. This slice does **not** change `authd` or `gamed` startup. Both daemons
    keep `NewServiceLogger(..., os.Stdout)`. Operators cannot turn the sink on
-   from the process environment in this slice. OpenTelemetry export and SIEM
-   sinks stay out.
+   from the process environment in this slice. The opt-in loopback span POST
+   and SIEM sinks stay out of daemon startup.
 
 Example safe line, identical on stdout and on the loopback copy:
 
@@ -295,7 +300,8 @@ Example safe trace shape with no exporter configured:
 ## What this is not yet
 
 - choosing the Prometheus exporter at `gamed` startup (the text path is mounted and stays fail-closed until a loopback exporter is set in code)
-- shipping OpenTelemetry spans off the host (in-memory loopback spans only)
+- shipping OpenTelemetry spans off the host (the opt-in POST reaches loopback only; the gamed mount does not set an exporter)
+- a non-loopback or SIEM span destination
 - turning the loopback UDP log sink on from `authd` / `gamed` startup (library only; missing sink config stays on local stdout)
 - SIEM sinks, syslog framing, or any non-loopback log destination
 - logging `/healthz` or `/debug/pprof/*`

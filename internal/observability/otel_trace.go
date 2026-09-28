@@ -1,8 +1,11 @@
 package observability
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -16,7 +19,8 @@ import (
 // It is not a Prometheus exporter, not a remote OTLP endpoint, and not a
 // remote admin surface. The gamed ops mux registers Handler; authd does
 // not. With no loopback exporter configured, FinishSpan stays in memory
-// and Export refuses to ship anywhere.
+// and Export refuses to ship anywhere. An accepted loopback exporter may
+// POST the same in-memory spans to 127.0.0.1, ::1, or localhost only.
 const LocalTracePath = "/local/trace"
 
 const (
@@ -149,8 +153,8 @@ func (t *OpsTrace) StartSpan(ctx context.Context, name string, attrs map[string]
 
 // FinishSpan closes the span stored in ctx. HTTP status >= 400 marks the
 // span ERROR. Closed spans are appended to the local ring. Configuring a
-// loopback exporter only unlocks Export; spans are never written to the
-// network from this process.
+// loopback exporter unlocks Export, which may POST that same metadata to
+// the accepted loopback collector. Missing config never dials.
 func (t *OpsTrace) FinishSpan(ctx context.Context, httpStatus int) *OpsTraceSpan {
 	if t == nil || ctx == nil {
 		return nil
@@ -209,21 +213,26 @@ func (t *OpsTrace) Snapshot() OpsTraceSnapshot {
 
 // Export copies currently held spans only when a loopback exporter is
 // configured. Missing or remote exporter config returns ok=false and does
-// not reveal the refused endpoint. The copy never leaves this process.
+// not reveal the refused endpoint. When the copy succeeds, the same spans
+// are POSTed once to that loopback collector. A refused dial leaves the
+// in-memory copy in place and still returns it.
 func (t *OpsTrace) Export() (spans []OpsTraceSpan, ok bool) {
 	if t == nil {
 		return nil, false
 	}
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	if !t.exporter.Configured() {
+		t.mu.Unlock()
 		return nil, false
 	}
+	endpoint := t.exporter.Endpoint
 	spans = make([]OpsTraceSpan, len(t.spans))
 	for i := range t.spans {
 		spans[i] = t.spans[i]
 		spans[i].Attributes = copyTraceAttrs(t.spans[i].Attributes)
 	}
+	t.mu.Unlock()
+	postLoopbackTraceExport(endpoint, spans)
 	return spans, true
 }
 
@@ -263,7 +272,7 @@ func (t *OpsTrace) Handler() http.Handler {
 // A nil receiver returns next. A nil next stays nil. /healthz, /debug/pprof/*,
 // and every other non-/local/ path are not traced. Bodies are never read.
 // Missing exporter config still records the local span; it does not enable
-// shipping.
+// shipping. Wrap never calls Export, so recording a span does not POST.
 func (t *OpsTrace) Wrap(next http.Handler) http.Handler {
 	if t == nil || next == nil {
 		return next
@@ -410,3 +419,63 @@ func loopbackTraceEndpoint(raw string) bool {
 	}
 	return metricsLoopback(hostport)
 }
+
+// postLoopbackTraceExport sends one metadata-only JSON document to an
+// already-accepted loopback collector. The body is the span list only: no
+// endpoint, query string, request body, or secret. A refused address, a
+// dial error, or a non-2xx response is ignored. The caller keeps the
+// in-memory spans either way.
+func postLoopbackTraceExport(endpoint string, spans []OpsTraceSpan) {
+	if !loopbackTraceEndpoint(endpoint) || len(spans) == 0 {
+		return
+	}
+	body, err := json.Marshal(spans)
+	if err != nil {
+		return
+	}
+	if bytes.Contains(body, []byte("?")) || bytes.Contains(body, []byte("postgres://")) {
+		return
+	}
+	client := &http.Client{
+		Timeout: 250 * time.Millisecond,
+		Transport: &http.Transport{
+			DialContext: loopbackTraceDial,
+		},
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	_ = resp.Body.Close()
+}
+
+func loopbackTraceDial(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" || port == "0" {
+		return nil, errLoopbackTraceDial
+	}
+	if strings.EqualFold(host, "localhost") {
+		host = "127.0.0.1"
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		return nil, errLoopbackTraceDial
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+}
+
+var errLoopbackTraceDial = &loopbackTraceDialError{}
+
+type loopbackTraceDialError struct{}
+
+func (loopbackTraceDialError) Error() string { return "loopback trace export refused" }

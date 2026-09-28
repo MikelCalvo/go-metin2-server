@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoopbackOTelSpanSitsBesideJSONLogsAndLocalMetrics(t *testing.T) {
@@ -178,6 +180,59 @@ func TestLoopbackTraceExporterFailClosedUnlessLoopback(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "127.0.0.1:4318") {
 		t.Fatalf("exported spans named the endpoint: %s", encoded)
+	}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+	received := make(chan []byte, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, 8192)
+		n, _ := conn.Read(buf)
+		received <- append([]byte(nil), buf[:n]...)
+		_, _ = conn.Write([]byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
+	}()
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	shipped := NewOpsTrace()
+	shipped.SetExporter(&LoopbackTraceExporter{Endpoint: "http://127.0.0.1:" + port + "/v1/traces"})
+	shipped.FinishSpan(mustSpan(t, shipped), http.StatusOK)
+	spans, ok = shipped.Export()
+	if !ok || len(spans) != 1 {
+		t.Fatalf("loopback post ok=%v spans=%d", ok, len(spans))
+	}
+	select {
+	case raw := <-received:
+		payload := string(raw)
+		if !strings.Contains(payload, "POST /v1/traces HTTP/1.1") {
+			t.Fatalf("request line = %q", payload)
+		}
+		if strings.Contains(payload, "?") || strings.Contains(payload, "postgres://") || strings.Contains(payload, port) && strings.Contains(payload, "\r\n\r\n") && strings.Contains(strings.Split(payload, "\r\n\r\n")[1], port) {
+			t.Fatalf("export body named the endpoint or a secret: %s", payload)
+		}
+		body := payload
+		if parts := strings.SplitN(payload, "\r\n\r\n", 2); len(parts) == 2 {
+			body = parts[1]
+		}
+		var posted []OpsTraceSpan
+		if err := json.Unmarshal([]byte(body), &posted); err != nil {
+			t.Fatalf("decode posted spans: %v\n%s", err, payload)
+		}
+		if len(posted) != 1 || posted[0].Attributes["http.target"] != "/local/build-info" {
+			t.Fatalf("posted spans = %+v", posted)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("loopback collector received nothing")
 	}
 }
 
