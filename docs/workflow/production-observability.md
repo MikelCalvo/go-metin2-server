@@ -295,7 +295,7 @@ Example safe trace shape with no exporter configured:
 - probabilistic sampling, per-path budgets, or writing the sampler interval into the access line
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication or token auth
-- packaging that installs enabled `newsyslog` / `logrotate` entries by default
+- ~~packaging that installs enabled `newsyslog` / `logrotate` entries by default~~ Done for one print-only, disabled-by-default packaging note beside the already-owned fragments (`contrib/lab-daemons/newsyslog.conf.d/metin2-log-rotation.pkg-message.sample`, `installed=NO`, `authd_enable="NO"` / `gamed_enable="NO"`). See [Print-only rotation packaging note](lab-daemon-unit-samples.md#print-only-rotation-packaging-note). A FreeBSD port / `pkg` that installs those entries enabled, or starts daemons, stays deferred.
 
 ## Related docs
 

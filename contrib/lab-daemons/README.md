@@ -17,6 +17,11 @@ FreeBSD `rc.d` samples append stdout/stderr with `daemon -f -H -o
 /var/log/metin2/{authd,gamed}.log`; systemd samples append the same paths via
 `StandardOutput=` / `StandardError=`. Rotation samples live under
 `newsyslog.conf.d/` (FreeBSD) and `logrotate.d/` (Linux).
+A print-only packaging note for those fragments is
+`newsyslog.conf.d/metin2-log-rotation.pkg-message.sample` (`installed=NO`).
+`metin2-print-log-rotation.sh` only writes a review note; it does not install
+rotation entries or start daemons. See
+[`docs/workflow/lab-daemon-unit-samples.md`](../../docs/workflow/lab-daemon-unit-samples.md).
 
 Retention / GC print-only samples remain under
 [`contrib/lab-retention-gc/`](../lab-retention-gc/).
@@ -86,6 +91,12 @@ install -m 0644 \
   contrib/lab-daemons/logrotate.d/metin2-daemons.conf.sample \
   /etc/logrotate.d/metin2-daemons.conf.sample
 # rename without .sample only after review
+
+# Print-only rotation packaging note (does not install or start daemons)
+contrib/lab-daemons/metin2-check-log-rotation.sh
+install -d -m 0750 /var/metin2/ops-prints
+METIN2_AUTHD_ENABLE=NO METIN2_GAMED_ENABLE=NO \
+  contrib/lab-daemons/metin2-print-log-rotation.sh
 ```
 
 ## Hard rules
@@ -109,6 +120,8 @@ install -m 0644 \
 ## What this is not
 
 - packaging that installs **enabled** `rc.d` / systemd units by default
+- packaging that installs **enabled** `newsyslog` / `logrotate` entries
+  (the print-only note stays `.sample` and `installed=NO`)
 - FreeBSD port / `pkg` enable defaults
 - flipping `authd_enable` / `gamed_enable` to `YES` by default
 - DB driver/DSN embedding or daemon startup auto-migration

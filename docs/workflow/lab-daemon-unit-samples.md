@@ -44,7 +44,10 @@ contrib/lab-daemons/
   systemd/authd.service.d/lab-store.conf.sample
   systemd/gamed.service.d/lab-store.conf.sample
   newsyslog.conf.d/metin2-daemons.conf.sample
+  newsyslog.conf.d/metin2-log-rotation.pkg-message.sample
   logrotate.d/metin2-daemons.conf.sample
+  metin2-print-log-rotation.sh
+  metin2-check-log-rotation.sh
   env/metin2-auth-host.env.sample
   env/metin2-game-host.env.sample
   rc.d/rc.conf.multihost.sample
@@ -181,9 +184,35 @@ Linux `logrotate.d/metin2-daemons.conf.sample`:
 - weekly, `rotate 7`, `copytruncate`, `create 0640 metin2 metin2`
 - no `postrotate` shell that invokes migrate / GC / apply
 
+## Print-only rotation packaging note
+
+The rotation fragments above stay the live contract. This slice only packages
+them as a disabled review note:
+
+- `newsyslog.conf.d/metin2-log-rotation.pkg-message.sample` names both
+  fragments, keeps `authd_enable="NO"` and `gamed_enable="NO"`, and sets
+  `installed=NO`. It is not a FreeBSD port, `pkg-plist`, or installer.
+- `metin2-print-log-rotation.sh` writes that same note under
+  `/var/metin2/ops-prints/` and exits. It does not copy the fragments into
+  `/usr/local/etc/newsyslog.conf.d/` or `/etc/logrotate.d/`, and it does not
+  start a daemon. If either owned sample is missing, the note stays print-only
+  and the helper exits without inventing a replacement.
+- `metin2-check-log-rotation.sh` checks that the note and the owned fragments
+  stay disabled. It does not install them.
+
+```bash
+# review only; does not install rotation entries or start daemons
+contrib/lab-daemons/metin2-check-log-rotation.sh
+install -d -m 0750 /var/metin2/ops-prints
+METIN2_AUTHD_ENABLE=NO METIN2_GAMED_ENABLE=NO \
+  contrib/lab-daemons/metin2-print-log-rotation.sh
+```
+
 ## What this is not yet
 
-- FreeBSD port / `pkg` that installs **enabled** `rc.d` / systemd units
+- FreeBSD port / `pkg` that installs **enabled** `rc.d` / systemd units or
+  **enabled** `newsyslog` / `logrotate` entries (the print-only packaging note
+  above stays `.sample` and `installed=NO`)
 - flipping `authd_enable` / `gamed_enable` to `YES` by default
 - DB driver/DSN embedding or daemon startup auto-migration
 - remote admin, metrics exporters, or multi-host orchestration beyond the

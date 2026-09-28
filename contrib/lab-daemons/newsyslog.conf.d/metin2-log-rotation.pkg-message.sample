@@ -1,0 +1,24 @@
+# Print-only packaging note for the already-owned metin2 log rotation samples.
+# This file is a review note, not a FreeBSD port, pkg-plist, or installer.
+# Copying it does not install newsyslog or logrotate entries and does not
+# start authd or gamed. Leave the .sample suffix until an operator reviews it.
+# Never put DSNs, passwords, login keys, or executable SQL here.
+
+# authd_enable and gamed_enable stay NO. Packaging must not flip them.
+authd_enable="NO"
+gamed_enable="NO"
+
+# Rotation fragments stay .sample. Drop the suffix only after review.
+# Do not copy them to the live newsyslog or logrotate directories from here.
+freebsd_sample=contrib/lab-daemons/newsyslog.conf.d/metin2-daemons.conf.sample
+linux_sample=contrib/lab-daemons/logrotate.d/metin2-daemons.conf.sample
+installed=NO
+
+# The owned rotation contract, repeated so a missing live sample stays a note:
+# FreeBSD: daily @T00, keep 7, flags JH, signal 1 to /var/run/{authd,gamed}.pid
+# Linux: weekly, rotate 7, copytruncate, create 0640 metin2 metin2
+# Neither fragment shells metin2-migrate, backup, apply, or GC.
+log_authd=/var/log/metin2/authd.log
+log_gamed=/var/log/metin2/gamed.log
+remote_log_shipping=not-owned
+daemons_started=NO
