@@ -6160,7 +6160,7 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 		})
 	}
 
-	return mountGamedLocalMetrics(mux, serviceName)
+	return mountGamedLocalTrace(mountGamedLocalMetrics(mux, serviceName), serviceName)
 }
 
 // mountGamedLocalMetrics registers the already-owned loopback JSON
@@ -6179,6 +6179,25 @@ func mountGamedLocalMetrics(mux *http.ServeMux, serviceName string) *http.ServeM
 	metrics := observability.NewOpsMetrics()
 	metrics.SetService("gamed")
 	mux.Handle(observability.LocalMetricsPath, observability.MountLocalMetrics(metrics))
+	return mux
+}
+
+// mountGamedLocalTrace registers the already-owned loopback JSON
+// /local/trace companion on the same gamed ops mux.
+//
+// authd and every other service name stay unregistered. The document is
+// observability.OpsTrace: in-memory spans only. Missing exporter config
+// stays fail-closed and this mount never dials. Prometheus text, remote
+// span export, and remote admin stay off. /healthz and /debug/pprof/* are
+// not traced. Request bodies are never read. The returned mux is the same
+// pointer, so later RegisterLocal* calls keep working.
+func mountGamedLocalTrace(mux *http.ServeMux, serviceName string) *http.ServeMux {
+	if mux == nil || serviceName != "gamed" {
+		return mux
+	}
+	trace := observability.NewOpsTrace()
+	trace.SetService("gamed")
+	mux.Handle(observability.LocalTracePath, observability.MountLocalTrace(trace))
 	return mux
 }
 

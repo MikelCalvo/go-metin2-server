@@ -176,11 +176,13 @@ Rules:
    `SetExporter` is given `http://127.0.0.1:<port>/v1/traces` or the same shape
    on `::1` / `localhost`. HTTPS, remote hosts, wildcard binds, query strings,
    and any other path are refused. Accepted export copies the in-memory spans
-   only; this slice never dials a collector.
-6. This slice does **not** mount the handler on `authd` or `gamed`. Operators
-   cannot curl it on a running daemon until a later slice registers
-   `OpsTrace.Handler` on the ops mux. The type is the contract and the test
-   surface. Remote log shipping stays out.
+   only; this slice never dials a collector. The gamed mount does not call
+   `SetExporter`.
+6. The gamed ops mux registers this handler at `/local/trace`. `serveOps`
+   already wraps that mux with `WrapOpsAccessLog`, which records one clean
+   `/local/<name>` span on the same snapshot. Reading `/local/trace` does
+   not record itself. authd does not register the path. Request bodies and
+   query strings stay out. Prometheus text and remote span export stay out.
 
 ## Opt-in loopback Prometheus text
 
@@ -277,7 +279,6 @@ Example safe trace shape with no exporter configured:
 
 ## What this is not yet
 
-- mounting `/local/trace` on the daemon ops mux
 - mounting `/local/metrics/prometheus` on the daemon ops mux (library only; disabled until a loopback exporter is set)
 - shipping OpenTelemetry spans off the host (in-memory loopback spans only)
 - turning the loopback UDP log sink on from `authd` / `gamed` startup (library only; missing sink config stays on local stdout)

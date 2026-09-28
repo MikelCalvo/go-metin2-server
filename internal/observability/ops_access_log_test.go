@@ -155,6 +155,9 @@ func TestMountLocalMetricsNilIsNil(t *testing.T) {
 	if MountLocalMetrics(nil) != nil {
 		t.Fatal("nil metrics mounted a handler")
 	}
+	if MountLocalTrace(nil) != nil {
+		t.Fatal("nil trace mounted a handler")
+	}
 }
 
 func TestWrapOpsAccessLogRecordsMountedLocalMetrics(t *testing.T) {

@@ -14,9 +14,9 @@ import (
 // GET /local/metrics.
 //
 // It is not a Prometheus exporter, not a remote OTLP endpoint, and not a
-// remote admin surface. Daemons do not register it until a later slice
-// mounts Handler on the ops mux. With no loopback exporter configured,
-// FinishSpan stays in memory and Export refuses to ship anywhere.
+// remote admin surface. The gamed ops mux registers Handler; authd does
+// not. With no loopback exporter configured, FinishSpan stays in memory
+// and Export refuses to ship anywhere.
 const LocalTracePath = "/local/trace"
 
 const (

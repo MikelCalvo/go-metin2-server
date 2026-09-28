@@ -16,15 +16,18 @@ import (
 // A nil logger or nil next is a passthrough (nil next remains nil).
 //
 // When next is the gamed ops mux, the wrapper also records the completed
-// request on the OpsMetrics document mounted at LocalMetricsPath. Reading
-// that document does not count itself. authd has no mount, so it is not
-// counted. Bodies are never read.
+// request on the OpsMetrics document mounted at LocalMetricsPath and one
+// in-memory span on the OpsTrace document mounted at LocalTracePath.
+// Reading either document does not record itself. authd has no mount, so
+// it is not counted or traced. Bodies are never read. Missing trace
+// exporter config stays fail-closed: the span stays in memory.
 func WrapOpsAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 	if next == nil {
 		return nil
 	}
 	metrics := mountedOpsMetrics(next)
-	if logger == nil && metrics == nil {
+	trace := mountedOpsTrace(next)
+	if logger == nil && metrics == nil && trace == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,11 +36,28 @@ func WrapOpsAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 			return
 		}
 
+		ctx := r.Context()
+		recordTrace := false
+		if trace != nil && r.URL.Path != LocalTracePath {
+			if _, ok := metricsPathKey(r.URL.Path); ok {
+				recordTrace = true
+			}
+		}
+		if recordTrace {
+			ctx, _ = trace.StartSpan(ctx, otelTraceSpanName, map[string]string{
+				"http.method": r.Method,
+				"http.target": r.URL.Path,
+			})
+			r = r.WithContext(ctx)
+		}
 		recorder := &opsAccessResponseRecorder{ResponseWriter: w, status: http.StatusOK}
 		started := time.Now()
 		next.ServeHTTP(recorder, r)
 		if metrics != nil && r.URL.Path != LocalMetricsPath {
 			metrics.ObserveLocalRequest(r.Method, r.URL.Path, recorder.status)
+		}
+		if recordTrace {
+			trace.FinishSpan(ctx, recorder.status)
 		}
 		if logger == nil {
 			return
@@ -98,6 +118,54 @@ type localMetricsMount struct {
 }
 
 func (m *localMetricsMount) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m == nil || m.handler == nil {
+		http.NotFound(w, r)
+		return
+	}
+	m.handler.ServeHTTP(w, r)
+}
+
+// MountLocalTrace serves the already-owned loopback JSON document and marks
+// the handler so WrapOpsAccessLog can record other /local/<name> requests
+// on the same in-memory spans. A nil trace returns nil. Missing exporter
+// config stays fail-closed inside the document; this mount never dials.
+func MountLocalTrace(trace *OpsTrace) http.Handler {
+	if trace == nil {
+		return nil
+	}
+	return &localTraceMount{trace: trace, handler: trace.Handler()}
+}
+
+func mountedOpsTrace(next http.Handler) *OpsTrace {
+	mux, ok := next.(*http.ServeMux)
+	if !ok || mux == nil {
+		return nil
+	}
+	handler, pattern := mux.Handler(&http.Request{
+		Method:     http.MethodGet,
+		URL:        localTraceURL(),
+		RemoteAddr: "127.0.0.1:1",
+	})
+	if pattern != LocalTracePath {
+		return nil
+	}
+	mount, ok := handler.(*localTraceMount)
+	if !ok || mount == nil {
+		return nil
+	}
+	return mount.trace
+}
+
+func localTraceURL() *url.URL {
+	return &url.URL{Path: LocalTracePath}
+}
+
+type localTraceMount struct {
+	trace   *OpsTrace
+	handler http.Handler
+}
+
+func (m *localTraceMount) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if m == nil || m.handler == nil {
 		http.NotFound(w, r)
 		return
