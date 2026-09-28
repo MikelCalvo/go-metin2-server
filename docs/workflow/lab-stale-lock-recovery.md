@@ -90,12 +90,36 @@ Do **not**:
 - [lab deployment topology](lab-deployment-topology.md) — host layout and artifact retention trees
 - [file-store backup/restore drill](file-store-backup-restore-drill.md) — JSON store backup evidence before mutation windows
 
+## Opt-in database advisory-lock probe
+
+`apply-lock-aside` remains the confirmation-gated local filesystem recovery. Beside it, one **disabled-by-default** read-only probe can report whether a **Postgres** session advisory lock is already visible in `pg_locks`. It does not replace the file lock, and it does not decide that a leftover file may be renamed. It does not take, release, or clear that lock.
+
+```bash
+metin2-migrate advisory-lock-probe \
+  --driver postgres \
+  --dsn <dsn> \
+  --i-confirm-read-only-advisory-probe
+```
+
+The probe is off unless that confirmation flag is present. Missing confirmation is a usage error and does not open a database. With confirmation it:
+
+1. requires a linked `database/sql` driver (stock binaries still register none);
+2. accepts only `--driver postgres`. SQLite (including the `sqlite` harness), MySQL, and every other name fail closed with an unsupported-engine error **before** `sql.Open`. There is no stand-in table in `db/migrations`;
+3. opens the operator-supplied Postgres target only long enough to run one read-only `SELECT EXISTS` against `pg_locks` (`locktype = 'advisory'`, one fixed `classid`/`objid`, `granted = true`);
+4. emits metadata-only `go-metin2-migration-advisory-lock-probe-v1` JSON with `configured: true`, `held`, `engine=postgres`, and `probe=postgres_pg_locks_v1`;
+5. redacts the DSN from stderr and never prints executable SQL.
+
+`held: true` means `pg_locks` showed that advisory key already granted to some session. `held: false` means the catalog showed no such granted row. Neither value clears a lock, authorizes `apply-lock-aside`, or proves a retained `apply-lock-aside.json` means the live lock path is free. The probe never calls `pg_advisory_lock`, `pg_try_advisory_lock`, `pg_advisory_unlock`, `GET_LOCK`, or `RELEASE_LOCK`, and never issues `rm` or unlink. A missing driver, a non-Postgres engine, or a refused probe fails closed without mutating the filesystem lock.
+
 ## What this is not yet
 
 - automatic stale-lock expiry or daemon/cron unlock
 - `rm` / unlink / truncate helpers
-- DB-engine advisory locks
+- taking, releasing, or auto-clearing a database advisory lock (the opt-in probe above only reads Postgres `pg_locks` and is disabled by default)
+- MySQL `IS_USED_LOCK` / `GET_LOCK`, SQLite lock observation, or any other engine catalog
+- a stock production database driver or a daemon `/local/...` advisory-lock endpoint
 - multi-host unlock coordination
 - a claim that leftover locks prove a migration succeeded or failed
 - treating `manual_clear_candidate=true` alone as permission to mutate without confirmation / operator judgment
+- treating `advisory-lock-probe` `held: false` as permission to rename or delete a live lock file
 - treating a retained `apply-lock-aside.json` as proof that a live lock path is currently free or that a database is migrated; `apply-lock-aside-status` validates a retained aside artifact only — see [CLI apply-lock-aside-status](../plans/2026-09-05-cli-apply-lock-aside-status-contract-freeze.md)

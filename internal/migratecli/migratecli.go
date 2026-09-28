@@ -62,6 +62,11 @@ const (
 // apply-lock-aside is a separate confirmation-gated local filesystem mutation: it
 // only aside-renames a leftover apply lock after recomputing the lab stale-lock
 // gate and never opens a database target.
+// advisory-lock-probe is a separate disabled-by-default read-only database probe:
+// it opens a target only after --i-confirm-read-only-advisory-probe, and only
+// when --driver is postgres. It reads pg_locks for one fixed key and never
+// takes, unlocks, deletes, or treats a retained aside file as proof a live
+// lock is free. Other engines, including the sqlite harness, fail closed.
 // Rollback/down plans must be explicitly confirmed with --allow-rollback plus
 // --plan-sha256, --plan-artifact, or --apply-preflight. Operators can
 // optionally require a previously inspected plan checksum, plan artifact, or
@@ -112,6 +117,8 @@ func Run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int
 		return runApplyLockAside(args[1:], stdout, stderr)
 	case "apply-lock-aside-status":
 		return runApplyLockAsideStatus(args[1:], stdout, stderr)
+	case "advisory-lock-probe":
+		return runAdvisoryLockProbe(args[1:], stdout, stderr)
 	case "apply-audit-status":
 		return runApplyAuditStatus(args[1:], stdout, stderr)
 	case "empty-ledger-snapshot":
@@ -2188,6 +2195,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  apply-lock-status      inspect a local migration apply lock file without mutating it")
 	fmt.Fprintln(w, "  apply-lock-aside       confirmation-gated lab aside-rename for a stale apply lock")
 	fmt.Fprintln(w, "  apply-lock-aside-status inspect a retained apply-lock-aside artifact without mutating it")
+	fmt.Fprintln(w, "  advisory-lock-probe    disabled-by-default read-only Postgres pg_locks probe")
 	fmt.Fprintln(w, "  apply-audit-status     inspect a migration apply audit file without mutating it")
 	fmt.Fprintln(w, "  apply                  apply a target plan using a database/sql driver and offline ledger snapshot")
 	fmt.Fprintln(w, "  apply-boundary         print the CLI-only apply/rollback vs read-only loopback ops contract")
@@ -2240,6 +2248,8 @@ func printUsage(w io.Writer) {
 	printApplyLockAsideUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyLockAsideStatusUsage(w)
+	fmt.Fprintln(w, "")
+	printAdvisoryLockProbeUsage(w)
 	fmt.Fprintln(w, "")
 	printApplyAuditStatusUsage(w)
 	fmt.Fprintln(w, "")

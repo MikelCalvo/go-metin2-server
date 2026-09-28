@@ -4302,11 +4302,14 @@ func registerSQLDriverOnce(name string, driver driver.Driver) (err error) {
 }
 
 type migrateCLITestDriver struct {
-	mu       sync.Mutex
-	events   []string
-	ledger   []dbmigrations.LedgerEntry
-	err      error
-	openHook func() error
+	mu             sync.Mutex
+	events         []string
+	ledger         []dbmigrations.LedgerEntry
+	err            error
+	openHook       func() error
+	advisoryHeld   bool
+	advisoryProbes int
+	advisoryEngine string
 }
 
 func (d *migrateCLITestDriver) Open(name string) (driver.Conn, error) {
@@ -4339,6 +4342,29 @@ func (d *migrateCLITestDriver) setError(err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.err = err
+}
+
+func (d *migrateCLITestDriver) setAdvisoryHeld(held bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.advisoryHeld = held
+	d.advisoryEngine = advisoryLockProbeEngine
+}
+
+func (d *migrateCLITestDriver) resetAdvisoryProbeState() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.events = nil
+	d.err = nil
+	d.advisoryHeld = false
+	d.advisoryProbes = 0
+	d.advisoryEngine = ""
+}
+
+func (d *migrateCLITestDriver) advisoryProbeCount() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.advisoryProbes
 }
 
 func (d *migrateCLITestDriver) setOpenHook(hook func() error) {
@@ -4463,12 +4489,86 @@ func (tx *migrateCLITestTx) ExecContext(_ context.Context, query string, _ []dri
 	return driver.RowsAffected(1), nil
 }
 
-func (tx *migrateCLITestTx) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
-	tx.driver.record("query:" + normalizeMigrateCLITestSQL(query))
+func (tx *migrateCLITestTx) QueryContext(_ context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
+	normalized := normalizeMigrateCLITestSQL(query)
+	tx.driver.record("query:" + normalized)
 	if err := tx.driver.errorSnapshot(); err != nil {
 		return nil, err
 	}
+	if strings.Contains(normalized, "pg_locks") {
+		if tx.driver.advisoryEngineSnapshot() != advisoryLockProbeEngine {
+			return nil, fmt.Errorf("pg_locks is postgres-only, driver engine %q", tx.driver.advisoryEngineSnapshot())
+		}
+		if !strings.Contains(normalized, "locktype = 'advisory'") || strings.Contains(normalized, "pg_advisory_lock") || strings.Contains(normalized, "pg_try_advisory_lock") || strings.Contains(normalized, "pg_advisory_unlock") {
+			return nil, fmt.Errorf("advisory probe must be a read-only pg_locks catalog query, got %s", normalized)
+		}
+		if len(args) != 2 || advisoryProbeArgInt64(args[0].Value) != int64(advisoryLockProbeClassID) || advisoryProbeArgInt64(args[1].Value) != int64(advisoryLockProbeObjID) {
+			return nil, fmt.Errorf("advisory probe query bound %v, want classid %d objid %d", args, advisoryLockProbeClassID, advisoryLockProbeObjID)
+		}
+		tx.driver.recordAdvisoryProbe()
+		held := false
+		if tx.driver.advisoryHeldSnapshot() {
+			held = true
+		}
+		return &migrateCLIAdvisoryRows{held: held}, nil
+	}
+	if strings.Contains(normalized, "go_metin2_session_advisory_lock") || strings.Contains(normalized, "is_used_lock") || strings.Contains(normalized, "get_lock") {
+		return nil, fmt.Errorf("refusing non-pg_locks advisory stand-in: %s", normalized)
+	}
 	return &migrateCLITestRows{entries: tx.driver.ledgerSnapshot()}, nil
+}
+
+func advisoryProbeArgInt64(value any) int64 {
+	switch typed := value.(type) {
+	case int64:
+		return typed
+	case int32:
+		return int64(typed)
+	case int:
+		return int64(typed)
+	default:
+		return 0
+	}
+}
+
+func (d *migrateCLITestDriver) recordAdvisoryProbe() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.advisoryProbes++
+}
+
+func (d *migrateCLITestDriver) advisoryHeldSnapshot() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.advisoryHeld
+}
+
+func (d *migrateCLITestDriver) advisoryEngineSnapshot() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.advisoryEngine
+}
+
+type migrateCLIAdvisoryRows struct {
+	held  bool
+	index int
+}
+
+func (r *migrateCLIAdvisoryRows) Columns() []string {
+	return []string{"held"}
+}
+
+func (r *migrateCLIAdvisoryRows) Close() error {
+	return nil
+}
+
+func (r *migrateCLIAdvisoryRows) Next(dest []driver.Value) error {
+	if r.index > 0 {
+		return io.EOF
+	}
+	r.index++
+	dest[0] = r.held
+	return nil
 }
 
 type migrateCLITestRows struct {
