@@ -257,10 +257,11 @@ metin2_ops_local_requests_by_path{service="gamed",path="/local/notice"} 1
 ## Opt-in loopback log sink
 
 `NewServiceLogger` still writes one redacted JSON line to the daemon writer
-(`os.Stdout`). `NewServiceLoggerWithRemoteSink` is the first opt-in copy of
-that same line to one loopback UDP `host:port`. It is disabled until a caller
-passes a loopback endpoint. Missing config does not call it, so the line
-stays on local stdout only.
+(`os.Stdout`). `NewServiceLoggerWithRemoteSink` is the library copy of that
+same line to one loopback UDP `host:port`. `authd` and `gamed` choose that
+copy once, at startup, through `NewStartupServiceLogger`. It is disabled
+until the process environment names a loopback endpoint. Missing config
+does not call the remote helper, so the line stays on local stdout only.
 
 Rules:
 
@@ -280,10 +281,15 @@ Rules:
 4. A failed or oversized copy (over 2048 bytes) does not change the local
    write and is not retried. This slice never dials a collector, never speaks
    syslog framing, and never stores the line anywhere else.
-5. This slice does **not** change `authd` or `gamed` startup. Both daemons
-   keep `NewServiceLogger(..., os.Stdout)`. Operators cannot turn the sink on
-   from the process environment in this slice. The opt-in loopback span POST
-   and SIEM sinks stay out of daemon startup.
+5. `authd` and `gamed` select the sink at startup and nowhere else. The
+   service-specific name wins: `METIN2_AUTHD_LOG_SINK` or
+   `METIN2_GAMED_LOG_SINK`, then the shared `METIN2_LOG_SINK`. An unset or
+   blank value is missing config: the daemon keeps `NewServiceLogger` on
+   local stdout and does not enable the package sink. A present loopback
+   UDP `host:port` uses `NewServiceLoggerWithRemoteSink` for that process
+   only. A present remote host, syslog frame, scheme, or SIEM target
+   refuses startup with `remote log sink refused` and does not echo the
+   endpoint. The opt-in loopback span POST stays out of this choice.
 
 Example safe line, identical on stdout and on the loopback copy:
 
@@ -302,7 +308,7 @@ Example safe trace shape with no exporter configured:
 - choosing the Prometheus exporter at `gamed` startup (the text path is mounted and stays fail-closed until a loopback exporter is set in code)
 - shipping OpenTelemetry spans off the host (the opt-in POST reaches loopback only; the gamed mount does not set an exporter)
 - a non-loopback or SIEM span destination
-- turning the loopback UDP log sink on from `authd` / `gamed` startup (library only; missing sink config stays on local stdout)
+- ~~turning the loopback UDP log sink on from `authd` / `gamed` startup~~ Done for one opt-in loopback UDP `host:port` chosen at startup (`METIN2_AUTHD_LOG_SINK` / `METIN2_GAMED_LOG_SINK`, then `METIN2_LOG_SINK`). Missing config stays on local stdout. Remote hosts, syslog framing, and SIEM sinks stay refused.
 - SIEM sinks, syslog framing, or any non-loopback log destination
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging

@@ -14,7 +14,11 @@ import (
 )
 
 func main() {
-	logger := observability.NewServiceLogger("authd", os.Stdout)
+	logger, err := observability.NewStartupServiceLogger("authd", os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

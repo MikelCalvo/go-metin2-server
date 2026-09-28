@@ -21,7 +21,11 @@ import (
 )
 
 func main() {
-	logger := observability.NewServiceLogger("gamed", os.Stdout)
+	logger, err := observability.NewStartupServiceLogger("gamed", os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
