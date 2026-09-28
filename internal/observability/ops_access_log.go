@@ -90,10 +90,12 @@ func accessLogLineAllowed(now time.Time) bool {
 // When next is the gamed ops mux, the wrapper also records the completed
 // request on the OpsMetrics document mounted at LocalMetricsPath and one
 // in-memory span on the OpsTrace document mounted at LocalTracePath.
-// Reading either document does not record itself. authd has no mount, so
-// it is not counted or traced. Bodies are never read. Sampling does not
-// skip those records. Missing trace exporter config stays fail-closed:
-// the span stays in memory.
+// Reading either document does not record itself. The Prometheus text
+// mount at LocalPrometheusPath is multi-segment, so metricsPathKey already
+// leaves it uncounted and untraced. authd has no mount, so it is not
+// counted or traced. Bodies are never read. Sampling does not skip those
+// records. Missing trace exporter config stays fail-closed: the span stays
+// in memory. Missing Prometheus exporter config stays fail-closed too.
 func WrapOpsAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 	if next == nil {
 		return nil
@@ -161,9 +163,34 @@ func MountLocalMetrics(metrics *OpsMetrics) http.Handler {
 	return &localMetricsMount{metrics: metrics, handler: metrics.Handler()}
 }
 
+// MountLocalPrometheus serves the already-owned loopback Prometheus text
+// document for the same OpsMetrics snapshot as MountLocalMetrics.
+//
+// A nil metrics returns nil. This mount does not call SetPrometheusExporter.
+// Missing or non-loopback exporter config stays fail-closed inside
+// PrometheusHandler (404, empty body). The text path is not a clean
+// /local/<name> segment, so WrapOpsAccessLog does not count or trace it.
+func MountLocalPrometheus(metrics *OpsMetrics) http.Handler {
+	if metrics == nil {
+		return nil
+	}
+	return metrics.PrometheusHandler()
+}
+
 func mountedOpsMetrics(next http.Handler) *OpsMetrics {
 	mux, ok := next.(*http.ServeMux)
 	if !ok || mux == nil {
+		return nil
+	}
+	return MountedOpsMetrics(mux)
+}
+
+// MountedOpsMetrics returns the OpsMetrics document already registered at
+// LocalMetricsPath, or nil when that path is not the JSON metrics mount.
+// Callers use it to attach Prometheus text to the same counters. It does
+// not create a second counter set and does not set an exporter.
+func MountedOpsMetrics(mux *http.ServeMux) *OpsMetrics {
+	if mux == nil {
 		return nil
 	}
 	handler, pattern := mux.Handler(&http.Request{

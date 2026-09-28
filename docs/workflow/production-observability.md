@@ -188,14 +188,17 @@ Rules:
    already wraps that mux with `WrapOpsAccessLog`, which records one clean
    `/local/<name>` span on the same snapshot. Reading `/local/trace` does
    not record itself. authd does not register the path. Request bodies and
-   query strings stay out. Prometheus text and remote span export stay out.
+   query strings stay out. Remote span export stays out. Prometheus text is
+   the separate opt-in companion below.
 
 ## Opt-in loopback Prometheus text
 
-`OpsMetrics.PrometheusHandler` is the first Prometheus text companion beside
-the JSON `/local/metrics` document. It renders the same in-memory counters.
-It does not replace that JSON handler, and it is not mounted on `authd` or
-`gamed`.
+`OpsMetrics.PrometheusHandler` is the Prometheus text companion beside the
+JSON `/local/metrics` document. It renders the same in-memory counters. The
+gamed ops mux registers it at `/local/metrics/prometheus`. It does not
+replace the JSON handler. authd does not register the path. The gamed mount
+does not call `SetPrometheusExporter`, so a running daemon stays fail-closed
+until a caller sets a loopback exporter.
 
 `GET /local/metrics/prometheus` (`observability.LocalPrometheusPath`) is
 loopback-only and disabled until `SetPrometheusExporter` accepts a loopback
@@ -221,14 +224,20 @@ Rules:
    return `403`, both with an empty body.
 4. The text carries the daemon `service` label and the clean path label.
    Query strings, bodies, header values, remote addresses, and secrets are
-   never written. `/healthz` and `/debug/pprof/*` stay absent.
-5. This slice does **not** mount the handler on the daemon ops mux. JSON
-   `/local/metrics` on gamed stays the mounted document. OpenTelemetry export
-   and remote log shipping stay out.
+   never written. `/healthz` and `/debug/pprof/*` stay absent. Reading the
+   text path does not count itself: it is not a clean `/local/<name>`
+   segment, so it stays out of `local_requests_by_path` and out of
+   `/local/trace`.
+5. The gamed ops mux registers `PrometheusHandler` on the same `OpsMetrics`
+   document as JSON `/local/metrics`. The mount does not set an exporter and
+   never dials a scraper. Missing or non-loopback exporter config stays
+   `404` with an empty body. JSON `/local/metrics` is unchanged.
+   OpenTelemetry export and remote log shipping stay out.
 
-Example with no exporter configured: `GET` from loopback returns `404` and
-an empty body. Example after `SetPrometheusExporter` accepts
-`http://127.0.0.1:9090/metrics`:
+Example with no exporter configured: `GET /local/metrics/prometheus` on the
+gamed ops mux from loopback returns `404` and an empty body. Example after
+`SetPrometheusExporter` accepts `http://127.0.0.1:9090/metrics` on that same
+mounted document:
 
 ```text
 # TYPE metin2_ops_local_requests_total counter
@@ -268,8 +277,8 @@ Rules:
    syslog framing, and never stores the line anywhere else.
 5. This slice does **not** change `authd` or `gamed` startup. Both daemons
    keep `NewServiceLogger(..., os.Stdout)`. Operators cannot turn the sink on
-   from the process environment in this slice. Prometheus text, OpenTelemetry
-   export, and SIEM sinks stay out.
+   from the process environment in this slice. OpenTelemetry export and SIEM
+   sinks stay out.
 
 Example safe line, identical on stdout and on the loopback copy:
 
@@ -285,7 +294,7 @@ Example safe trace shape with no exporter configured:
 
 ## What this is not yet
 
-- mounting `/local/metrics/prometheus` on the daemon ops mux (library only; disabled until a loopback exporter is set)
+- choosing the Prometheus exporter at `gamed` startup (the text path is mounted and stays fail-closed until a loopback exporter is set in code)
 - shipping OpenTelemetry spans off the host (in-memory loopback spans only)
 - turning the loopback UDP log sink on from `authd` / `gamed` startup (library only; missing sink config stays on local stdout)
 - SIEM sinks, syslog framing, or any non-loopback log destination

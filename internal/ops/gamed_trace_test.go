@@ -75,8 +75,8 @@ func TestGamedOpsMuxMountsLocalTrace(t *testing.T) {
 	}
 
 	status, prom := getLocal(handler, "/local/metrics/prometheus")
-	if status != http.StatusNotFound || prom != "" && strings.Contains(prom, "metin2_ops") {
-		t.Fatalf("prometheus mount status = %d body %q", status, prom)
+	if status != http.StatusNotFound || prom != "" {
+		t.Fatalf("unset exporter prometheus = %d %q, want 404 empty", status, prom)
 	}
 
 	status, forbidden := getLocalRaw(handler, "/local/trace", "")

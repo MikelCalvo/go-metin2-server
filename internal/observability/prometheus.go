@@ -10,8 +10,9 @@ import (
 // LocalPrometheusPath is the loopback-only Prometheus text exposition that
 // sits beside GET /local/metrics.
 //
-// It is not mounted on authd or gamed. Operators cannot curl it on a running
-// daemon until a later slice registers Handler on the ops mux. It is not an
+// The gamed ops mux registers PrometheusHandler here. authd does not. The
+// mount does not call SetPrometheusExporter, so a running daemon stays
+// fail-closed until a caller sets a loopback exporter. It is not an
 // OpenTelemetry exporter, not remote log shipping, and not a remote admin
 // surface. With no loopback exporter configured, Handler refuses the document.
 const LocalPrometheusPath = "/local/metrics/prometheus"

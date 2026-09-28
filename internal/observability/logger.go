@@ -64,9 +64,10 @@ func normalizeAttrKey(key string) string {
 // beside daemon JSON logging and metadata-only /local/* access logs.
 //
 // It is not a Prometheus exporter, not an OpenTelemetry endpoint, and not a
-// remote admin surface. Daemons do not register it until a later slice mounts
-// Handler on the ops mux. Loopback trace spans live on OpsTrace
-// (LocalTracePath), not here.
+// remote admin surface. The gamed ops mux registers this JSON document.
+// Prometheus text lives at LocalPrometheusPath on the same counters, and
+// stays fail-closed until a loopback exporter is set. Loopback trace spans
+// live on OpsTrace (LocalTracePath), not here.
 const LocalMetricsPath = "/local/metrics"
 
 const maxMetricsPathLen = 128

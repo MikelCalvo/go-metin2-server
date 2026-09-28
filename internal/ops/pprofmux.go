@@ -6160,7 +6160,7 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 		})
 	}
 
-	return mountGamedLocalTrace(mountGamedLocalMetrics(mux, serviceName), serviceName)
+	return mountGamedLocalPrometheus(mountGamedLocalTrace(mountGamedLocalMetrics(mux, serviceName), serviceName), serviceName)
 }
 
 // mountGamedLocalMetrics registers the already-owned loopback JSON
@@ -6168,10 +6168,11 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 //
 // authd and every other service name are unchanged, so /local/metrics stays
 // unregistered there. The document is observability.OpsMetrics: metadata-only
-// counters, no Prometheus text, no OpenTelemetry export, and no remote log
-// shipping. /healthz and /debug/pprof/* are not counted. Request bodies are
-// never read. The returned mux is the same pointer, so later RegisterLocal*
-// calls keep working.
+// counters. Prometheus text is a separate mount on the same counters and is
+// not this JSON document. OpenTelemetry export and remote log shipping stay
+// off. /healthz and /debug/pprof/* are not counted. Request bodies are never
+// read. The returned mux is the same pointer, so later RegisterLocal* calls
+// keep working.
 func mountGamedLocalMetrics(mux *http.ServeMux, serviceName string) *http.ServeMux {
 	if mux == nil || serviceName != "gamed" {
 		return mux
@@ -6187,10 +6188,10 @@ func mountGamedLocalMetrics(mux *http.ServeMux, serviceName string) *http.ServeM
 //
 // authd and every other service name stay unregistered. The document is
 // observability.OpsTrace: in-memory spans only. Missing exporter config
-// stays fail-closed and this mount never dials. Prometheus text, remote
-// span export, and remote admin stay off. /healthz and /debug/pprof/* are
-// not traced. Request bodies are never read. The returned mux is the same
-// pointer, so later RegisterLocal* calls keep working.
+// stays fail-closed and this mount never dials. Remote span export and
+// remote admin stay off. /healthz and /debug/pprof/* are not traced.
+// Request bodies are never read. The returned mux is the same pointer, so
+// later RegisterLocal* calls keep working.
 func mountGamedLocalTrace(mux *http.ServeMux, serviceName string) *http.ServeMux {
 	if mux == nil || serviceName != "gamed" {
 		return mux
@@ -6198,6 +6199,28 @@ func mountGamedLocalTrace(mux *http.ServeMux, serviceName string) *http.ServeMux
 	trace := observability.NewOpsTrace()
 	trace.SetService("gamed")
 	mux.Handle(observability.LocalTracePath, observability.MountLocalTrace(trace))
+	return mux
+}
+
+// mountGamedLocalPrometheus registers the already-owned loopback Prometheus
+// text handler at /local/metrics/prometheus on the same gamed ops mux.
+//
+// The handler is the one already owned by OpsMetrics.PrometheusHandler. This
+// mount does not call SetPrometheusExporter, so missing config stays
+// fail-closed (404, empty body). It does not replace JSON /local/metrics.
+// authd and every other service name stay unregistered. The mount never
+// dials, never reads a body, and never echoes a query string. OpenTelemetry
+// export, remote log shipping, and remote admin stay off. /healthz and
+// /debug/pprof/* stay quiet. The returned mux is the same pointer.
+func mountGamedLocalPrometheus(mux *http.ServeMux, serviceName string) *http.ServeMux {
+	if mux == nil || serviceName != "gamed" {
+		return mux
+	}
+	metrics := observability.MountedOpsMetrics(mux)
+	if metrics == nil {
+		return mux
+	}
+	mux.Handle(observability.LocalPrometheusPath, observability.MountLocalPrometheus(metrics))
 	return mux
 }
 
