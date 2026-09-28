@@ -89,6 +89,12 @@ Rules:
 3. Query strings are never logged (so `?token=...` cannot leak through this seam).
 4. Nil process loggers remain a passthrough; custom `RunWithOpsHandler` muxes still
    inherit the wrapper when a logger is supplied.
+5. Missing sampler config keeps one line per `/local/*` request. A positive
+   `SetAccessLogSampler` interval is opt-in and disabled by default: the first
+   line is kept and later lines inside that window are dropped. Dropped lines
+   do not skip the request, the `/local/metrics` count, or the in-memory span.
+   The interval itself is never written into the line. Daemons do not set a
+   sampler at startup in this slice.
 
 Example safe access line shape:
 
@@ -285,7 +291,8 @@ Example safe trace shape with no exporter configured:
 - SIEM sinks, syslog framing, or any non-loopback log destination
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging
-- log sampling / rate limits
+- turning the access-line sampler on from `authd` / `gamed` startup (library only; missing sampler config stays on the current every-request line)
+- probabilistic sampling, per-path budgets, or writing the sampler interval into the access line
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication or token auth
 - packaging that installs enabled `newsyslog` / `logrotate` entries by default

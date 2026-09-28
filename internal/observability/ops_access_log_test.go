@@ -2,6 +2,7 @@ package observability
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -187,4 +188,174 @@ func TestWrapOpsAccessLogRecordsMountedLocalMetrics(t *testing.T) {
 	if snap.LocalErrorsTotal != 0 {
 		t.Fatalf("errors = %d, want 0", snap.LocalErrorsTotal)
 	}
+}
+
+func TestAccessLogSamplerMissingConfigKeepsEveryRequestLine(t *testing.T) {
+	SetAccessLogSampler(nil)
+	t.Cleanup(func() { SetAccessLogSampler(nil) })
+	if AccessLogSamplerConfigured() {
+		t.Fatal("missing sampler config was treated as enabled")
+	}
+	if (AccessLogSampler{}).Configured() || (AccessLogSampler{Every: 0}).Configured() || (AccessLogSampler{Every: -time.Second}).Configured() {
+		t.Fatal("non-positive interval was treated as configured")
+	}
+
+	var buf bytes.Buffer
+	logger := NewServiceLogger("gamed", &buf)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := WrapOpsAccessLog(logger, next)
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/local/build-info?token=should-not-log", strings.NewReader("secret-body"))
+		req.RemoteAddr = "127.0.0.1:9"
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	lines := accessLogLines(t, buf.Bytes())
+	if len(lines) != 3 {
+		t.Fatalf("lines = %d, want 3 with sampler unset", len(lines))
+	}
+	if strings.Contains(buf.String(), "token=") || strings.Contains(buf.String(), "secret-body") || strings.Contains(buf.String(), "should-not-log") {
+		t.Fatalf("access log leaked request detail: %s", buf.String())
+	}
+
+	SetAccessLogSampler(&AccessLogSampler{Every: 0})
+	if AccessLogSamplerConfigured() {
+		t.Fatal("zero interval enabled the sampler")
+	}
+}
+
+func TestAccessLogSamplerDropsLinesInsideInterval(t *testing.T) {
+	SetAccessLogSampler(&AccessLogSampler{Every: time.Hour})
+	t.Cleanup(func() { SetAccessLogSampler(nil) })
+	if !AccessLogSamplerConfigured() {
+		t.Fatal("positive interval did not enable the sampler")
+	}
+
+	var buf bytes.Buffer
+	logger := NewServiceLogger("gamed", &buf)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	})
+	handler := WrapOpsAccessLog(logger, next)
+	for i := 0; i < 4; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/local/notice?token=should-not-log", strings.NewReader("secret-body"))
+		req.RemoteAddr = "127.0.0.1:9"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated || rec.Body.String() != `{"ok":true}` {
+			t.Fatalf("handler changed under sampler: status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	}
+	lines := accessLogLines(t, buf.Bytes())
+	if len(lines) != 1 {
+		t.Fatalf("lines = %d, want 1 inside the interval", len(lines))
+	}
+	if got := lines[0]["path"]; got != "/local/notice" {
+		t.Fatalf("path = %v, want /local/notice", got)
+	}
+	if strings.Contains(buf.String(), "token=") || strings.Contains(buf.String(), "secret-body") || strings.Contains(buf.String(), "Every") {
+		t.Fatalf("sampled line leaked request or config: %s", buf.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	req = httptest.NewRequest(http.MethodGet, "/debug/pprof/heap", nil)
+	req.RemoteAddr = "127.0.0.1:1"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	if got := len(accessLogLines(t, buf.Bytes())); got != 1 {
+		t.Fatalf("quiet paths emitted a line: %d", got)
+	}
+}
+
+func TestAccessLogSamplerAllowsALineAfterTheInterval(t *testing.T) {
+	SetAccessLogSampler(&AccessLogSampler{Every: 20 * time.Millisecond})
+	t.Cleanup(func() { SetAccessLogSampler(nil) })
+
+	var buf bytes.Buffer
+	logger := NewServiceLogger("gamed", &buf)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := WrapOpsAccessLog(logger, next)
+	hit := func() {
+		req := httptest.NewRequest(http.MethodGet, "/local/build-info", nil)
+		req.RemoteAddr = "127.0.0.1:9"
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	hit()
+	hit()
+	if got := len(accessLogLines(t, buf.Bytes())); got != 1 {
+		t.Fatalf("lines before wait = %d, want 1", got)
+	}
+	time.Sleep(30 * time.Millisecond)
+	hit()
+	if got := len(accessLogLines(t, buf.Bytes())); got != 2 {
+		t.Fatalf("lines after interval = %d, want 2", got)
+	}
+}
+
+func TestAccessLogSamplerKeepsMetricsAndTraceOnDroppedLines(t *testing.T) {
+	SetAccessLogSampler(&AccessLogSampler{Every: time.Hour})
+	t.Cleanup(func() { SetAccessLogSampler(nil) })
+
+	metrics := NewOpsMetrics()
+	metrics.SetService("gamed")
+	trace := NewOpsTrace()
+	trace.SetService("gamed")
+	mux := http.NewServeMux()
+	mux.HandleFunc("/local/build-info", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.Handle(LocalMetricsPath, MountLocalMetrics(metrics))
+	mux.Handle(LocalTracePath, MountLocalTrace(trace))
+
+	var buf bytes.Buffer
+	handler := WrapOpsAccessLog(NewServiceLogger("gamed", &buf), mux)
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/local/build-info?token=should-not-log", strings.NewReader("secret-body"))
+		req.RemoteAddr = "127.0.0.1:9"
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req.RemoteAddr = "127.0.0.1:9"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got := len(accessLogLines(t, buf.Bytes())); got != 1 {
+		t.Fatalf("lines = %d, want 1", got)
+	}
+	snap := metrics.Snapshot()
+	if snap.LocalRequestsTotal != 3 || snap.LocalRequestsByPath["/local/build-info"] != 3 {
+		t.Fatalf("metrics snapshot = %+v, want 3 build-info counts", snap)
+	}
+	doc := trace.Snapshot()
+	if doc.SpanCount != 3 {
+		t.Fatalf("span_count = %d, want 3", doc.SpanCount)
+	}
+	if strings.Contains(buf.String(), "token=") || strings.Contains(buf.String(), "secret-body") {
+		t.Fatalf("sampled line leaked request detail: %s", buf.String())
+	}
+}
+
+func accessLogLines(t *testing.T, raw []byte) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	for _, line := range bytes.Split(bytes.TrimSpace(raw), []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatalf("decode access line: %v\n%s", err, line)
+		}
+		if record["msg"] == "ops local request" {
+			lines = append(lines, record)
+		}
+	}
+	return lines
 }
