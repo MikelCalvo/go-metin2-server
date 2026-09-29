@@ -30,9 +30,10 @@ const (
 var errInvalidMigrationRunRetentionInput = errors.New("invalid migration-run-retention input")
 
 type migrationRunBuildInfo struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"build_date"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	BuildDate     string `json:"build_date"`
+	WorkflowRunID string `json:"workflow_run_id"`
 }
 
 type migrationRunRetentionPlan struct {

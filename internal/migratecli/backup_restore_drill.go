@@ -55,9 +55,10 @@ type backupRestoreDatabaseConfig struct {
 }
 
 type backupRestoreBuildInfo struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"build_date"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	BuildDate     string `json:"build_date"`
+	WorkflowRunID string `json:"workflow_run_id"`
 }
 
 type backupRestoreDrillPlan struct {

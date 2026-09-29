@@ -10,6 +10,7 @@ Freeze the first production-ops release-identity contract so operators can tell 
    - `Version`
    - `Commit`
    - `BuildDate`
+   - `WorkflowRunID`
 2. `buildinfo.Current()` returns that metadata-only snapshot.
 3. Shared ops mux registers loopback-only `GET /local/build-info` for both `authd` and `gamed` by default.
 4. `metin2-migrate version` / `metin2-migrate --version` print the same JSON shape.
@@ -28,7 +29,8 @@ Freeze the first production-ops release-identity contract so operators can tell 
    - `com.github.actions.run_id` = `${GITHUB_RUN_ID}`
    - `com.github.actions.run_attempt` = `${GITHUB_RUN_ATTEMPT}`
 
-   CI passes the Actions workflow-run env into those build-args and asserts the five labels after each image build. It does not print or install the provenance note. `Makefile` `docker-build*` forwards the same optional env when present. These labels are image metadata only; they never expand `buildinfo` JSON.
+   CI passes the Actions workflow-run env into those build-args and asserts the five labels after each image build. It does not print or install the provenance note. `Makefile` `docker-build*` forwards the same optional env when present.
+8. Process build-info JSON has one matching metadata-only field, `workflow_run_id`, sourced only from the package-level `WorkflowRunID` stamp. The default is the empty string, so an unstamped or locally built binary does not infer a run id from the environment at runtime. The existing image labels remain unchanged and `workflow_run_attempt` stays image/provenance metadata only.
 
 Response / CLI JSON fields:
 
@@ -36,11 +38,12 @@ Response / CLI JSON fields:
 {
   "version": "v0.1.0",
   "commit": "abcdef012345",
-  "build_date": "2026-08-19T12:00:00Z"
+  "build_date": "2026-08-19T12:00:00Z",
+  "workflow_run_id": "9876543210"
 }
 ```
 
-Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown`).
+Unstamped `go run` / plain `go build` binaries keep the package defaults (`dev` / `none` / `unknown` / empty `workflow_run_id`). Existing build entry points outside this package do not yet stamp the new field; until a later build-wiring slice owns that change, their JSON also reports an empty run id.
 
 ## Operator checks
 
@@ -107,7 +110,7 @@ BUILD_TYPE=https://github.com/MikelCalvo/go-metin2-server/docker/runtime \
   '
 ```
 
-Use `SUBJECT=go-metin2-server:debug-ci` and `BUILD_TYPE=https://github.com/MikelCalvo/go-metin2-server/docker/runtime-debug` for the debug target. `revision` is the same 12-character value as `org.opencontainers.image.revision`. Empty `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` are expected for a non-CI local build. Process `/local/build-info` and `metin2-migrate version` stay metadata-only and do not gain a workflow-run field here.
+Use `SUBJECT=go-metin2-server:debug-ci` and `BUILD_TYPE=https://github.com/MikelCalvo/go-metin2-server/docker/runtime-debug` for the debug target. `revision` is the same 12-character value as `org.opencontainers.image.revision`. Empty `GITHUB_RUN_ID` / `GITHUB_RUN_ATTEMPT` are expected for a non-CI local build. Process `/local/build-info` and `metin2-migrate version` stay metadata-only; their `workflow_run_id` value comes only from the build stamp described above.
 
 ## What this is not yet
 
@@ -116,7 +119,8 @@ This is not:
 - GitHub Releases / signed artifacts
 - a SemVer tagging automation bot
 - an SBOM generator, a signer, or a verifier (the print-only provenance note above is unsigned and refused when explicitly enabled)
-- expanding `buildinfo` JSON with workflow-run IDs (image `LABEL` metadata only)
+- adding `workflow_run_attempt` or other Actions context to process build-info JSON
+- wiring Makefile, public CI, or Docker binary builds to stamp `WorkflowRunID` (the field remains empty until a build-wiring slice owns those files)
 - multi-host / orchestrated deployment automation
 - metrics exporters or distributed tracing
 - a remote version API

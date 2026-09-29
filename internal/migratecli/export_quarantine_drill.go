@@ -27,9 +27,10 @@ const (
 var errInvalidExportQuarantineDrillInput = errors.New("invalid export-quarantine-drill input")
 
 type exportQuarantineDrillBuildInfo struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"build_date"`
+	Version       string `json:"version"`
+	Commit        string `json:"commit"`
+	BuildDate     string `json:"build_date"`
+	WorkflowRunID string `json:"workflow_run_id"`
 }
 
 type exportQuarantineDrillKind struct {
