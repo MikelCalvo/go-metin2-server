@@ -409,6 +409,7 @@ Expected result:
 ### 4.5.10 Merchant buy/sell template restrictions (`SHOP BUY` / `SHOP SELL2`)
 
 - [ ] Open a known bootstrap merchant window with a disposable QA character
+- [ ] If an authored multi-tab merchant fixture is loaded, interact with that NPC and confirm one self-only `GC::SHOP START_EX` carries the NPC VID plus the authored tab names and rows; the first owned form accepts only gold `coin_type = 0`, and a packet `SHOP BUY` attempt on that tabbed window must remain no-frame/no-mutation until tab addressing is frozen
 - [ ] Attempt to buy a catalog item whose authored template requires a higher `min_level` than the selected character has; if possible, author a non-empty `buy_reject_message` on that restricted template too
 - [ ] Attempt to sell a carried item whose authored template requires a higher `min_level` than the selected character has; if possible, author a non-empty `sell_reject_message` on that restricted template too
 - [ ] Repeat with an empire anti-flag (`anti_empire_a` / `anti_empire_b` / `anti_empire_c`) that matches the selected character's empire for both packet `SHOP BUY` and `SHOP SELL2`; include one of those fixtures with non-empty `buy_reject_message` / `sell_reject_message`
@@ -419,6 +420,7 @@ Expected result:
 - [ ] If QA data allows it, sell a carried stack whose authored template has non-zero `shop_sell_price` and confirm the visible gold credit is exactly `shop_sell_price * sold_count`
 
 Expected result:
+- flat `shop_preview.catalog` merchants still open with `GC::SHOP START`; authored `shop_preview.tabs` merchants open with `GC::SHOP START_EX`, while unsupported secondary-coin authoring is rejected before runtime and player-shop browse remains on its existing `START` path
 - restricted packet paths fail with the current merchant invalid-position companion and no inventory, item quickslot, gold, or persisted account mutation is visible; `anti_sell` additionally shows the authored `sell_reject_message` as self-only info chat when present, otherwise the deterministic merchant-refusal fallback text; `anti_get`, `anti_drop`, `anti_give`, and `anti_stack` sell-back guards show authored `sell_reject_message` when present and otherwise stay on the bare invalid-position companion; selected-character job/sex/empire/`min_level` buy/sell restrictions show authored `buy_reject_message` / `sell_reject_message` when present and otherwise stay on the bare invalid-position companion
 - adjacent allowed merchant buy/sell cases still use the template-authored price/sell-credit behavior; non-zero `shop_sell_price` is the current explicit per-unit sell credit, appears in content-bundle summary item/catalog/reward rows when authored, and omitted/zero values preserve the older derived sell-credit fallback
 - authored interaction text/title fields reject embedded NUL bytes at operator decode / content-bundle validation / runtime startup, so they cannot reach client chat, merchant-window titles, or compact preview strings as truncated content

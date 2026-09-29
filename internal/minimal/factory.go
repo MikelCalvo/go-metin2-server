@@ -6606,8 +6606,11 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 			}
 			return true, nil
 		}
+		activeMerchantTransactionsSupported := func() bool {
+			return len(activeMerchantBuy.Definition.Tabs) == 0
+		}
 		executeActiveMerchantBuy := func(selectedPlayer *player.Runtime, catalogSlot uint16, packetShopFrames bool) ([][]byte, bool) {
-			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 || !activeMerchantTransactionsSupported() {
 				return nil, false
 			}
 			if ok, frames := activeMerchantBuyContextStillValid(packetShopFrames); !ok {
@@ -6662,7 +6665,7 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 			return frames, true
 		}
 		executeActiveMerchantSell := func(selectedPlayer *player.Runtime, slot inventory.SlotIndex, count uint16, explicitCount bool, packetShopFrames bool) ([][]byte, bool) {
-			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 {
+			if selectedPlayer == nil || selectedPlayerAtBootstrapHPFloor(selectedPlayer) || !hasActiveMerchantBuy || activeMerchantBuy.Definition.Kind != interactionstore.KindShopPreview || activeMerchantBuy.TargetVID == 0 || !activeMerchantTransactionsSupported() {
 				return nil, false
 			}
 			if exchangeDisplaysCarriedSlot(slot) {
@@ -10371,7 +10374,7 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 						return gameflow.InteractionResult{Accepted: false}
 					}
 					if resolution.Definition.Kind == interactionstore.KindShopPreview {
-						start, ok := merchantShopStartPacket(uint32(resolution.Actor.EntityID), resolution.Definition, runtime.itemTemplates)
+						start, ok := merchantShopStartFrame(uint32(resolution.Actor.EntityID), resolution.Definition, runtime.itemTemplates)
 						if !ok {
 							clearActiveMerchantBuy()
 							return gameflow.InteractionResult{Accepted: false}
@@ -10382,7 +10385,7 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 							sharedWorld.SetMerchantWindowOpen(sharedWorldID, true)
 						}
 						markInteractionCooldown(packet.TargetVID)
-						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{shopproto.EncodeServerStart(start)}}
+						return gameflow.InteractionResult{Accepted: true, Frames: [][]byte{start}}
 					}
 					markInteractionCooldown(packet.TargetVID)
 					frames := prependMerchantCloseFrame([][]byte{chatproto.EncodeChatDelivery(*resolution.Delivery)})
@@ -13906,22 +13909,64 @@ func merchantBuyFailureFrames(failure player.MerchantBuyFailure, packetFailureFr
 }
 
 func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition, templates map[uint32]itemcatalog.Template) (shopproto.ServerStartPacket, bool) {
-	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview || len(definition.Catalog) == 0 || len(definition.Tabs) != 0 {
 		return shopproto.ServerStartPacket{}, false
 	}
 	packet := shopproto.ServerStartPacket{OwnerVID: ownerVID}
-	for _, entry := range definition.Catalog {
+	if !populateMerchantShopItems(&packet.Items, definition.Catalog, templates) {
+		return shopproto.ServerStartPacket{}, false
+	}
+	return packet, true
+}
+
+func merchantShopStartFrame(ownerVID uint32, definition InteractionDefinition, templates map[uint32]itemcatalog.Template) ([]byte, bool) {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+		return nil, false
+	}
+	if len(definition.Tabs) == 0 {
+		packet, ok := merchantShopStartPacket(ownerVID, definition, templates)
+		if !ok {
+			return nil, false
+		}
+		return shopproto.EncodeServerStart(packet), true
+	}
+	packet := shopproto.ServerStartExPacket{OwnerVID: ownerVID, Tabs: make([]shopproto.ShopTab, len(definition.Tabs))}
+	for index, authored := range definition.Tabs {
+		packet.Tabs[index].Name = authored.Name
+		packet.Tabs[index].CoinType = authored.CoinType
+		if !populateMerchantShopItems(&packet.Tabs[index].Items, merchantCatalogForTab(definition.Catalog, uint8(index)), templates) {
+			return nil, false
+		}
+	}
+	return shopproto.EncodeServerStartEx(packet), true
+}
+
+func merchantCatalogForTab(catalog []interactionstore.MerchantCatalogEntry, tab uint8) []interactionstore.MerchantCatalogEntry {
+	entries := make([]interactionstore.MerchantCatalogEntry, 0, len(catalog))
+	for _, entry := range catalog {
+		if entry.Tab == tab {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
+func populateMerchantShopItems(items *[shopproto.ShopHostItemMax]shopproto.ItemEntry, catalog []interactionstore.MerchantCatalogEntry, templates map[uint32]itemcatalog.Template) bool {
+	if items == nil {
+		return false
+	}
+	for _, entry := range catalog {
 		if entry.Slot >= shopproto.ShopHostItemMax {
-			return shopproto.ServerStartPacket{}, false
+			return false
 		}
 		if entry.Price > interactionstore.MerchantCatalogMaxEntryPrice || entry.Count > interactionstore.MerchantCatalogMaxEntryCount {
-			return shopproto.ServerStartPacket{}, false
+			return false
 		}
 		template, ok := templates[entry.ItemVnum]
 		if !ok || !itemcatalog.ValidTemplate(template) {
-			return shopproto.ServerStartPacket{}, false
+			return false
 		}
-		packet.Items[entry.Slot] = shopproto.ItemEntry{
+		items[entry.Slot] = shopproto.ItemEntry{
 			Vnum:       entry.ItemVnum,
 			Price:      uint32(entry.Price),
 			Count:      uint8(entry.Count),
@@ -13930,7 +13975,7 @@ func merchantShopStartPacket(ownerVID uint32, definition InteractionDefinition, 
 			Attributes: bootstrapItemAttributes(template),
 		}
 	}
-	return packet, true
+	return true
 }
 
 func encodeBootstrapInventoryItemFrame(instance inventory.ItemInstance) ([]byte, error) {
@@ -15314,22 +15359,35 @@ func (r *gameRuntime) validateInteractionDefinition(definition interactionstore.
 	if definition.Kind != interactionstore.KindShopPreview {
 		return nil
 	}
-	for _, entry := range definition.Catalog {
-		template, ok := r.itemTemplates[entry.ItemVnum]
-		if !ok {
-			return interactionstore.ErrInvalidSnapshot
-		}
-		if template.Stackable {
-			if entry.Count > template.MaxCount {
+	for _, catalog := range merchantCatalogs(definition) {
+		for _, entry := range catalog {
+			template, ok := r.itemTemplates[entry.ItemVnum]
+			if !ok {
 				return interactionstore.ErrInvalidSnapshot
 			}
-			continue
-		}
-		if entry.Count != 1 {
-			return interactionstore.ErrInvalidSnapshot
+			if template.Stackable {
+				if entry.Count > template.MaxCount {
+					return interactionstore.ErrInvalidSnapshot
+				}
+				continue
+			}
+			if entry.Count != 1 {
+				return interactionstore.ErrInvalidSnapshot
+			}
 		}
 	}
 	return nil
+}
+
+func merchantCatalogs(definition interactionstore.Definition) [][]interactionstore.MerchantCatalogEntry {
+	if len(definition.Tabs) == 0 {
+		return [][]interactionstore.MerchantCatalogEntry{definition.Catalog}
+	}
+	catalogs := make([][]interactionstore.MerchantCatalogEntry, len(definition.Tabs))
+	for index := range definition.Tabs {
+		catalogs[index] = merchantCatalogForTab(definition.Catalog, uint8(index))
+	}
+	return catalogs
 }
 
 func interactionDefinitionKey(kind string, ref string) string {
@@ -16935,13 +16993,20 @@ func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefini
 	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
 		return "", false
 	}
-	entries := make([]string, 0, len(definition.Catalog))
-	for _, entry := range definition.Catalog {
-		template, ok := r.itemTemplates[entry.ItemVnum]
-		if !ok {
-			return "", false
+	entryCount := len(definition.Catalog)
+	entries := make([]string, 0, entryCount)
+	for tabIndex, catalog := range merchantCatalogs(definition) {
+		prefix := ""
+		if len(definition.Tabs) != 0 {
+			prefix = definition.Tabs[tabIndex].Name + " "
 		}
-		entries = append(entries, fmt.Sprintf("[%d] %s x%d @ %dg", entry.Slot, template.Name, entry.Count, entry.Price))
+		for _, entry := range catalog {
+			template, ok := r.itemTemplates[entry.ItemVnum]
+			if !ok {
+				return "", false
+			}
+			entries = append(entries, fmt.Sprintf("%s[%d] %s x%d @ %dg", prefix, entry.Slot, template.Name, entry.Count, entry.Price))
+		}
 	}
 	if len(entries) == 0 {
 		return "", false
@@ -16950,7 +17015,7 @@ func (r *gameRuntime) shopPreviewInteractionPreview(definition InteractionDefini
 }
 
 func merchantCatalogEntryBySlot(definition InteractionDefinition, slot uint16) (interactionstore.MerchantCatalogEntry, bool) {
-	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview {
+	if !interactionstore.ValidDefinition(definition) || definition.Kind != interactionstore.KindShopPreview || len(definition.Tabs) != 0 {
 		return interactionstore.MerchantCatalogEntry{}, false
 	}
 	for _, entry := range definition.Catalog {

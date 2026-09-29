@@ -29,7 +29,7 @@ This first transaction contract applies only to:
 This slice does **not** yet apply to:
 - personal-shop runtime / accepted `MYSHOP` open mutation (codec shape is owned separately; see Owned `CG::MYSHOP` codec seam)
 - safebox / mall / storage
-- multi-tab or drag-drop basket semantics
+- multi-tab transaction addressing or drag-drop basket semantics; a later narrow seam below now owns presentation-only `START_EX` for authored gold tabs
 - quest-scripted merchant branching
 - stock depletion, restock timers, or shared merchant state
 
@@ -280,10 +280,17 @@ The legacy-compatible extended shop open packet is now frozen at the codec level
 - each tab record is `name[32]`, `coin_type uint8`, and `40` normal shop item entries
 - each item entry uses the same layout as the existing `START` and `UPDATE_ITEM` item entries
 
-This is still runtime-gated:
-- the bootstrap NPC `BUY`, `SELL`, and `SELL2` runtime paths do not emit `START_EX`
-- multi-tab and secondary-coin shop behavior remains a later dedicated slice
-- this slice only gives later extended-shop work an exact encoded/decoded packet shape to build on
+The first runtime presentation seam is now owned for authored NPC `shop_preview` definitions:
+- the existing flat `catalog` form remains unchanged and emits `GC::SHOP START`
+- an authored `tabs` collection contains `1..255` ordered tab records; each tab carries a non-empty UTF-8 `name` of at most `32` wire bytes and `coin_type`, while the existing `catalog` entries select their zero-based tab with `tab` (omitted/zero preserves the flat-catalog form) and keep zero-based per-tab `slot`
+- this first GREEN accepts only `coin_type = 0` (`gold`) on every tab; any secondary-coin value fails content validation rather than inventing debit semantics
+- opening a visible authored tabbed merchant through the existing `INTERACT` path emits one self-only `GC::SHOP START_EX` with the actor VID and the authored tabs/items, including the already-owned item-template socket/attribute projection
+- the active merchant presentation may still close through the already-owned `GC::SHOP END` lifecycle paths
+
+Transaction behavior remains deliberately narrower than presentation:
+- client `BUY` addressing is still only frozen for the flat catalog, so `BUY` against an authored multi-tab window stays fail-closed with no mutation or result frame until a dedicated tab-addressing capture owns it
+- `SELL` / `SELL2` are likewise not widened by this presentation seam
+- secondary-coin purchase/debit, `NOT_ENOUGH_MONEY_EX`, tax/empire multipliers, mall checkout, and player-shop `START_EX` remain out of scope
 
 ### Frozen `GC::SHOP UPDATE_ITEM` codec seam
 
@@ -517,13 +524,12 @@ The first repository-owned carried placement contract now lives beside this docu
 
 The following are still intentionally unknown and must be captured or pinned by RED tests before broader implementation claims:
 - the final semantic meaning of the first trailing byte in client `SHOP BUY`
-- whether later compatibility work must switch from the currently planned `GC::SHOP START` path to `GC::SHOP START_EX`
 - whether later compatibility work must widen the current owned buy success burst (`ITEM_SET` / `ITEM_UPDATE` refreshes only, with no extra bare `GC::SHOP OK`) by emitting the now-owned `UPDATE_ITEM` codec, `UPDATE_PRICE`, or both to keep the client UI fully stable
 - whether explicit `GC::SHOP END` is mandatory on every close path while the socket remains alive in `GAME`
 - whether multi-tab addressing changes the future meaning of `catalog_slot`
 
-These unknowns are the implementation gate.
-The repository should not pretend they are solved before tests or captures prove them.
+The flat-vs-extended open question is resolved only for authored NPC presentation: flat catalogs keep `START`, while tabbed catalogs use `START_EX`. Multi-tab `BUY` addressing remains the implementation gate.
+The repository should not pretend the remaining unknowns are solved before tests or captures prove them.
 
 ## Bootstrap sell-back packet/runtime seam
 
@@ -573,7 +579,7 @@ This slice does **not** yet freeze:
 - personal-shop (`MYSHOP`) runtime open/close/browse/buy behavior beyond the owned codec shape
 - merchant stock depletion
 - merchant refresh timers
-- multi-tab cash/coin shops
+- secondary-coin purchase/debit and multi-tab `BUY` addressing beyond the owned gold-tab `START_EX` presentation
 - safebox, mall, or storage integration
 - quest-driven merchant dialogs or special-case shop scripts
 
