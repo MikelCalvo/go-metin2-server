@@ -143,6 +143,11 @@ Rules frozen by tests:
   - partial, malformed, or unavailable configured drivers fail startup validation,
   - configured status reads through `database/sql` but does not bundle or select a real driver dependency yet, so stock builds without a linked driver must keep DB preflight disabled,
   - `/local/runtime-config` reports only `database.configured`, `database.driver`, and `database.dsn_configured`; it never exposes the DSN value.
+- `internal/ops.MigrationStatusPool` is the first opt-in reusable `database/sql` pool beside that read-only status preflight:
+  - an empty DSN disables the pool and `Plan` stays on the embedded empty-ledger path without opening a driver,
+  - a non-empty DSN requires an explicit driver plus caller-owned `max_open_connections`, `max_idle_connections`, `connection_max_idle_time`, and `connection_max_lifetime` limits,
+  - repeated `Plan` calls reuse one long-lived `*sql.DB`; the owner must call `Close`,
+  - opening the pool does not ping the target, apply migrations, register a driver, expose the DSN, or select it for any live store.
 - production DB configuration, backup, and rollback policy is now frozen for the operator-managed CLI apply target beside already-owned linked-driver discovery. This is not a live FileStore-to-SQL cutover:
   - stock `gamed` / `authd` / `metin2-migrate` keep `drivers: []`; operators prove that with `metin2-migrate drivers --require-empty-stock-release`; lab SQL stays `//go:build sqlite_harness` (`sqlite` via `modernc.org/sqlite`);
   - daemon preflight still uses optional `METIN2_DB_DRIVER` / `METIN2_GAMED_DB_DRIVER` and `METIN2_DB_DSN` / `METIN2_GAMED_DB_DSN` (both empty disables preflight; partial values fail closed; `/local/runtime-config` never exposes the DSN);
@@ -246,7 +251,7 @@ The eleventh migration is `0011_character_point_state`. It freezes the first sch
 This is not a database runtime implementation. It deliberately does not add:
 
 - a DB driver dependency or default production DB engine,
-- DB connection pool ownership beyond the read-only migration-status preflight,
+- daemon-startup pool ownership or DB connection-pool use outside the explicit read-only `MigrationStatusPool`,
 - production migration CLI/ops apply or rollback commands,
 - account/character/item repository implementations or DB-backed runtime writes (opt-in `accountstore.SQLItemStateStore` Load/Save against already-owned tip-`0003` + additive `0024`/`0027` is the first inventory/equipment exception, and opt-in `accountstore.SQLPointStateStore` Load/Save against already-owned tip-`0011` is the first point-vector exception; FileStore remains stock rematerialize and this package still selects no production driver),
 - JSON snapshot import/backfill execution tooling,
