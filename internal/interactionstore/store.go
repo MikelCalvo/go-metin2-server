@@ -20,6 +20,15 @@ const (
 
 	MerchantCatalogMaxEntryPrice uint64 = 1<<32 - 1
 	MerchantCatalogMaxEntryCount uint16 = 1<<8 - 1
+	// ShopPreviewTabNameMax and ShopPreviewTabMax mirror the frozen
+	// GC::SHOP START_EX tab carriers. Omitted Tabs keeps the owned flat START
+	// catalog; authored Tabs selects START_EX.
+	ShopPreviewTabNameMax = 32
+	ShopPreviewTabMax     = 255
+	// ShopCoinTypeGold is the only transaction policy owned by this slice.
+	// Other wire values remain reserved until a dedicated secondary-coin
+	// transaction contract owns their debit semantics.
+	ShopCoinTypeGold uint8 = 0
 	// OpenSafeboxSizeMin / OpenSafeboxSizeMax mirror the bootstrap /open_safebox
 	// page-count range. Authored size 0 means "default to 1" at runtime.
 	OpenSafeboxSizeMin uint8 = 1
@@ -54,10 +63,21 @@ var (
 )
 
 type MerchantCatalogEntry struct {
+	Tab      uint8  `json:"tab,omitempty"`
 	Slot     uint16 `json:"slot"`
 	ItemVnum uint32 `json:"item_vnum"`
 	Price    uint64 `json:"price"`
 	Count    uint16 `json:"count"`
+}
+
+// MerchantCatalogTab authors one START_EX tab. Catalog entries select a tab by
+// zero-based Tab and retain the existing zero-based per-tab Slot addressing.
+// This slice only accepts the ordinary gold coin type so BUY/SELL/SELL2 keep
+// their already-owned currency behavior; secondary-coin transactions remain
+// fail-closed.
+type MerchantCatalogTab struct {
+	Name     string `json:"name"`
+	CoinType uint8  `json:"coin_type"`
 }
 
 // RewardItemEntry is one carried-inventory grant authored on a quest_flag turn-in.
@@ -72,6 +92,7 @@ type Definition struct {
 	Text              string                 `json:"text,omitempty"`
 	Title             string                 `json:"title,omitempty"`
 	Catalog           []MerchantCatalogEntry `json:"catalog,omitempty"`
+	Tabs              []MerchantCatalogTab   `json:"tabs,omitempty"`
 	MapIndex          uint32                 `json:"map_index,omitempty"`
 	X                 int32                  `json:"x,omitempty"`
 	Y                 int32                  `json:"y,omitempty"`
@@ -132,8 +153,15 @@ func normalizeDefinition(definition Definition) Definition {
 	definition.QuestFlag = strings.TrimSpace(definition.QuestFlag)
 	definition.Catalog = cloneCatalog(definition.Catalog)
 	sort.Slice(definition.Catalog, func(i int, j int) bool {
-		return definition.Catalog[i].Slot < definition.Catalog[j].Slot
+		if definition.Catalog[i].Tab == definition.Catalog[j].Tab {
+			return definition.Catalog[i].Slot < definition.Catalog[j].Slot
+		}
+		return definition.Catalog[i].Tab < definition.Catalog[j].Tab
 	})
+	definition.Tabs = cloneCatalogTabs(definition.Tabs)
+	for i := range definition.Tabs {
+		definition.Tabs[i].Name = strings.TrimSpace(definition.Tabs[i].Name)
+	}
 	definition.RewardItems = cloneRewardItems(definition.RewardItems)
 	definition.ConsumeItems = cloneRewardItems(definition.ConsumeItems)
 	hasScalar := definition.RewardItemVnum != 0 || definition.RewardItemCount != 0
@@ -225,22 +253,25 @@ func validDefinition(definition Definition) bool {
 	}
 	switch definition.Kind {
 	case KindInfo, KindTalk:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && len(definition.Tabs) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindShopPreview:
 		if definition.Title == "" || !validDefinitionText(definition.Title) || definition.Text != "" || definition.MapIndex != 0 || definition.X != 0 || definition.Y != 0 || definition.Size != 0 || definition.RewardExperience != 0 || definition.RewardGold != 0 || definition.ConsumeGold != 0 || definition.ConsumeExperience != 0 || hasRewardItems(definition) || hasConsumeItems(definition) || !validOptionalServiceQuestGate(definition) {
 			return false
 		}
-		return validMerchantCatalog(definition.Catalog)
+		if len(definition.Tabs) == 0 {
+			return validMerchantCatalog(definition.Catalog)
+		}
+		return validMerchantCatalogTabs(definition.Tabs, definition.Catalog)
 	case KindWarp:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && len(definition.Tabs) == 0 && definition.MapIndex != 0 && definition.X != 0 && definition.Y != 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindOpenSafebox:
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size <= OpenSafeboxSizeMax && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && len(definition.Tabs) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size <= OpenSafeboxSizeMax && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindOpenCube:
 		// open_cube reuses the live actor RaceNum as the cube NPC vnum (oracle
 		// GetRaceNum). Authored size/title/catalog/warp/reward fields stay rejected.
-		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
+		return definition.Title == "" && validDefinitionText(definition.Text) && len(definition.Catalog) == 0 && len(definition.Tabs) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && definition.RewardExperience == 0 && definition.RewardGold == 0 && definition.ConsumeGold == 0 && definition.ConsumeExperience == 0 && !hasRewardItems(definition) && !hasConsumeItems(definition) && validOptionalServiceQuestGate(definition)
 	case KindQuestFlag:
-		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
+		return definition.Text != "" && validDefinitionText(definition.Text) && definition.Title == "" && len(definition.Catalog) == 0 && len(definition.Tabs) == 0 && definition.MapIndex == 0 && definition.X == 0 && definition.Y == 0 && definition.Size == 0 && queststate.ValidQuestRef(definition.QuestRef) && queststate.ValidFlagName(definition.QuestFlag) && definition.QuestFrom != definition.QuestTo && definition.RewardExperience <= QuestFlagRewardExperienceMax && definition.RewardGold <= QuestFlagRewardGoldMax && definition.ConsumeGold <= QuestFlagConsumeGoldMax && definition.ConsumeExperience <= QuestFlagConsumeExperienceMax && validOptionalRewardItems(definition) && validOptionalConsumeItems(definition)
 	default:
 		return false
 	}
@@ -339,10 +370,37 @@ func validMerchantCatalog(catalog []MerchantCatalogEntry) bool {
 		return false
 	}
 	for i, entry := range catalog {
-		if entry.Slot != uint16(i) {
+		if entry.Tab != 0 || entry.Slot != uint16(i) {
 			return false
 		}
 		if entry.ItemVnum == 0 || entry.Price == 0 || entry.Price > MerchantCatalogMaxEntryPrice || entry.Count == 0 || entry.Count > MerchantCatalogMaxEntryCount {
+			return false
+		}
+	}
+	return true
+}
+
+func validMerchantCatalogTabs(tabs []MerchantCatalogTab, catalog []MerchantCatalogEntry) bool {
+	if len(tabs) == 0 || len(tabs) > ShopPreviewTabMax || len(catalog) == 0 || len(catalog) > ShopPreviewTabMax*40 {
+		return false
+	}
+	for _, tab := range tabs {
+		if tab.Name == "" || len([]byte(tab.Name)) > ShopPreviewTabNameMax || !validDefinitionText(tab.Name) || tab.CoinType != ShopCoinTypeGold {
+			return false
+		}
+	}
+	var nextSlots [ShopPreviewTabMax]uint16
+	for _, entry := range catalog {
+		if int(entry.Tab) >= len(tabs) || entry.Slot != nextSlots[entry.Tab] || entry.Slot >= 40 {
+			return false
+		}
+		if entry.ItemVnum == 0 || entry.Price == 0 || entry.Price > MerchantCatalogMaxEntryPrice || entry.Count == 0 || entry.Count > MerchantCatalogMaxEntryCount {
+			return false
+		}
+		nextSlots[entry.Tab]++
+	}
+	for tab := range tabs {
+		if nextSlots[tab] == 0 {
 			return false
 		}
 	}
@@ -361,6 +419,7 @@ func cloneDefinitions(definitions []Definition) []Definition {
 	for i, definition := range definitions {
 		cloned[i] = definition
 		cloned[i].Catalog = cloneCatalog(definition.Catalog)
+		cloned[i].Tabs = cloneCatalogTabs(definition.Tabs)
 		cloned[i].RewardItems = cloneRewardItems(definition.RewardItems)
 		cloned[i].ConsumeItems = cloneRewardItems(definition.ConsumeItems)
 	}
@@ -373,6 +432,15 @@ func cloneCatalog(catalog []MerchantCatalogEntry) []MerchantCatalogEntry {
 	}
 	cloned := make([]MerchantCatalogEntry, len(catalog))
 	copy(cloned, catalog)
+	return cloned
+}
+
+func cloneCatalogTabs(tabs []MerchantCatalogTab) []MerchantCatalogTab {
+	if len(tabs) == 0 {
+		return nil
+	}
+	cloned := make([]MerchantCatalogTab, len(tabs))
+	copy(cloned, tabs)
 	return cloned
 }
 

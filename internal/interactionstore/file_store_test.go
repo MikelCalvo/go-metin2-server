@@ -83,6 +83,66 @@ func TestFileStoreSaveThenLoadMerchantCatalogKeepsStableBuySlotAddressing(t *tes
 	}
 }
 
+func TestFileStoreSaveThenLoadMultiTabMerchantCatalogKeepsTabAddressing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
+	store := NewFileStore(path)
+	want := Definition{
+		Kind:  KindShopPreview,
+		Ref:   "npc:multi_tab_merchant",
+		Title: "Village Supplies",
+		Tabs: []MerchantCatalogTab{
+			{Name: "Potions", CoinType: ShopCoinTypeGold},
+			{Name: "Weapons", CoinType: ShopCoinTypeGold},
+		},
+		Catalog: []MerchantCatalogEntry{
+			{Tab: 1, Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+			{Tab: 0, Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+		},
+	}
+	canonical := NormalizeDefinition(want)
+	if err := store.Save(Snapshot{Definitions: []Definition{want}}); err != nil {
+		t.Fatalf("save multi-tab merchant snapshot: %v", err)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatalf("load multi-tab merchant snapshot: %v", err)
+	}
+	if !reflect.DeepEqual(loaded, Snapshot{Definitions: []Definition{canonical}}) {
+		t.Fatalf("unexpected multi-tab merchant snapshot after round-trip:\n got: %#v\nwant: %#v", loaded, Snapshot{Definitions: []Definition{canonical}})
+	}
+}
+
+func TestMultiTabMerchantCatalogValidationRejectsUnsupportedCoinAndSparsePerTabSlots(t *testing.T) {
+	base := Definition{
+		Kind:  KindShopPreview,
+		Ref:   "npc:multi_tab_merchant",
+		Title: "Village Supplies",
+		Tabs: []MerchantCatalogTab{
+			{Name: "Potions", CoinType: ShopCoinTypeGold},
+			{Name: "Weapons", CoinType: ShopCoinTypeGold},
+		},
+		Catalog: []MerchantCatalogEntry{
+			{Tab: 0, Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Tab: 1, Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+	if !ValidDefinition(base) {
+		t.Fatal("expected authored gold multi-tab merchant definition to be valid")
+	}
+	unsupportedCoin := base
+	unsupportedCoin.Tabs = append([]MerchantCatalogTab(nil), base.Tabs...)
+	unsupportedCoin.Tabs[1].CoinType = 1
+	if ValidDefinition(unsupportedCoin) {
+		t.Fatal("expected secondary-coin tab to remain unsupported")
+	}
+	sparseSlots := base
+	sparseSlots.Catalog = append([]MerchantCatalogEntry(nil), base.Catalog...)
+	sparseSlots.Catalog[1].Slot = 1
+	if ValidDefinition(sparseSlots) {
+		t.Fatal("expected sparse per-tab catalog slots to be rejected")
+	}
+}
+
 func TestFileStoreSaveThenLoadQuestFlagDefinition(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "interaction-definitions.json")
 	store := NewFileStore(path)

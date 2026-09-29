@@ -8,6 +8,8 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	interactproto "github.com/MikelCalvo/go-metin2-server/internal/proto/interact"
+	shopproto "github.com/MikelCalvo/go-metin2-server/internal/proto/shop"
 )
 
 func TestGameRuntimeInteractionDefinitionsReturnsSortedSnapshot(t *testing.T) {
@@ -132,6 +134,94 @@ func TestGameRuntimeCreateShopPreviewInteractionDefinitionPersistsSnapshotAndRes
 	want := interactionstore.Snapshot{Definitions: []interactionstore.Definition{defaultMerchantCatalogDefinition()}}
 	if !reflect.DeepEqual(persisted, want) {
 		t.Fatalf("unexpected persisted shop preview interaction definitions:\n got: %#v\nwant: %#v", persisted, want)
+	}
+}
+
+func TestGameRuntimeAuthoredMultiTabShopPreviewPersistsAndOpensStartEx(t *testing.T) {
+	definition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:multi_tab_merchant",
+		Title: "Village Supplies",
+		Tabs: []interactionstore.MerchantCatalogTab{
+			{Name: "Potions", CoinType: interactionstore.ShopCoinTypeGold},
+			{Name: "Weapons", CoinType: interactionstore.ShopCoinTypeGold},
+		},
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Tab: 0, Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Tab: 1, Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
+	store := loginticket.NewFileStore(t.TempDir())
+	peer := peerVisibilityCharacter("TabbedBuyer", 0x01030901, 0x02040901, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "tabbed-buyer", 0x19191919, peer)
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	created, err := runtime.CreateInteractionDefinition(definition)
+	if err != nil {
+		t.Fatalf("create multi-tab shop preview: %v", err)
+	}
+	if !reflect.DeepEqual(created, definition) {
+		t.Fatalf("unexpected normalized multi-tab definition: got %#v want %#v", created, definition)
+	}
+	persisted, err := interactionStore.Load()
+	if err != nil {
+		t.Fatalf("load persisted multi-tab definition: %v", err)
+	}
+	if !reflect.DeepEqual(persisted, interactionstore.Snapshot{Definitions: []interactionstore.Definition{definition}}) {
+		t.Fatalf("unexpected persisted multi-tab definition: %#v", persisted)
+	}
+	actor, ok := runtime.RegisterStaticActorWithInteraction("TabbedMerchant", bootstrapMapIndex, 1200, 2200, 20300, interactionstore.KindShopPreview, definition.Ref)
+	if !ok {
+		t.Fatal("expected multi-tab merchant registration to succeed")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "tabbed-buyer", 0x19191919)
+	defer closeSessionFlow(t, flow)
+	out, err := flow.HandleClientFrame(decodeSingleFrame(t, interactproto.EncodeRequest(interactproto.RequestPacket{TargetVID: uint32(actor.EntityID)})))
+	if err != nil || len(out) != 1 {
+		t.Fatalf("unexpected multi-tab merchant open: out=%d err=%v", len(out), err)
+	}
+	start, err := shopproto.DecodeServerStartEx(decodeSingleFrame(t, out[0]))
+	if err != nil {
+		t.Fatalf("decode multi-tab merchant START_EX: %v", err)
+	}
+	if start.OwnerVID != uint32(actor.EntityID) || len(start.Tabs) != 2 {
+		t.Fatalf("unexpected multi-tab START_EX owner/tabs: %+v", start)
+	}
+	if start.Tabs[0].Name != "Potions" || start.Tabs[0].CoinType != interactionstore.ShopCoinTypeGold || start.Tabs[0].Items[0].Vnum != 27001 || start.Tabs[0].Items[0].Price != 50 {
+		t.Fatalf("unexpected first START_EX tab: %+v", start.Tabs[0])
+	}
+	if start.Tabs[1].Name != "Weapons" || start.Tabs[1].CoinType != interactionstore.ShopCoinTypeGold || start.Tabs[1].Items[0].Vnum != 11200 || start.Tabs[1].Items[0].Price != 500 {
+		t.Fatalf("unexpected second START_EX tab: %+v", start.Tabs[1])
+	}
+	buyOut, err := flow.HandleClientFrame(decodeSingleFrame(t, shopproto.EncodeClientBuy(shopproto.ClientBuyPacket{CatalogSlot: 0})))
+	if err != nil || len(buyOut) != 0 {
+		t.Fatalf("expected multi-tab BUY to stay fail-closed until tab addressing is frozen: out=%d err=%v", len(buyOut), err)
+	}
+}
+
+func TestGameRuntimeRejectsUnsupportedSecondaryCoinShopPreview(t *testing.T) {
+	interactionStore := newMemoryInteractionDefinitionStore(t, nil)
+	itemStore := newMemoryItemTemplateStore(t, defaultMerchantItemTemplates())
+	runtime, err := newGameRuntimeWithAccountStoreAndInteractionAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, interactionStore, itemStore)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	_, err = runtime.CreateInteractionDefinition(interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:secondary_coin_merchant",
+		Title: "Unsupported Coins",
+		Tabs: []interactionstore.MerchantCatalogTab{{
+			Name:     "Tokens",
+			CoinType: 1,
+		}},
+		Catalog: []interactionstore.MerchantCatalogEntry{{Tab: 0, Slot: 0, ItemVnum: 27001, Price: 1, Count: 1}},
+	})
+	if !errors.Is(err, interactionstore.ErrInvalidSnapshot) {
+		t.Fatalf("expected unsupported secondary coin to fail closed, got %v", err)
 	}
 }
 

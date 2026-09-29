@@ -598,6 +598,44 @@ func TestGameRuntimeImportContentBundleRejectsShopCatalogEntriesThatDoNotFitShop
 	}
 }
 
+func TestGameRuntimeImportContentBundleRoundTripsAuthoredMultiTabShopPreview(t *testing.T) {
+	staticActorStore := staticstore.NewMemoryStore()
+	interactionStore := interactionstore.NewMemoryStore()
+	itemStore := itemcatalog.NewMemoryStore()
+	runtime, err := newGameRuntimeWithStoresAndTransferTriggersAndItemStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, loginticket.NewFileStore(t.TempDir()), nil, staticActorStore, interactionStore, itemStore, nil)
+	if err != nil {
+		t.Fatalf("unexpected game runtime error: %v", err)
+	}
+	definition := interactionstore.Definition{
+		Kind:  interactionstore.KindShopPreview,
+		Ref:   "npc:multi_tab_merchant",
+		Title: "Village Supplies",
+		Tabs: []interactionstore.MerchantCatalogTab{
+			{Name: "Potions", CoinType: interactionstore.ShopCoinTypeGold},
+			{Name: "Weapons", CoinType: interactionstore.ShopCoinTypeGold},
+		},
+		Catalog: []interactionstore.MerchantCatalogEntry{
+			{Tab: 0, Slot: 0, ItemVnum: 27001, Price: 50, Count: 1},
+			{Tab: 1, Slot: 0, ItemVnum: 11200, Price: 500, Count: 1},
+		},
+	}
+	bundle := contentbundle.Bundle{
+		StaticActors:           []contentbundle.StaticActor{{Name: "TabbedMerchant", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20300, InteractionKind: interactionstore.KindShopPreview, InteractionRef: definition.Ref}},
+		ItemTemplates:          defaultMerchantItemTemplates(),
+		InteractionDefinitions: []interactionstore.Definition{definition},
+	}
+	if _, err := runtime.ImportContentBundle(bundle); err != nil {
+		t.Fatalf("import multi-tab merchant content bundle: %v", err)
+	}
+	exported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatalf("export multi-tab merchant content bundle: %v", err)
+	}
+	if !reflect.DeepEqual(exported, bundle) {
+		t.Fatalf("unexpected multi-tab merchant bundle round trip:\n got: %#v\nwant: %#v", exported, bundle)
+	}
+}
+
 func TestGameRuntimeExportContentBundleSummaryIncludesItemTemplateDetails(t *testing.T) {
 	staticActorStore := staticstore.NewMemoryStore()
 	interactionStore := interactionstore.NewMemoryStore()
