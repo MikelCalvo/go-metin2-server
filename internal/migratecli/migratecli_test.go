@@ -4187,15 +4187,18 @@ func TestRunVersionWritesBuildIdentityJSON(t *testing.T) {
 	originalVersion := buildinfo.Version
 	originalCommit := buildinfo.Commit
 	originalBuildDate := buildinfo.BuildDate
+	originalWorkflowRunID := buildinfo.WorkflowRunID
 	t.Cleanup(func() {
 		buildinfo.Version = originalVersion
 		buildinfo.Commit = originalCommit
 		buildinfo.BuildDate = originalBuildDate
+		buildinfo.WorkflowRunID = originalWorkflowRunID
 	})
 
 	buildinfo.Version = "v0.1.0-test"
 	buildinfo.Commit = "abc1234"
 	buildinfo.BuildDate = "2026-08-19T12:00:00Z"
+	buildinfo.WorkflowRunID = "9876543210"
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -4206,7 +4209,7 @@ func TestRunVersionWritesBuildIdentityJSON(t *testing.T) {
 	if stderr.Len() != 0 {
 		t.Fatalf("expected version not to write stderr, got %q", stderr.String())
 	}
-	for _, want := range []string{`"version": "v0.1.0-test"`, `"commit": "abc1234"`, `"build_date": "2026-08-19T12:00:00Z"`} {
+	for _, want := range []string{`"version": "v0.1.0-test"`, `"commit": "abc1234"`, `"build_date": "2026-08-19T12:00:00Z"`, `"workflow_run_id": "9876543210"`} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("expected %s in stdout %q", want, stdout.String())
 		}

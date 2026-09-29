@@ -34,14 +34,17 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	originalCommit := buildinfo.Commit
 	originalVersion := buildinfo.Version
 	originalBuildDate := buildinfo.BuildDate
+	originalWorkflowRunID := buildinfo.WorkflowRunID
 	t.Cleanup(func() {
 		buildinfo.Commit = originalCommit
 		buildinfo.Version = originalVersion
 		buildinfo.BuildDate = originalBuildDate
+		buildinfo.WorkflowRunID = originalWorkflowRunID
 	})
 	buildinfo.Version = "v0.1.0-export-drill"
 	buildinfo.Commit = "exportdrill0123456789abcdef"
 	buildinfo.BuildDate = "2026-08-25T18:00:00Z"
+	buildinfo.WorkflowRunID = "9876543210"
 
 	root := t.TempDir()
 	accountDir := filepath.Join(root, "accounts")
@@ -205,6 +208,8 @@ func TestExportQuarantineDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
+	assertRetainedWorkflowRunID(t, filepath.Join(retentionTree, "gamed-build-info.json"), buildinfo.WorkflowRunID)
+	assertRetainedWorkflowRunID(t, filepath.Join(retentionTree, "authd-build-info.json"), buildinfo.WorkflowRunID)
 	assertCatalogStatusMatchesRetainedCatalog(t, retentionTree)
 
 	kinds := []string{
@@ -443,6 +448,19 @@ func mustReadFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func assertRetainedWorkflowRunID(t *testing.T, path, want string) {
+	t.Helper()
+	var got struct {
+		WorkflowRunID string `json:"workflow_run_id"`
+	}
+	if err := json.Unmarshal([]byte(mustReadFile(t, path)), &got); err != nil {
+		t.Fatalf("decode retained build info %s: %v", path, err)
+	}
+	if got.WorkflowRunID != want {
+		t.Fatalf("retained workflow_run_id = %q, want %q in %s", got.WorkflowRunID, want, path)
+	}
 }
 
 func assertContainsLooseJSON(t *testing.T, body, want string) {

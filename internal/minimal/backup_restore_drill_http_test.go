@@ -36,14 +36,17 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	originalCommit := buildinfo.Commit
 	originalVersion := buildinfo.Version
 	originalBuildDate := buildinfo.BuildDate
+	originalWorkflowRunID := buildinfo.WorkflowRunID
 	t.Cleanup(func() {
 		buildinfo.Commit = originalCommit
 		buildinfo.Version = originalVersion
 		buildinfo.BuildDate = originalBuildDate
+		buildinfo.WorkflowRunID = originalWorkflowRunID
 	})
 	buildinfo.Version = "v0.1.0-drill"
 	buildinfo.Commit = "drillproof0123456789abcdef"
 	buildinfo.BuildDate = "2026-08-24T14:00:00Z"
+	buildinfo.WorkflowRunID = "9876543210"
 
 	root := t.TempDir()
 	accountDir := filepath.Join(root, "accounts")
@@ -222,6 +225,8 @@ func TestBackupRestoreDrillHTTPExecutesAgainstDrainedGamedOps(t *testing.T) {
 	} {
 		assertRegularFileExists(t, filepath.Join(retentionTree, name))
 	}
+	assertRetainedWorkflowRunID(t, filepath.Join(retentionTree, "gamed-build-info.json"), buildinfo.WorkflowRunID)
+	assertRetainedWorkflowRunID(t, filepath.Join(retentionTree, "authd-build-info.json"), buildinfo.WorkflowRunID)
 	assertRegularFileExists(t, filepath.Join(retentionTree, "accounts", accountstore.BackupManifestFilename))
 	assertRegularFileExists(t, filepath.Join(retentionTree, "safebox", safeboxstore.BackupManifestFilename))
 	assertRegularFileExists(t, filepath.Join(retentionTree, "cube-recipes", cubestore.BackupManifestFilename))

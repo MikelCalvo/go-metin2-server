@@ -186,6 +186,26 @@ func TestRunExportQuarantineDrillReadsStdinBuildInfo(t *testing.T) {
 	}
 }
 
+func TestRunExportQuarantineDrillAcceptsWorkflowRunIDBuildInfoField(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	code := Run(
+		[]string{"export-quarantine-drill", "--build-info", "-"},
+		strings.NewReader(`{"version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-25T12:00:00Z","workflow_run_id":"9876543210"}`),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d stderr=%q", code, stderr.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected no stderr, got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), `COMMIT12='abcdef012345'`) {
+		t.Fatalf("expected retained build-info commit in stdout:\n%s", stdout.String())
+	}
+}
+
 func TestRunExportQuarantineDrillRejectsBlankCommit(t *testing.T) {
 	path := writeTempJSON(t, "build-info.json", `{
   "version": "v0.1.0",
