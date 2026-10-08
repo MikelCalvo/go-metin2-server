@@ -1990,6 +1990,9 @@ func TestStockGameRuntimeKeepsGroundItemFileStoreBesideOptionalSQL(t *testing.T)
 func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *testing.T) {
 	root := t.TempDir()
 	groundItemPath := filepath.Join(root, "ground", "ground-items.json")
+	// Startup restores against the real clock. Keep both SQL registrations and
+	// the sibling FileStore fixture live through construction and the +5s rejoin.
+	currentTime := time.Now().UTC().Truncate(time.Second)
 	db := openSQLiteGroundSQLOptInRuntimeDB(t)
 	defer db.Close()
 
@@ -2022,7 +2025,7 @@ func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *t
 		VID: 0x07000932, Vnum: 11200, ItemCount: &count, ItemID: 11,
 		OwnerLogin: login, OwnerCharacterID: owner.ID, OwnerVID: owner.VID, OwnerName: owner.Name,
 		MapIndex: bootstrapMapIndex, X: 1100, Y: 2100, PickupRange: 300,
-		DespawnAt: time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC),
+		DespawnAt: currentTime.Add(time.Hour),
 	}}}
 	if err := fileStore.Save(seeded); err != nil {
 		t.Fatalf("save sibling FileStore: %v", err)
@@ -2051,11 +2054,14 @@ func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *t
 	if _, ok := stock.groundItemStore.(*worldruntime.FileStore); !ok {
 		t.Fatalf("stock runtime store = %T, want *worldruntime.FileStore", stock.groundItemStore)
 	}
+	stockFile, err := fileStore.Load()
+	if err != nil || !reflect.DeepEqual(stockFile, seeded) {
+		t.Fatalf("stock constructor changed the sibling FileStore: snapshot=%#v err=%v", stockFile, err)
+	}
 	if len(runtime.sharedWorld.DurableGroundItemSnapshot().GroundItems) != 0 {
 		t.Fatal("opt-in SQL runtime rematerialized the sibling FileStore")
 	}
 
-	currentTime := time.Date(2026, 9, 27, 11, 0, 0, 0, time.UTC)
 	runtime.now = func() time.Time { return currentTime }
 	runtime.sharedWorld.now = runtime.now
 	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), login, loginKey)
@@ -2075,6 +2081,18 @@ func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *t
 	}
 	if !runtime.sharedWorld.RegisterGroundGoldWithPickupRange(ownerID, login, owner, goldVID, 75, 300) {
 		t.Fatal("expected opt-in SQL ground-gold registration")
+	}
+	beforeRestart, err := sqlStore.Load()
+	if err != nil {
+		t.Fatalf("load SQL ground items before restart: %v", err)
+	}
+	if len(beforeRestart.GroundItems) != 2 || beforeRestart.GroundItems[0].VID != itemVID || beforeRestart.GroundItems[1].VID != goldVID {
+		t.Fatalf("expected item and gold in SQL before restart, got %#v", beforeRestart.GroundItems)
+	}
+	for _, row := range beforeRestart.GroundItems {
+		if !row.OwnershipExclusive || row.OwnershipExpiresAt == nil || !row.OwnershipExpiresAt.Equal(currentTime.Add(bootstrapGroundItemOwnershipDuration)) || !row.DespawnAt.Equal(currentTime.Add(bootstrapGroundItemDespawnDuration)) {
+			t.Fatalf("expected live SQL ownership and despawn deadlines before restart, got %#v", row)
+		}
 	}
 	runtime.sharedWorld.SetGroundItemsChangedHook(nil)
 	closeSessionFlow(t, ownerFlow)
@@ -2096,6 +2114,11 @@ func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *t
 	}
 	if goldRow.VID != goldVID || goldRow.GoldAmount == nil || *goldRow.GoldAmount != 75 || !goldRow.OwnershipExclusive {
 		t.Fatalf("unexpected SQL rematerialized gold row: %#v", goldRow)
+	}
+	for _, row := range snapshot.GroundItems {
+		if row.OwnershipExpiresAt == nil || !row.OwnershipExpiresAt.After(currentTime.Add(5*time.Second)) || !row.DespawnAt.After(currentTime.Add(5*time.Second)) {
+			t.Fatalf("expected SQL handle live at restart and +5s, got %#v", row)
+		}
 	}
 
 	ownerRestartFlow, _ := enterGameWithLoginTicket(t, reloaded.SessionFactory(), login, loginKey)
@@ -2126,7 +2149,7 @@ func TestGameRuntimeOptInSQLGroundItemStoreRematerializesPendingItemAndGold(t *t
 	if err != nil {
 		t.Fatalf("reload sibling FileStore: %v", err)
 	}
-	if len(fileAfter.GroundItems) != 1 || fileAfter.GroundItems[0].VID != 0x07000932 {
+	if !reflect.DeepEqual(fileAfter, seeded) {
 		t.Fatalf("opt-in SQL runtime wrote the sibling FileStore: %#v", fileAfter.GroundItems)
 	}
 }
