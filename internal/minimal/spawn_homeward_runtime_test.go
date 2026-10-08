@@ -122,7 +122,7 @@ func TestGameRuntimeFlushServerFramesEmitsChangeSpeedOnDueSpawnGroupHomewardStep
 	if len(clearOut) != 0 {
 		t.Fatalf("expected TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
-	drainAcceptedTargetCreateNewIfQueued(t, flow)
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, flow), int32(targetVID))
 	if pending, ok := runtime.SpawnGroupHomewardStep(group.EntityID); !ok || pending.EntityID != group.EntityID {
 		t.Fatalf("expected engagement release to arm homeward before CHANGE_SPEED, ok=%v snapshot=%+v", ok, pending)
 	}

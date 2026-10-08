@@ -123,6 +123,114 @@ func TestGameSessionFlowAcceptedNonZeroTargetQueuesSelfOnlyTargetCreateNew(t *te
 	assertDamageInfoFrame(t, peerHitQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "peer hit after marker presentation")
 }
 
+func TestGameSessionFlowExplicitTargetClearDeletesOnlyOwnersSelectedMarker(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("DeleteOwner", 0x010301C1, 0x020401C1, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("DeletePeer", 0x010301C2, 0x020401C2, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "delete-owner", 0xC1C1C1C1, owner)
+	issuePeerTicket(t, store, "delete-peer", 0xC2C2C2C2, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new marker-delete runtime: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "DeleteDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register marker-delete target")
+	}
+	targetVID := uint32(actor.EntityID)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "delete-owner", 0xC1C1C1C1)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "delete-peer", 0xC2C2C2C2)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	selectTarget := func() {
+		t.Helper()
+		frames, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
+		if err != nil || len(frames) != 1 {
+			t.Fatalf("accepted selection must return one HP ack: frames=%d err=%v", len(frames), err)
+		}
+		ack, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[0]))
+		if err != nil || ack.TargetVID != targetVID || ack.HPPercent != 100 {
+			t.Fatalf("selected target HP carrier changed: ack=%+v err=%v", ack, err)
+		}
+	}
+	clearTarget := func() {
+		t.Helper()
+		frames, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{})))
+		if err != nil || len(frames) != 0 {
+			t.Fatalf("explicit clear must not replace HP carrier or echo: frames=%d err=%v", len(frames), err)
+		}
+	}
+
+	clearTarget()
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("unselected clear invented marker frames: %d", len(queued))
+	}
+	selectTarget()
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "DeleteDummy", targetVID)
+	clearTarget()
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, ownerFlow), int32(targetVID))
+	if snapshot, ok := runtime.CombatTargetSnapshot("DeleteOwner"); ok && snapshot.TargetVID != 0 {
+		t.Fatalf("explicit clear must clear combat selection: %+v", snapshot)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("marker delete leaked to peer: %d", len(queued))
+	}
+	clearTarget()
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("repeat clear invented a second delete: %d", len(queued))
+	}
+
+	selectTarget()
+	clearTarget()
+	queued := flushServerFrames(t, ownerFlow)
+	if len(queued) != 2 {
+		t.Fatalf("expected pending create then delete, got %d", len(queued))
+	}
+	marker, err := combatproto.DecodeServerTargetCreateNew(decodeSingleFrame(t, queued[0]))
+	if err != nil || marker.ID != int32(targetVID) {
+		t.Fatalf("expected pending create first: marker=%+v err=%v", marker, err)
+	}
+	assertSelfOnlyTargetDelete(t, queued[1:], int32(targetVID))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("create/delete leaked to peer: %d", len(queued))
+	}
+}
+
+func assertSelfOnlyTargetDelete(t *testing.T, queued [][]byte, id int32) {
+	t.Helper()
+	if len(queued) != 1 {
+		t.Fatalf("expected exactly one self-only TARGET_DELETE, got %d", len(queued))
+	}
+	deleted, err := combatproto.DecodeServerTargetDelete(decodeSingleFrame(t, queued[0]))
+	if err != nil || deleted.ID != id {
+		t.Fatalf("expected TARGET_DELETE id=%d: packet=%+v err=%v", id, deleted, err)
+	}
+}
+
+func TestGameSessionFlowHPFloorRejectsTargetClearWithoutMarkerDelete(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("FloorDeleteOwner", 0x010301C3, 0x020401C3, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "floor-delete-owner", 0xC3C3C3C3, owner)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new floor marker-delete runtime: %v", err)
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "floor-delete-owner", 0xC3C3C3C3)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	frames, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{})))
+	if err != nil || len(frames) != 0 {
+		t.Fatalf("HP-floor clear must fail closed: frames=%d err=%v", len(frames), err)
+	}
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("rejected HP-floor clear invented marker delete: %d frames", len(queued))
+	}
+}
+
 func TestGameSessionFlowSelectedChaseStepQueuesSelfOnlyTargetUpdate(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("MarkerChaseOwner", 0x010301B1, 0x020401B1, 1900, 2800, 0, 101, 201)

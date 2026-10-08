@@ -3618,7 +3618,7 @@ func TestGameRuntimeClientTargetZeroClearsPendingSpawnGroupChaseStepDeadline(t *
 		t.Fatalf("expected owner TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
 
-	drainAcceptedTargetCreateNewIfQueued(t, flow)
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, flow), int32(targetVID))
 	runtime.spawnChaseMu.Lock()
 	_, stillScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()
@@ -3747,7 +3747,7 @@ func TestGameRuntimeFlushServerFramesAppliesDueSpawnGroupHomewardStepAfterChaseE
 		t.Fatalf("expected TARGET(0) clear to emit no frames, got %d", len(clearOut))
 	}
 
-	drainAcceptedTargetCreateNewIfQueued(t, flow)
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, flow), int32(targetVID))
 	runtime.spawnChaseMu.Lock()
 	_, chaseScheduled := runtime.spawnChaseStepDueAt[group.EntityID]
 	runtime.spawnChaseMu.Unlock()
@@ -13219,7 +13219,7 @@ func TestNewGameSessionFactoryClientTargetZeroClearsPracticeMobDelayedRetaliatio
 	if len(clearOut) != 0 {
 		t.Fatalf("expected owner TARGET(0) clear for practice mob to emit no frames, got %d", len(clearOut))
 	}
-	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, ownerFlow), int32(targetVID))
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected client TARGET(0) to cancel delayed retaliation before timer expiry, got %d queued frames", len(queued))
@@ -13352,7 +13352,7 @@ func TestNewGameSessionFactoryPracticeMobRetargetDoesNotReleaseEngagedMobToThird
 	if len(clearOut) != 0 {
 		t.Fatalf("expected owner TARGET(0) after retarget engagement test to emit no frames, got %d", len(clearOut))
 	}
-	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, ownerFlow), int32(secondTargetVID))
 	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected owner TARGET(0) after retarget to keep delayed retaliation cancelled, got %d queued frames", len(queued))

@@ -10445,7 +10445,14 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.TargetResult{Accepted: false}
 					}
 					if packet.TargetVID == 0 {
+						// Only an accepted explicit clear removes the marker created for
+						// this session's selected combat target. Other clear paths keep
+						// their existing TARGET HP/visibility behavior.
+						previousTargetVID := activeCombatTargetVID
 						clearActiveCombatTarget()
+						if previousTargetVID != 0 {
+							pending.Enqueue([][]byte{combatproto.EncodeServerTargetDelete(combatproto.ServerTargetDeletePacket{ID: int32(previousTargetVID)})})
+						}
 						return gameflow.TargetResult{Accepted: true}
 					}
 					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
