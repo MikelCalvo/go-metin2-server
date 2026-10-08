@@ -531,7 +531,7 @@ func TestGameSessionFlowOpenSafeboxWalkAwayAutoClosesWithCloseSafeboxCommand(t *
 	if err != nil {
 		t.Fatalf("unexpected walk-away move with open safebox: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected walk-away move to keep only the immediate self move ack, got %d frames", len(moveOut))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -615,7 +615,7 @@ func TestGameSessionFlowPendingSafeboxPasswordWalkAwayLeavesChallengeIntact(t *t
 	if err != nil {
 		t.Fatalf("unexpected pending walk-away move: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected pending walk-away move to keep only the immediate self move ack, got %d frames", len(moveOut))
 	}
 	queued := flushServerFrames(t, flow)

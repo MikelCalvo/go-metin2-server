@@ -363,7 +363,7 @@ func TestMovedCharacterPositionPersistsAcrossFreshAuthAndGameSessions(t *testing
 	if err != nil {
 		t.Fatalf("unexpected first move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 move frame, got %d", len(moveOut))
 	}
 

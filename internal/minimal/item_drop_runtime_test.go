@@ -434,7 +434,7 @@ func TestGameRuntimeItemPickupUsesTemplateAuthoredPickupRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected long-range pickup move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected long-range pickup move ack, got %d frames", len(moveOut))
 	}
 	pickupOut, err := flow.HandleClientFrame(decodeSingleFrame(t, itemproto.EncodeClientPickup(itemproto.ClientPickupPacket{VID: ground.VID})))
@@ -510,7 +510,7 @@ func TestGameRuntimeItemPickupTemplateAuthoredShortRangeFailsClosed(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected short-range pickup move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected short-range pickup move ack, got %d frames", len(moveOut))
 	}
 
@@ -3178,7 +3178,7 @@ func TestGameRuntimeGoldPickupUsesTemplateAuthoredPickupRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected long-range gold move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected long-range gold move ack, got %d frames", len(moveOut))
 	}
 
@@ -3251,7 +3251,7 @@ func TestGameRuntimeGoldPickupTemplateAuthoredShortRangeFailsClosed(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected short-range gold move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected short-range gold move ack, got %d frames", len(moveOut))
 	}
 
@@ -4380,7 +4380,7 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 	if err != nil {
 		t.Fatalf("unexpected watcher move-in error: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected one self move ack for watcher move-in, got %d", len(moveIn))
 	}
 	queuedIn := flushServerFrames(t, watcherFlow)
@@ -4406,7 +4406,7 @@ func TestGameRuntimeRadiusAOIItemDropPickupRebuildsGroundVisibilityOnMove(t *tes
 	if err != nil {
 		t.Fatalf("unexpected watcher move-out error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected one self move ack for watcher move-out, got %d", len(moveOut))
 	}
 	queuedOut := flushServerFrames(t, watcherFlow)

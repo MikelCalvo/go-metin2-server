@@ -6,6 +6,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/config"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
+	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
@@ -186,4 +187,70 @@ func TestGameSessionFlowAcceptedCharacterPositionEmitsSelfOnlyChangeSpeed(t *tes
 	if refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
 		t.Fatalf("expected change-speed presentation not to mutate combat HP before first normal hit, got %+v", refresh)
 	}
+}
+
+func TestGameSessionFlowSameMapMoveRefreshesOwnerSpeedAfterAckOnly(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("WalkingOwner", 0x01030181, 0x02040181, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("WalkingPeer", 0x01030182, 0x02040182, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "walking-owner", 0x81818181, owner)
+	issuePeerTicket(t, store, "walking-peer", 0x82828282, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("create runtime: %v", err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "walking-owner", 0x81818181)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "walking-peer", 0x82828282)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	move := movep.MovePacket{Func: 1, Rot: 12, X: 1140, Y: 2100, Time: 0x11121314}
+	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(move)))
+	if err != nil {
+		t.Fatalf("owner MOVE: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("expected immediate MOVE_ACK followed by one self CHANGE_SPEED, got %d", len(out))
+	}
+	ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, out[0]))
+	if err != nil || ack.VID != owner.VID || ack.X != move.X || ack.Y != move.Y {
+		t.Fatalf("unexpected owner MOVE_ACK: %+v, %v", ack, err)
+	}
+	speed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, out[1]))
+	if err != nil || speed.VID != owner.VID || speed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("unexpected owner CHANGE_SPEED: %+v, %v", speed, err)
+	}
+	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
+		t.Fatalf("stable visibility should not queue extra owner frames, got %d", len(queued))
+	}
+	peerQueued := flushServerFrames(t, peerFlow)
+	if len(peerQueued) != 1 {
+		t.Fatalf("expected only peer MOVE_ACK, no peer CHANGE_SPEED, got %d", len(peerQueued))
+	}
+	peerAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerQueued[0]))
+	if err != nil || peerAck.VID != owner.VID || peerAck.X != move.X || peerAck.Y != move.Y {
+		t.Fatalf("unexpected peer MOVE_ACK: %+v, %v", peerAck, err)
+	}
+}
+
+// ownerMoveAckWithSpeed keeps existing movement regressions strict about the new
+// self-only companion while leaving peer, visibility and state assertions intact.
+func ownerMoveAckWithSpeed(t *testing.T, frames [][]byte) bool {
+	t.Helper()
+	if len(frames) != 2 {
+		t.Errorf("expected owner MOVE_ACK then one CHANGE_SPEED, got %d frames", len(frames))
+		return false
+	}
+	ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, frames[0]))
+	if err != nil {
+		t.Fatalf("decode owner MOVE_ACK: %v", err)
+	}
+	speed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, frames[1]))
+	if err != nil || speed.VID != ack.VID || speed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Errorf("expected owner speed refresh for MOVE_ACK vid %d, got %+v: %v", ack.VID, speed, err)
+		return false
+	}
+	return true
 }

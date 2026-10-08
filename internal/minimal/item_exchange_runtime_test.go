@@ -801,7 +801,7 @@ func TestGameRuntimeItemExchangeWalkAwayClosesShellWithoutMutation(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected walk-away move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected walk-away move to emit one move ack, got %d frames", len(moveOut))
 	}
 	foundOwnerEnd := false

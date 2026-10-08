@@ -2828,7 +2828,7 @@ func TestGameRuntimeProximityAggroWalkAwayReleasesEngagementAndCancelsDelayedRet
 	if err != nil {
 		t.Fatalf("unexpected owner move error while walking out of aggro radius: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after walking out of aggro radius, got %d frames", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -11944,7 +11944,7 @@ func TestGameRuntimeRadiusAOIMoveIntoRangeSeesPeerAppearanceAfterRuntimeEquip(t 
 	if err != nil {
 		t.Fatalf("unexpected move-into-range error after equip: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame for watcher entering range after equip, got %d", len(moveOut))
 	}
 
@@ -12049,7 +12049,7 @@ func TestGameRuntimeRadiusAOIMoveIntoRangeSeesPeerAppearanceAfterRuntimeUnequip(
 	if err != nil {
 		t.Fatalf("unexpected move-into-range error after unequip: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame for watcher entering range after unequip, got %d", len(moveOut))
 	}
 
@@ -12332,7 +12332,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsStaticActorVisibil
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 
@@ -13662,7 +13662,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeReplaysDeadTrainingDummyVisi
 	if err != nil {
 		t.Fatalf("unexpected move error while re-entering dead dummy visibility: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame while re-entering dead dummy visibility, got %d", len(moveOut))
 	}
 
@@ -13733,7 +13733,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveOutOfRangeRemovesStaticActorVisibilit
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 
@@ -13770,7 +13770,7 @@ func TestNewGameSessionFactoryQueuesPeerMoveForVisiblePlayers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -13815,7 +13815,7 @@ func TestNewGameSessionFactoryDoesNotQueuePeerMoveAcrossMaps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 
@@ -13859,7 +13859,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsPeerVisibility(t *
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 
@@ -13919,7 +13919,7 @@ func TestNewGameSessionFactoryRadiusAOIMoveOutOfRangeRemovesPeerVisibility(t *te
 	if err != nil {
 		t.Fatalf("unexpected move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame, got %d", len(moveOut))
 	}
 
@@ -15423,7 +15423,7 @@ func TestNewGameSessionFactoryRoutesPostTransferChatAndMoveToDestinationMapPeers
 	if err != nil {
 		t.Fatalf("unexpected post-transfer move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack after transfer, got %d", len(moveOut))
 	}
 	selfMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -20338,7 +20338,7 @@ func TestGameSessionFlowPracticeMobRadiusAOIPeerMoveOutOfRangeSkipsZeroHPOwnerRe
 	if err != nil {
 		t.Fatalf("unexpected move error after owner reached zero HP: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame after owner reached zero HP, got %d", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -20702,7 +20702,7 @@ func TestGameSessionFlowPracticeMobPeerMoveIntoRangeSkipsZeroHPOwnerRecipientAft
 	if err != nil {
 		t.Fatalf("unexpected move error after zero-HP owner floor: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame after zero-HP owner floor, got %d", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -20947,7 +20947,7 @@ func TestGameSessionFlowPracticeMobPeerMoveWithinVisibleSetSkipsZeroHPOwnerRecip
 	if err != nil {
 		t.Fatalf("unexpected move error after zero-HP owner floor: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame after zero-HP owner floor, got %d", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
@@ -22153,7 +22153,7 @@ func TestGameRuntimeRelocateCharacterMovesConnectedSessionAcrossMaps(t *testing.
 	if err != nil {
 		t.Fatalf("unexpected move after relocate error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame after relocate, got %d", len(moveOut))
 	}
 	if queued := flushServerFrames(t, flowOne); len(queued) != 0 {
@@ -25265,7 +25265,7 @@ func TestGameRuntimeRewardDropPickupUsesTemplateAuthoredPickupRange(t *testing.T
 	if err != nil {
 		t.Fatalf("unexpected move before long-range reward pickup: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected move ack before long-range reward pickup, got %d frames", len(moveOut))
 	}
 
@@ -25369,7 +25369,7 @@ func TestGameRuntimeRewardDropPickupTemplateAuthoredShortRangeFailsClosed(t *tes
 	if err != nil {
 		t.Fatalf("unexpected move before short-range reward pickup: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected move ack before short-range reward pickup, got %d frames", len(moveOut))
 	}
 
@@ -27310,7 +27310,7 @@ func TestGameRuntimeEnterGameReclaimPreventsStaleSessionMoveFanout(t *testing.T)
 	if err != nil {
 		t.Fatalf("unexpected stale owner move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected stale owner to receive exactly 1 self move ack frame, got %d", len(moveOut))
 	}
 	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -27406,7 +27406,7 @@ func TestGameRuntimeEnterGameReclaimPreventsStaleSessionMoveFromPersistingSnapsh
 	if err != nil {
 		t.Fatalf("unexpected stale owner move error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected stale owner to receive exactly 1 self move ack frame, got %d", len(moveOut))
 	}
 	selfAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -38621,7 +38621,7 @@ func TestGameSessionFlowMoveClosesMerchantWindowWhenMerchantLeavesInteractionRan
 	if err != nil {
 		t.Fatalf("unexpected move error with open merchant window: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected move away from merchant to keep only the immediate self move ack, got %d frames", len(moveOut))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -45410,7 +45410,7 @@ func TestGameSessionFlowPracticeMobRetaliationPointLossPersistsAcrossPersistedMo
 	if err != nil {
 		t.Fatalf("unexpected move error after immediate retaliation: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move-ack frame after persisted move, got %d", len(moveOut))
 	}
 
@@ -53328,7 +53328,7 @@ func TestGameSessionFlowPracticeMobRespawnWatcherMovementClearReleasesSecondWatc
 	if err != nil {
 		t.Fatalf("unexpected watcher move error before post-respawn movement release: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate watcher move ack frame after moving out of post-respawn target range, got %d frames", len(moveOut))
 	}
 	queuedClear := flushServerFrames(t, watcherFlow)
@@ -53989,7 +53989,7 @@ func TestGameSessionFlowPracticeMobDelayedServerOriginRetaliationStopsAfterMovem
 	if err != nil {
 		t.Fatalf("unexpected move error before movement-clear retaliation stop test: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack frame after moving out of target range, got %d frames", len(moveOut))
 	}
 	queuedClear := flushServerFrames(t, flow)
@@ -54190,7 +54190,7 @@ func TestGameSessionFlowPracticeMobMovementClearReleasesAggro(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected move error before movement-clear aggro release test: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack frame after moving out of target range, got %d frames", len(moveOut))
 	}
 	queuedClear := flushServerFrames(t, ownerFlow)
@@ -55577,7 +55577,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesComb
 	if err != nil {
 		t.Fatalf("unexpected move-out error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame while leaving combat range, got %d", len(moveOut))
 	}
 	moveOutAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveOut[0]))
@@ -55604,7 +55604,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesComb
 	if err != nil {
 		t.Fatalf("unexpected move-back error: %v", err)
 	}
-	if len(moveBack) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveBack) {
 		t.Fatalf("expected 1 self move ack frame while returning to dummy range, got %d", len(moveBack))
 	}
 	moveBackAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveBack[0]))
@@ -55684,7 +55684,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisi
 	if err != nil {
 		t.Fatalf("unexpected move-out visibility error: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 self move ack frame while leaving visibility, got %d", len(moveOut))
 	}
 
@@ -55711,7 +55711,7 @@ func TestGameSessionFlowStaticActorCombatTargetClearsWhenSelectedDummyLeavesVisi
 	if err != nil {
 		t.Fatalf("unexpected move-back visibility error: %v", err)
 	}
-	if len(moveBack) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveBack) {
 		t.Fatalf("expected 1 self move ack frame while returning to visibility, got %d", len(moveBack))
 	}
 
