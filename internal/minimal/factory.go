@@ -3150,6 +3150,18 @@ func (r *gameRuntime) flushDueSpawnGroupHomewardSteps() {
 	}
 }
 
+// StepSpawnGroupHomeward is the loopback operator companion to
+// StepSpawnGroupReturnHome. It applies one within-radius homeward step and
+// refreshes the pending automatic homeward deadline from the manual step time
+// when the actor is still eligible. Dead, return_required, and engaged actors
+// stay fail-closed on the same path the pending-frame executor already uses.
+func (r *gameRuntime) StepSpawnGroupHomeward(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if maxStep <= 0 {
+		maxStep = r.effectiveSpawnGroupMaxStep(entityID)
+	}
+	return r.stepSpawnGroupHomeward(entityID, maxStep, true)
+}
+
 func (r *gameRuntime) stepSpawnGroupHomeward(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
