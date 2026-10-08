@@ -3040,6 +3040,30 @@ func RegisterLocalSpawnGroupReturnStepEndpoint(mux *http.ServeMux, stepSpawnGrou
 	return mux
 }
 
+func RegisterLocalSpawnGroupHomewardStepEndpoint(mux *http.ServeMux, stepSpawnGroupHomeward func(uint64, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || stepSpawnGroupHomeward == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/spawn-groups/{entity_id}/homeward-step", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, maxStep, ok := decodeLocalSpawnGroupHomewardStepRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := stepSpawnGroupHomeward(entityID, maxStep)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux
@@ -6894,6 +6918,14 @@ func decodeLocalSpawnGroupReturnHomeEntityID(r *http.Request) (uint64, bool) {
 }
 
 func decodeLocalSpawnGroupReturnStepRequest(r *http.Request) (uint64, int32, bool) {
+	return decodeLocalSpawnGroupCappedStepRequest(r)
+}
+
+func decodeLocalSpawnGroupHomewardStepRequest(r *http.Request) (uint64, int32, bool) {
+	return decodeLocalSpawnGroupCappedStepRequest(r)
+}
+
+func decodeLocalSpawnGroupCappedStepRequest(r *http.Request) (uint64, int32, bool) {
 	entityID, ok := decodeLocalSpawnGroupEntityIDPathValue(r)
 	if !ok {
 		return 0, 0, false

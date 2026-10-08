@@ -461,6 +461,9 @@ Current implementation status:
 - focused EnterGame / MOVE-transfer / `/restart_here` / `/restart_town` due-homeward preflight coverage now mirrors the owned chase/return preflight proofs
 - daemon-restart rematerialization of live unengaged `within_radius` spawn-backed actors now arms pending homeward through `loadPersistedStaticActors`
 - operator `POST .../return-step` still no-ops `within_radius`; exact-home snap remains the controlled `return-home` trigger
+- the loopback operator companion `POST /local/spawn-groups/{entity_id}/homeward-step?max_step=<positive-int>` is now owned beside those triggers: one within-radius homeward step, same persistence / retained-viewer `MOVE` / engagement-clear path as the pending-frame executor, and a refreshed automatic homeward deadline measured from the manual step when the actor stays eligible `within_radius`; omitted `max_step` uses the actor's effective profile step
+- dead, `return_required`, engaged, missing, and non-spawn actors fail closed on that POST the same way the pending-frame homeward executor already refuses them; `return_required` recovery stays on `return-step`
+- automatic pending-frame homeward stays the already-owned flush path; this POST does not add pathfinding, pack AI, or cross-map homeward `MOVE` / `GC WARP`
 - the read-only pending homeward inspection endpoints below are now live over that already-owned schedule
 - operator/runtime same-map position `UpdateStaticActor` that leaves an unengaged spawn-backed actor `within_radius` now re-arms pending homeward through the shared eligibility sync (mirroring `return_required` return-step re-arm) instead of only clearing the deadline
 - slash `/quit`, `/logout`, and `/phase_select` now clear combat ownership before `Leave` so chase prune plus within_radius homeward re-arm still see the engagements that subject owned (matching abrupt close); focused coverage: `TestGameRuntimeSlashQuitClearsPendingSpawnGroupChaseAndArmsHomewardAfterChaseDisplace` plus logout / phase_select twins
@@ -499,7 +502,7 @@ Row rules:
 - the map-local endpoint returns the same row shape filtered by the pending actor's current effective `map_index`, returns an empty JSON array for a known map with no pending homeward-step timers, rejects malformed or zero map indexes with `400`, and returns `404` when the runtime cannot resolve that map-scoped snapshot
 - `GET /local/spawn-group-homeward-steps/{entity_id}` returns `400` for malformed entity IDs and `404` for absent/stale/ineligible pending homeward-step schedules
 - these endpoints never mutate actor position, engagement, selected-target ownership, HP, death/respawn timers, return-step schedules, chase deadlines, homeward deadlines, or visible-world membership
-- no `POST` homeward-step operator surface is owned by this inspection freeze
+- the operator POST homeward trigger is the separate loopback companion below, not part of this inspection freeze
 
 Current implementation status:
 - the pending-frame homeward executor is now live in `internal/minimal`
@@ -518,8 +521,29 @@ Explicit non-goals for this homeward freeze alone:
 - changing `PlanStaticActorSpawnLeashReturnStep` so `within_radius` starts moving
 - inventing cross-map homeward MOVE / `GC WARP` choreography (cross-map return stays on frozen delete/readd)
 - pathfinding, patrol, or a second scheduler/goroutine
-- operator POST homeward trigger
 - inventing selected-target ownership or preserving engagement across homeward
+
+## Done: operator POST homeward-step companion
+
+Question frozen here:
+
+**Once pending-frame homeward already steps a live unengaged `within_radius` practice mob toward authored home, what is the smallest loopback operator trigger that can apply that same one step beside `return-step` / `return-home` without inventing pathfinding, pack AI, or cross-map homeward MOVE/WARP?**
+
+Contract (now GREEN):
+- endpoint: `POST /local/spawn-groups/{entity_id}/homeward-step?max_step=<positive-int>`
+- scope: `gamed` local/operator tooling only; loopback callers only; no request body
+- omitted `max_step` uses the actor's effective profile step (`EffectiveStaticActorSpawnMaxStep`, bootstrap `100`); non-positive or malformed `max_step` and malformed entity IDs return `400` before the callback
+- non-loopback callers return `403`; wrong methods return `405`; missing, non-spawn, dead, `return_required`, engaged, or otherwise unplannable actors return `404` and do not move
+- on success for a live unengaged same-map `within_radius` actor, plan one homeward step with `PlanStaticActorSpawnLeashHomewardStep`, persist the stepped position before mutating runtime, fan retained-viewer same-map `MOVE` (remove/add stay on delete/bootstrap), keep the actor unengaged, and return `{actor,step}`
+- if that manual step leaves the actor still eligible `within_radius`, refresh the pending automatic homeward deadline from the manual step time so the older pre-manual deadline cannot fire immediately; landing on authored home / `at_home` clears the deadline
+- an already-`at_home` actor is not eligible for this within-radius step (`404`); the existing internal planner's complete no-op does not persist or queue frames
+- automatic pending-frame homeward, return-step, and return-home stay on their already-owned paths
+- do not invent pathfinding, pack AI, cross-map homeward `MOVE` / `GC WARP`, or a second scheduler
+
+Current implementation status:
+- `RegisterLocalSpawnGroupHomewardStepEndpoint` owns the loopback POST beside `return-step` / `return-home`
+- `gameRuntime.StepSpawnGroupHomeward` reuses `stepSpawnGroupHomeward` so dead / `return_required` / engaged actors stay fail-closed and a still-eligible step reschedules automatic homeward
+- focused coverage: `TestGameRuntimeStepSpawnGroupHomewardMovesOnePlannedStepAndReschedules`, `TestGameRuntimeStepSpawnGroupHomewardFailsClosedForReturnRequiredDeadAndEngaged`, plus the loopback POST mux proofs
 
 ## Done: operator/runtime UpdateStaticActor re-arms within-radius homeward
 
@@ -532,7 +556,7 @@ Contract (now GREEN):
 - if the post-update actor is live, unengaged, spawn-backed, and classifies `within_radius`, arm one pending homeward deadline (`1s`, fixed `max_step = 100`)
 - if the post-update actor is `at_home`, `return_required`, dead, engaged, or non-spawn, clear any pending homeward deadline (return-step ownership still wins for `return_required`)
 - keep the existing engagement / selected-target / chase clear behavior on operator/runtime update
-- do not invent a homeward POST trigger, pathfinding, or cross-map homeward choreography
+- do not invent a homeward POST trigger beyond the owned `POST .../homeward-step` companion, pathfinding, or cross-map homeward choreography
 
 Current implementation status:
 - `UpdateStaticActor` now calls `syncSpawnGroupHomewardStepScheduleForEntity` after syncing return-step and clearing chase
