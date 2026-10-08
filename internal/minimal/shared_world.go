@@ -6061,6 +6061,12 @@ func (r *sharedWorldRegistry) PlanSpawnGroupReturnHomeStep(entityID uint64, maxS
 	return worldruntime.PlanStaticActorSpawnLeashReturnStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), maxStep)
 }
 
+// StepSpawnGroupReturnHome applies one planned return_required step toward
+// authored home. Same-map retained viewers reuse server MOVE replication plus
+// one GC CHANGE_SPEED companion at the bootstrap moving speed, queued as the
+// next server frame immediately after that MOVE. Cross-map return-step keeps
+// delete/readd and does not invent MOVE, WARP, or CHANGE_SPEED. Engagement /
+// selected-target clear remain. Exact return-home stays on ReturnSpawnGroupHome.
 func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.entities == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false
@@ -6093,17 +6099,23 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 	}
 	r.syncStaticActorCombatStateLocked(updated)
 
-	// Same-map retained viewers reuse server MOVE replication; remove/add stay on
-	// delete/bootstrap. Cross-map return-step keeps delete/readd because no return
-	// warp packet seam is owned yet. Engagement / selected-target clear remain.
+	// Same-map retained viewers reuse server MOVE replication plus one
+	// CHANGE_SPEED companion queued as the next server frame. Remove/add stay
+	// on delete/bootstrap. Cross-map return-step keeps delete/readd because no
+	// return warp packet seam is owned yet. Engagement / selected-target clear
+	// remain. Exact return-home stays without CHANGE_SPEED.
 	sameMapReturn := actor.Position.SameMap(updated.Position)
 	if sameMapReturn {
 		if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(updated); moveEncodable {
+			frames := [][]byte{append([]byte(nil), moveRaw...)}
+			if speedRaw, speedEncodable := encodeStaticActorChangeSpeedFrame(updated); speedEncodable {
+				frames = append(frames, append([]byte(nil), speedRaw...))
+			}
 			for _, target := range targetDiff.RetainedVisibleTargets {
 				if characterAtBootstrapHPFloor(target.Character) {
 					continue
 				}
-				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+				r.enqueueToEntityLocked(target.Entity.ID, frames)
 			}
 		}
 	} else {
