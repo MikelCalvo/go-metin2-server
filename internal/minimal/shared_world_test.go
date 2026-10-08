@@ -1772,8 +1772,8 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	}
 
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 2 {
-		t.Fatalf("expected selected owner to receive return-step MOVE plus target clear, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected selected owner to receive return-step MOVE, CHANGE_SPEED, and target clear, got %d frames", len(ownerQueued))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, ownerQueued[0]))
 	if err != nil {
@@ -1782,7 +1782,11 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	if moveAck.VID != targetVID || moveAck.X != 1700 || moveAck.Y != 2800 {
 		t.Fatalf("expected selected return-step owner MOVE at authored home, got %+v", moveAck)
 	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[1]))
+	speed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, ownerQueued[1]))
+	if err != nil || speed.VID != targetVID || speed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("expected selected return-step owner CHANGE_SPEED after MOVE, got %+v err=%v", speed, err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[2]))
 	if err != nil {
 		t.Fatalf("decode selected return-step target clear: %v", err)
 	}
@@ -1803,6 +1807,13 @@ func TestGameRuntimeStepSpawnGroupReturnHomeClearsStaleTargetAndEngagementWhenAc
 	}
 	if peerMove.VID != targetVID || peerMove.X != 1700 || peerMove.Y != 2800 {
 		t.Fatalf("expected peer return-step MOVE at authored home, got %+v", peerMove)
+	}
+	if len(peerRefresh) != 2 {
+		t.Fatalf("expected peer return-step MOVE plus CHANGE_SPEED only, got %d frames", len(peerRefresh))
+	}
+	peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerRefresh[1]))
+	if err != nil || peerSpeed.VID != targetVID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("expected peer return-step CHANGE_SPEED after MOVE, got %+v err=%v", peerSpeed, err)
 	}
 	for _, raw := range peerRefresh[1:] {
 		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
@@ -1907,13 +1918,17 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	currentTime = currentTime.Add(bootstrapSpawnGroupReturnStepDelay)
 
 	ownerQueued := flushServerFrames(t, ownerFlow)
-	if len(ownerQueued) != 2 {
-		t.Fatalf("expected automatic return-step to queue MOVE plus target clear for selected owner, got %d frames", len(ownerQueued))
+	if len(ownerQueued) != 3 {
+		t.Fatalf("expected automatic return-step to queue MOVE, CHANGE_SPEED, and target clear for selected owner, got %d frames", len(ownerQueued))
 	}
 	if _, err := movep.DecodeMoveAck(decodeSingleFrame(t, ownerQueued[0])); err != nil {
 		t.Fatalf("decode automatic return-step owner MOVE: %v", err)
 	}
-	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[1]))
+	speed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, ownerQueued[1]))
+	if err != nil || speed.VID != targetVID || speed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("expected automatic return-step owner CHANGE_SPEED after MOVE, got %+v err=%v", speed, err)
+	}
+	clearTarget, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, ownerQueued[2]))
 	if err != nil {
 		t.Fatalf("decode automatic return-step owner target clear: %v", err)
 	}
@@ -1943,6 +1958,13 @@ func TestGameRuntimeAutomaticReturnStepClearsSelectedCombatState(t *testing.T) {
 	}
 	if _, err := movep.DecodeMoveAck(decodeSingleFrame(t, peerRefresh[0])); err != nil {
 		t.Fatalf("decode automatic return-step peer MOVE: %v", err)
+	}
+	if len(peerRefresh) != 2 {
+		t.Fatalf("expected automatic return-step peer MOVE plus CHANGE_SPEED only, got %d frames", len(peerRefresh))
+	}
+	peerSpeed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, peerRefresh[1]))
+	if err != nil || peerSpeed.VID != targetVID || peerSpeed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("expected automatic return-step peer CHANGE_SPEED after MOVE, got %+v err=%v", peerSpeed, err)
 	}
 	for _, raw := range peerRefresh[1:] {
 		if target, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, raw)); err == nil && target.TargetVID == 0 {
