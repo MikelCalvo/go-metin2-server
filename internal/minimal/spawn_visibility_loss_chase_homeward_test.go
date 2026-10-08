@@ -172,7 +172,7 @@ func TestGameRuntimeVisibilityLossClearsPendingSpawnGroupChaseAndArmsHomewardAft
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving visibility after chase displace: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after visibility loss, got %d frames", len(moveOut))
 	}
 	clearedFrames := flushServerFrames(t, ownerFlow)

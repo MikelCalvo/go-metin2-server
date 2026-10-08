@@ -139,7 +139,7 @@ func TestGameRuntimeProximityWalkAwayClearsPendingSpawnGroupChaseAndArmsHomeward
 	if err != nil {
 		t.Fatalf("unexpected owner move error while walking out of aggro after chase displace: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after proximity walk-away, got %d frames", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {

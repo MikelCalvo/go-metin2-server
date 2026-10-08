@@ -7583,7 +7583,10 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						clearInvalidActiveMerchantBuyAfterMovement()
 					}
 					clearInvalidActiveSafeboxOpenAfterMovement(selected.X, selected.Y)
-					return gameflow.Result{Accepted: true, Replication: ack}
+					return gameflow.Result{Accepted: true, Frames: [][]byte{
+						movep.EncodeMoveAck(ack),
+						worldproto.EncodeChangeSpeed(ticketChangeSpeedPacket(selected)),
+					}}
 				},
 				HandleSyncPosition: func(packet movep.SyncPositionPacket) gameflow.SyncPositionResult {
 					stateMu.Lock()

@@ -43,6 +43,8 @@ The server `CHARACTER_POSITION` packet in this note is deliberately separate fro
 
 `CHANGE_SPEED` is likewise a compact presentation refresh for one visible actor's moving speed. The current movement path remains owned by `MOVE`, `SYNC_POSITION`, `CHARACTER_ADD`, `CHAR_ADDITIONAL_INFO`, and `CHARACTER_UPDATE`. Sit/stand still reuses that already-owned bootstrap `moving_speed` on the stance presentation seam. One successful same-map chase step now also reuses that same default on a retained-viewer companion; this is still not a second movement simulation, sit/walk table, or chase-speed formula.
 
+Owner `MOVE` emission freeze: on accepted owner-originated same-map `MOVE`, the immediate owner reply carries the existing `MOVE_ACK` first and exactly one `GC CHANGE_SPEED(selected_vid, moving_speed=150)` second. This refreshes the already advertised `CHARACTER_ADD` / `CHARACTER_UPDATE` bootstrap value, without changing position, duration, replication, or visibility formulas. Peer `MOVE` replication still carries only its existing `MOVE_ACK`, even when visibility changes. Transfer-triggering `MOVE` returns its existing rebootstrap/WARP burst instead, with no movement speed companion; rejected requests (including zero-HP owners and open private-shop hosts) emit neither acknowledgement nor companion. `SYNC_POSITION` remains unchanged, with no new speed companion. This is a self presentation refresh, not a walk/sit table or a claim about speed changing numerically.
+
 ## Current runtime rule
 
 The current Go runtime accepts only the smallest legacy-compatible stance presentation subset on client `CHARACTER_POSITION` (`0x0A60`) ingress:
@@ -66,7 +68,7 @@ This is presentation-only for now:
 - movement and sync continue to use the existing move/sync acknowledgement and peer fanout families,
 - player death/restart and non-player death/respawn do not add extra stance packets unless a later slice freezes that companion.
 
-Unsupported battle-mode, speed-buff, slow, haste, stun, knockdown, skill, equipment, sit/walk tables, or authored chase-speed formulas stay out of scope. `MOVE`, `SYNC_POSITION`, combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step paths still do not emit `CHANGE_SPEED`; the only chase exception is the retained-viewer companion on one successful same-map chase step above.
+Unsupported battle-mode, speed-buff, slow, haste, stun, knockdown, skill, equipment, sit/walk tables, or authored chase-speed formulas stay out of scope. `SYNC_POSITION`, combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step paths still do not emit `CHANGE_SPEED`; the only movement exceptions are the owner-only same-map `MOVE` refresh and the retained-viewer companion on one successful same-map chase step above. Peer player `MOVE` speed remains deferred.
 
 ## Non-goals
 
@@ -89,6 +91,7 @@ After this slice:
 - duplicate stand/sit requests are accepted no-ops with no repeated presentation frame and no `CHANGE_SPEED`,
 - selected owners already at the bootstrap `0`-HP floor fail closed before any self or peer stance presentation frame and before any `CHANGE_SPEED`,
 - unsupported position bytes still fail closed through the existing combat/targeting ingress guard,
-- `MOVE`, combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step still do not emit `CHANGE_SPEED`,
+- accepted same-map owner `MOVE` emits `MOVE_ACK` then exactly one self `CHANGE_SPEED(selected_vid, moving_speed=150)`; peer `MOVE` receives no speed companion and transfer/rejected `MOVE` receives no speed companion,
+- combat hits, death, restart, respawn, skill, item/equipment, homeward, and return-step still do not emit `CHANGE_SPEED`,
 - one successful same-map chase `MOVE` also emits one retained-viewer `GC CHANGE_SPEED(actor_vid, moving_speed=150)` using the already-owned static-actor default,
 - later movement/combat presentation slices can start from tested packet shapes rather than guessing these layouts.

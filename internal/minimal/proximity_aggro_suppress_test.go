@@ -109,7 +109,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterIn
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -125,7 +125,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterIn
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -252,7 +252,7 @@ func TestGameRuntimeProximityAggroDeathAndRespawnSeedSuppressesNearbyReacquireUn
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after respawn suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-respawn, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -268,7 +268,7 @@ func TestGameRuntimeProximityAggroDeathAndRespawnSeedSuppressesNearbyReacquireUn
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after respawn suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-respawn, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -394,7 +394,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after death-floor /restart_here suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-restart_here, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -410,7 +410,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after death-floor /restart_here suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-restart_here, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -583,7 +583,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after death-floor /phase_select /restart_here suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-/phase_select /restart_here, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -599,7 +599,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after death-floor /phase_select /restart_here suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-/phase_select /restart_here, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -764,7 +764,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after death-floor reconnect /restart_here suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-reconnect /restart_here, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, reconnectFlow)
@@ -780,7 +780,7 @@ func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterOw
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after death-floor reconnect /restart_here suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-reconnect /restart_here, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, reconnectFlow)
@@ -982,7 +982,7 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after replacement suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-replacement, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -998,7 +998,7 @@ func TestGameRuntimeProximityAggroSuppressRemapsAcrossContentBundleReplacement(t
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after replacement suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-replacement, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, ownerFlow)
@@ -1160,7 +1160,7 @@ func TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart(t *t
 	if err != nil {
 		t.Fatalf("unexpected owner move error while leaving aggro radius after daemon-restart suppress: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after leaving aggro radius post-restart, got %d frames", len(moveOut))
 	}
 	_ = flushServerFrames(t, restartFlow)
@@ -1176,7 +1176,7 @@ func TestGameRuntimeProximityAggroSuppressRematerializesAcrossDaemonRestart(t *t
 	if err != nil {
 		t.Fatalf("unexpected owner move error while re-entering aggro radius after daemon-restart suppress: %v", err)
 	}
-	if len(moveIn) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveIn) {
 		t.Fatalf("expected 1 immediate self move ack after re-entering aggro radius post-restart, got %d frames", len(moveIn))
 	}
 	_ = flushServerFrames(t, restartFlow)

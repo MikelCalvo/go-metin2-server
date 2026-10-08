@@ -2626,7 +2626,7 @@ func TestGameRuntimeMyShopOpenDeniesHostMoveAndSyncPositionWithoutMutation(t *te
 	if err != nil {
 		t.Fatalf("unexpected MOVE after MYSHOP close error: %v", err)
 	}
-	if len(moveAfterClose) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveAfterClose) {
 		t.Fatalf("expected MOVE after MYSHOP close to emit one MOVE ack, got %d", len(moveAfterClose))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, moveAfterClose[0]))

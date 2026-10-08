@@ -130,7 +130,7 @@ func TestGameRuntimeHitArmedSpawnGroupChaseSurvivesOwnerWalkOutsideAggroRadius(t
 	if err != nil {
 		t.Fatalf("unexpected owner move error while walking out of aggro radius: %v", err)
 	}
-	if len(moveOut) != 1 {
+	if !ownerMoveAckWithSpeed(t, moveOut) {
 		t.Fatalf("expected 1 immediate self move ack after walking out of aggro radius, got %d frames", len(moveOut))
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
