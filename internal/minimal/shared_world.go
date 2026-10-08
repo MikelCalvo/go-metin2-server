@@ -60,6 +60,8 @@ type sharedWorldRegistry struct {
 	staticActorCombatSnapshot         map[uint64]uint64
 	staticActorCombatEngagedBy        map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
+	// targetSwitchRefs opts authored spawn groups into proximity-only retargeting.
+	targetSwitchRefs map[string]struct{}
 	// pendingProximityAggroSuppressByVID parks actor suppress membership across
 	// Leave → fresh Join identity changes (e.g. /phase_select). Live suppress
 	// stays keyed by subject entity ID; VID is only the handoff key.
@@ -2517,6 +2519,24 @@ func (r *sharedWorldRegistry) syncRespawnPrefixesSnapshot() map[string]struct{} 
 	return cloneStringSet(r.syncRespawnPrefixes)
 }
 
+func (r *sharedWorldRegistry) replaceTargetSwitchRefs(refs map[string]struct{}) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targetSwitchRefs = cloneStringSet(refs)
+}
+
+func (r *sharedWorldRegistry) targetSwitchRefsSnapshot() map[string]struct{} {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneStringSet(r.targetSwitchRefs)
+}
+
 func (r *sharedWorldRegistry) replaceSharedHPPrefixes(prefixes map[string]struct{}) {
 	if r == nil {
 		return
@@ -3104,9 +3124,11 @@ func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 	return ok
 }
 
-// AcquireProximitySpawnGroupAggro scans live unengaged spawn-backed practice
-// mobs and establishes aggro-lite engagement for the nearest eligible live
-// same-map session inside the actor's effective aggro radius. Acquisition
+// AcquireProximitySpawnGroupAggro scans live spawn-backed practice mobs and
+// establishes aggro-lite engagement for the nearest eligible live same-map
+// session inside the actor's effective aggro radius. An undamaged actor with
+// no selected player target may switch from its current in-radius owner only
+// to a strictly closer eligible candidate. Acquisition
 // itself stays pure: it does not invent selected-target ownership, emit
 // immediate retaliation, or arm delayed retaliation. Chase scheduling is synced
 // by the runtime consumer after engagement is newly established, and the engaged
@@ -3151,14 +3173,33 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint
 		if r.clearProximityAggroSuppressIfOutsideRadiusLocked(actor, candidates) {
 			suppressCleared = append(suppressCleared, actor.Entity.ID)
 		}
-		if existing := r.staticActorCombatEngagedBy[actor.Entity.ID]; existing != 0 {
-			continue
-		}
 		if currentHP, ok := r.staticActorCombatHP[actor.Entity.ID]; ok && currentHP == 0 {
 			continue
 		}
 		if _, waiting := r.staticActorCombatRespawnAt[actor.Entity.ID]; waiting {
 			continue
+		}
+		existing := r.staticActorCombatEngagedBy[actor.Entity.ID]
+		if existing != 0 {
+			if _, enabled := r.targetSwitchRefs[actor.SpawnGroupRef]; !enabled {
+				continue
+			}
+			// The first accepted hit damages the mob, and selected combat intent
+			// also protects a lock. Switching never steals either kind of fight.
+			fullHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+			if !ok || fullHP == 0 || r.staticActorCombatHP[actor.Entity.ID] != fullHP {
+				continue
+			}
+			selected := false
+			for _, targetVID := range r.sessionCombatTargets {
+				if targetVID == uint32(actor.Entity.ID) {
+					selected = true
+					break
+				}
+			}
+			if selected {
+				continue
+			}
 		}
 		eligible := make([]worldruntime.SpawnAggroCandidate, 0, len(candidates))
 		for _, candidate := range candidates {
@@ -3171,9 +3212,31 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint
 		if !ok {
 			continue
 		}
-		before := r.staticActorCombatEngagedBy[actor.Entity.ID]
+		if existing != 0 {
+			owner, ok := r.playerCharacter(existing)
+			if !ok || characterAtBootstrapHPFloor(owner) {
+				continue
+			}
+			ownerPos := r.spawnAggroCandidatePositionLocked(owner)
+			ownerEval, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, ownerPos, worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
+			if !ok || !ownerEval.Acquired || selected.EntityID == existing {
+				continue
+			}
+			actorPos := ownerEval.Current
+			ownerDX, ownerDY := int64(actorPos.X)-int64(ownerPos.X), int64(actorPos.Y)-int64(ownerPos.Y)
+			candidateDX, candidateDY := int64(actorPos.X)-int64(selected.Position.X), int64(actorPos.Y)-int64(selected.Position.Y)
+			ownerDistance := ownerDX*ownerDX + ownerDY*ownerDY
+			candidateDistance := candidateDX*candidateDX + candidateDY*candidateDY
+			if candidateDistance >= ownerDistance {
+				continue
+			}
+			// A switch is not an explicit release: the former owner stays
+			// unsuppressed and the existing chase deadline remains armed.
+			r.staticActorCombatEngagedBy[actor.Entity.ID] = selected.EntityID
+			continue
+		}
 		r.setStaticActorCombatEngagementLocked(actor.Entity.ID, selected.EntityID)
-		if before == 0 && r.staticActorCombatEngagedBy[actor.Entity.ID] == selected.EntityID {
+		if r.staticActorCombatEngagedBy[actor.Entity.ID] == selected.EntityID {
 			acquired = append(acquired, actor.Entity.ID)
 		}
 	}

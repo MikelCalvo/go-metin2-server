@@ -17,6 +17,120 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+func TestGameRuntimeProximityTargetSwitchToCloserLiveCandidate(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SwitchOwner", 0x010301b1, 0x020401b1, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	closer := peerVisibilityCharacter("SwitchCloser", 0x010301b2, 0x020401b2, 1950, 2800, 0, 101, 201)
+	closer.MapIndex = 42
+	closer.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "switch-owner", 0x51515151, owner)
+	issuePeerTicket(t, store, "switch-closer", 0x52525252, closer)
+	currentTime := time.Unix(1700002900, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius",
+		VisibilityRadius: 400, VisibilitySectorSize: 200,
+	}, store, nil, staticstore.NewMemoryStore(), interactionstore.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("new target-switch runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref: "practice.target_switch", TargetSwitch: true, Name: "SwitchMob", MapIndex: 42, X: 1700, Y: 2800,
+		RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import switch actor: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.target_switch")
+	if !ok {
+		t.Fatal("missing switch actor")
+	}
+	exported, err := runtime.ExportContentBundle()
+	if err != nil || len(exported.SpawnGroups) != 1 || !exported.SpawnGroups[0].TargetSwitch {
+		t.Fatalf("opt-in did not round-trip through runtime export: %+v, %v", exported.SpawnGroups, err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-owner", 0x51515151)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	closerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-closer", 0x52525252)
+	defer closeSessionFlow(t, closerFlow)
+	_ = flushServerFrames(t, closerFlow)
+	ownerEntity, _ := runtime.sharedWorld.playerEntityByName("SwitchOwner")
+	closerEntity, _ := runtime.sharedWorld.playerEntityByName("SwitchCloser")
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatal("first in-radius owner was not acquired")
+	}
+	// Equal distance does not displace the incumbent, even if the new entity
+	// would win a fresh nearest-candidate tie.
+	for index, x := range []int32{1550, 1750} {
+		_, err := closerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+			Func: 1, Rot: 12, X: x, Y: 2800, Time: uint32(0x51525370 + index),
+		})))
+		if err != nil {
+			t.Fatalf("move closer candidate: %v", err)
+		}
+		_ = flushServerFrames(t, closerFlow)
+		if index == 0 && !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+			t.Fatal("equal-distance candidate stole engagement")
+		}
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, closerEntity.Entity.ID) {
+		t.Fatal("closer candidate did not take engagement")
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("SwitchCloser"); ok {
+		t.Fatalf("switch invented player target intent: %+v", snapshot)
+	}
+	if attempt := runtime.sharedWorld.AttemptStaticActorCombatTarget(ownerEntity.Entity.ID, uint32(group.EntityID)); attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("previous owner should be gated after switch: %+v", attempt)
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	for _, raw := range flushServerFrames(t, ownerFlow) {
+		if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatal("old owner received retaliation after switch")
+		}
+	}
+	gotNewRetaliation := false
+	for _, raw := range flushServerFrames(t, closerFlow) {
+		if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+			gotNewRetaliation = true
+		}
+	}
+	if !gotNewRetaliation {
+		t.Fatal("new owner did not receive the owned delayed retaliation")
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	_ = flushServerFrames(t, closerFlow)
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1750 || stepped.Y != 2800 {
+		t.Fatalf("already-armed chase did not replan toward new owner: %+v, ok=%v", stepped, ok)
+	}
+	// An accepted hit establishes the older combat lock, which proximity
+	// switching must never steal even when the first player moves nearer.
+	_, err = closerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("select target after switch: %v", err)
+	}
+	drainAcceptedTargetCreateNewIfQueued(t, closerFlow)
+	_, err = closerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(group.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("hit target after switch: %v", err)
+	}
+	_, err = ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1, Rot: 12, X: 1701, Y: 2800, Time: 0x51525373,
+	})))
+	if err != nil {
+		t.Fatalf("move old owner nearer after hit: %v", err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, closerEntity.Entity.ID) {
+		t.Fatal("post-hit lock was stolen by proximity switch")
+	}
+}
+
 func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterInRadiusRelease(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroSuppressOwner", 0x01030196, 0x02040196, 1850, 2800, 0, 101, 201)

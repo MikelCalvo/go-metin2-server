@@ -45,6 +45,7 @@ type StaticActor struct {
 
 type SpawnGroup struct {
 	Ref                string   `json:"ref"`
+	TargetSwitch       bool     `json:"target_switch,omitempty"`
 	Name               string   `json:"name,omitempty"`
 	MapIndex           uint32   `json:"map_index"`
 	X                  int32    `json:"x"`
@@ -1126,6 +1127,18 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 		return Bundle{}, err
 	}
 	return normalized, nil
+}
+
+// TargetSwitchSpawnRefs returns only spawn groups explicitly opted into the
+// proximity target-switch companion. Omitted false leaves existing locks alone.
+func TargetSwitchSpawnRefs(bundle Bundle) map[string]struct{} {
+	refs := make(map[string]struct{})
+	for _, group := range bundle.SpawnGroups {
+		if group.TargetSwitch && group.Ref != "" {
+			refs[group.Ref] = struct{}{}
+		}
+	}
+	return refs
 }
 
 // SyncRespawnPackPrefixes returns the authored multi-count regen prefixes that
