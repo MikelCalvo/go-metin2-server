@@ -4928,6 +4928,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 		var activeCombatTargetVID uint32
 		var activeCombatTargetMarkerVID uint32
 		var activeCombatTargetSnapshotVersion uint64
+		var killingFlyTargetVID uint32
+		var killingFlySnapshotVersion uint64
 		var nextAllowedNormalAttackAt time.Time
 		activeCharacterPosition := bootstrapCharacterPositionGeneral
 		var pendingPracticeMobServerOriginRetaliation bool
@@ -5789,6 +5791,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 			return prependMerchantCloseFrame(frames)
 		}
 		clearActiveCombatTarget := func() {
+			killingFlyTargetVID = 0
+			killingFlySnapshotVersion = 0
 			engagedEntityIDs := make([]uint64, 0)
 			if sharedWorld != nil && sharedWorldID != 0 {
 				sharedWorld.mu.Lock()
@@ -10392,6 +10396,9 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.FlyTargetingResult{Accepted: false}
 					}
 					flyFrame := encodeBootstrapCreateFly(startVID, endVID)
+					// Keep one selected-target fly intent for the next accepted hit.
+					killingFlyTargetVID = endVID
+					killingFlySnapshotVersion = activeCombatTargetSnapshotVersion
 					if sharedWorld != nil && actorEntityID != 0 {
 						sharedWorld.EnqueueStaticActorFramesToVisiblePeers(actorEntityID, sharedWorldID, [][]byte{flyFrame})
 					}
@@ -10462,6 +10469,8 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						return gameflow.TargetResult{Accepted: false}
 					}
 					if activeCombatTargetVID != resolution.Packet.TargetVID || activeCombatTargetSnapshotVersion != resolution.SnapshotVersion {
+						killingFlyTargetVID = 0
+						killingFlySnapshotVersion = 0
 						preservingProximityArmedRetaliation := activeCombatTargetVID == 0 &&
 							pendingPracticeMobServerOriginRetaliation &&
 							pendingPracticeMobServerOriginRetaliationTargetVID == resolution.Packet.TargetVID &&
@@ -10504,11 +10513,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if !nextAllowedNormalAttackAt.IsZero() && sessionNow().Before(nextAllowedNormalAttackAt) {
 						return gameflow.AttackResult{Accepted: false}
 					}
+					// Check the selected visible target before the hit mutates HP and
+					// clears the selection. The attack resolver remains authoritative.
+					flyStartVID, flyEndVID, _, flySelected := selectedTargetCreateFlyPresentation(packet.TargetVID)
 					previousSelected := selectedPlayer.LiveCharacter()
 					resolution := runtime.resolveSelectedStaticActorNormalAttack(sharedWorldID, activeCombatTargetVID, activeCombatTargetSnapshotVersion, packet.TargetVID)
 					if !resolution.Accepted {
 						return gameflow.AttackResult{Accepted: false}
 					}
+					flySelected = flySelected && killingFlyTargetVID == packet.TargetVID && killingFlySnapshotVersion == activeCombatTargetSnapshotVersion
+					killingFlyTargetVID = 0
+					killingFlySnapshotVersion = 0
 					if resolution.ClearActiveTarget {
 						clearActiveCombatTarget()
 					} else {
@@ -10520,6 +10535,12 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							return gameflow.AttackResult{Accepted: false}
 						}
 						frames = append(frames, combatproto.EncodeServerTarget(*resolution.Packet))
+					}
+					if resolution.ClearActiveTarget && flySelected && resolution.Actor.EntityID != 0 && uint32(resolution.Actor.EntityID) == flyEndVID {
+						// A killing hit already starts with DEAD, TARGET(0, 0), and
+						// (for owned combat profiles) DAMAGE_INFO. Keep that prefix
+						// intact and place the presentation before any reward.
+						frames = append(frames, encodeBootstrapCreateFly(flyStartVID, flyEndVID))
 					}
 					deathRewardScalarAccountSaveFailed := false
 					if !resolution.DeathReward.Empty() {
