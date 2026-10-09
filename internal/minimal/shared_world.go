@@ -5786,7 +5786,8 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	}
 	r.syncStaticActorCombatStateLocked(actor)
 
-	// Same-map live spawn-backed position-only updates reuse retained-viewer MOVE.
+	// Same-map live spawn-backed position-only updates reuse retained-viewer MOVE
+	// followed by one bootstrap CHANGE_SPEED for those same live viewers.
 	// Presentation/name/race/combat-profile refreshes, dead actors, cross-map
 	// updates, and non-spawn static actors stay on delete/readd. Engagement /
 	// selected-target clear remain on the already-owned update lifecycle.
@@ -5799,11 +5800,15 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 		!r.staticActorDeadLocked(actor.Entity.ID)
 	if sameMapPositionOnlyMove {
 		if moveRaw, moveEncodable := encodeStaticActorChaseMoveFrame(actor); moveEncodable {
+			frames := [][]byte{moveRaw}
+			if speedRaw, speedEncodable := encodeStaticActorChangeSpeedFrame(actor); speedEncodable {
+				frames = append(frames, speedRaw)
+			}
 			for _, target := range targetDiff.RetainedVisibleTargets {
 				if characterAtBootstrapHPFloor(target.Character) {
 					continue
 				}
-				r.enqueueToEntityLocked(target.Entity.ID, [][]byte{moveRaw})
+				r.enqueueToEntityLocked(target.Entity.ID, frames)
 			}
 		}
 	} else {

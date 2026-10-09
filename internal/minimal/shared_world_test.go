@@ -917,8 +917,8 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 		t.Fatal("expected spawn-backed actor current-position update inside leash radius to succeed")
 	}
 	queuedDrift := flushServerFrames(t, flow)
-	if len(queuedDrift) != 1 {
-		t.Fatalf("expected retained viewer to receive one MOVE after within-radius drift, got %d frames", len(queuedDrift))
+	if len(queuedDrift) != 2 {
+		t.Fatalf("expected retained viewer to receive MOVE then CHANGE_SPEED after within-radius drift, got %d frames", len(queuedDrift))
 	}
 	driftMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, queuedDrift[0]))
 	if err != nil {
@@ -927,6 +927,7 @@ func TestGameRuntimeReturnSpawnGroupHomeMovesWithinRadiusMobBackToAuthoredHome(t
 	if driftMove.VID != uint32(group.EntityID) || driftMove.X != 1900 || driftMove.Y != 2900 || driftMove.Duration == 0 {
 		t.Fatalf("unexpected within-radius drift MOVE payload: %+v", driftMove)
 	}
+	assertOperatorPositionChangeSpeed(t, queuedDrift[1], uint32(group.EntityID))
 	leash, ok := runtime.SpawnGroupLeash(group.EntityID, worldruntime.DefaultSpawnLeashRadius)
 	if !ok || leash.Status != worldruntime.SpawnLeashStatusWithinRadius || leash.ReturnRequired || leash.Current.X != 1900 || leash.Current.Y != 2900 {
 		t.Fatalf("expected moved spawn group to remain within leash before return-home trigger, ok=%v leash=%+v", ok, leash)
@@ -18113,8 +18114,8 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalReturnStep(t *te
 		t.Fatalf("expected already-dead owner to skip displace visibility before /restart_here due return-step preflight, got %d", len(queued))
 	}
 	watcherDisplace := flushServerFrames(t, watcherFlow)
-	if len(watcherDisplace) != 1 {
-		t.Fatalf("expected watcher to receive one MOVE for live same-map displace before /restart_here due return-step preflight, got %d", len(watcherDisplace))
+	if len(watcherDisplace) != 2 {
+		t.Fatalf("expected watcher to receive MOVE then CHANGE_SPEED for live same-map displace before /restart_here due return-step preflight, got %d", len(watcherDisplace))
 	}
 	displaceMove, err := movep.DecodeMoveAck(decodeSingleFrame(t, watcherDisplace[0]))
 	if err != nil {
@@ -18123,6 +18124,7 @@ func TestGameSessionFlowPracticeMobRestartHerePreflightsDueLocalReturnStep(t *te
 	if displaceMove.VID != targetVID || displaceMove.X != displacedX || displaceMove.Y != displacedY || displaceMove.Duration == 0 {
 		t.Fatalf("unexpected watcher displace MOVE payload before /restart_here due return-step preflight: %+v", displaceMove)
 	}
+	assertOperatorPositionChangeSpeed(t, watcherDisplace[1], targetVID)
 
 	advance(bootstrapSpawnGroupReturnStepDelay)
 	if runtime.now().Before(dueAt) {
