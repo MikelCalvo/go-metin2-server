@@ -15455,6 +15455,12 @@ func (r *gameRuntime) ExportContentBundle() (contentbundle.Bundle, error) {
 	if err != nil {
 		return contentbundle.Bundle{}, err
 	}
+	if r.sharedWorld != nil {
+		refs := r.sharedWorld.targetSwitchRefsSnapshot()
+		for i := range bundle.SpawnGroups {
+			_, bundle.SpawnGroups[i].TargetSwitch = refs[bundle.SpawnGroups[i].Ref]
+		}
+	}
 	questState, err := r.loadQuestStateForContentBundle()
 	if err != nil {
 		return contentbundle.Bundle{}, err
@@ -15525,6 +15531,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
+		r.sharedWorld.replaceTargetSwitchRefs(contentbundle.TargetSwitchSpawnRefs(bundle))
 		r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 		r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 		r.replaceSharedHPPrefixes(contentbundle.SharedHPPackPrefixes(bundle))
@@ -15537,6 +15544,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	}
 	previousActors := r.StaticActors()
 	previousWeightedDropEntries := r.weightedDropEntriesSnapshot()
+	previousTargetSwitchRefs := r.sharedWorld.targetSwitchRefsSnapshot()
 	previousSyncRespawnPrefixes := r.syncRespawnPrefixesSnapshot()
 	previousSharedHPPrefixes := r.sharedHPPrefixesSnapshot()
 	previousRegenRespawnDelayMs := r.regenRespawnDelayMsSnapshot()
@@ -15590,6 +15598,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		r.replaceQuestFlagGraphs(previousBundle.QuestFlagGraphs)
 		r.replaceWeightedDropEntries(previousWeightedDropEntries)
+		r.sharedWorld.replaceTargetSwitchRefs(previousTargetSwitchRefs)
 		r.replaceSyncRespawnPrefixes(previousSyncRespawnPrefixes)
 		r.replaceSharedHPPrefixes(previousSharedHPPrefixes)
 		r.replaceRegenRespawnDelayMs(previousRegenRespawnDelayMs)
@@ -15626,6 +15635,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	r.pruneSpawnGroupChaseStepSchedules()
 	r.pruneSpawnGroupHomewardStepSchedules()
 	r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
+	r.sharedWorld.replaceTargetSwitchRefs(contentbundle.TargetSwitchSpawnRefs(bundle))
 	r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 	r.replaceSharedHPPrefixes(contentbundle.SharedHPPackPrefixes(bundle))
 	r.replaceRegenRespawnDelayMs(contentbundle.RegenRespawnDelayMsBySpawnGroupRef(bundle))

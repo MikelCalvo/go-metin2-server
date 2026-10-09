@@ -47,19 +47,23 @@ type pendingServerFrames struct {
 }
 
 type sharedWorldRegistry struct {
-	mu                                sync.Mutex
-	topology                          worldruntime.BootstrapTopology
-	entities                          *worldruntime.EntityRegistry
-	sessionDirectory                  *worldruntime.SessionDirectory
-	staticActorCombatHP               map[uint64]uint8
-	staticActorCombatRespawnAt        map[uint64]time.Time
-	syncRespawnPrefixes               map[string]struct{}
-	sharedHPPrefixes                  map[string]struct{}
-	regenRespawnDelayMs               map[string]int64
-	regenFacingAngle                  map[string]float32
-	staticActorCombatSnapshot         map[uint64]uint64
-	staticActorCombatEngagedBy        map[uint64]uint64
+	mu                         sync.Mutex
+	topology                   worldruntime.BootstrapTopology
+	entities                   *worldruntime.EntityRegistry
+	sessionDirectory           *worldruntime.SessionDirectory
+	staticActorCombatHP        map[uint64]uint8
+	staticActorCombatRespawnAt map[uint64]time.Time
+	syncRespawnPrefixes        map[string]struct{}
+	sharedHPPrefixes           map[string]struct{}
+	regenRespawnDelayMs        map[string]int64
+	regenFacingAngle           map[string]float32
+	staticActorCombatSnapshot  map[uint64]uint64
+	staticActorCombatEngagedBy map[uint64]uint64
+	// proximityEngagedBy records the current owner only for proximity-scanned locks.
+	proximityEngagedBy                map[uint64]uint64
 	staticActorProximityAggroSuppress map[uint64]map[uint64]struct{}
+	// targetSwitchRefs opts authored spawn groups into proximity-only retargeting.
+	targetSwitchRefs map[string]struct{}
 	// pendingProximityAggroSuppressByVID parks actor suppress membership across
 	// Leave → fresh Join identity changes (e.g. /phase_select). Live suppress
 	// stays keyed by subject entity ID; VID is only the handoff key.
@@ -237,6 +241,7 @@ type staticActorCombatStateSnapshot struct {
 	RespawnAt              map[uint64]time.Time
 	Snapshot               map[uint64]uint64
 	EngagedBy              map[uint64]uint64
+	ProximityEngagedBy     map[uint64]uint64
 	ProximityAggroSuppress map[uint64]map[uint64]struct{}
 	DeathReward            map[uint64]worldruntime.StaticActorDeathReward
 	SessionTargets         map[uint64]uint32
@@ -1727,6 +1732,7 @@ func (r *sharedWorldRegistry) clearStaticActorCombatStateLocked(entityID uint64)
 	if r.staticActorCombatHP != nil {
 		delete(r.staticActorCombatHP, entityID)
 	}
+	delete(r.proximityEngagedBy, entityID)
 	if r.staticActorCombatRespawnAt != nil {
 		delete(r.staticActorCombatRespawnAt, entityID)
 	}
@@ -1754,6 +1760,7 @@ func (r *sharedWorldRegistry) captureStaticActorCombatStateLocked() staticActorC
 		RespawnAt:              cloneUint64TimeMap(r.staticActorCombatRespawnAt),
 		Snapshot:               cloneUint64Uint64Map(r.staticActorCombatSnapshot),
 		EngagedBy:              cloneUint64Uint64Map(r.staticActorCombatEngagedBy),
+		ProximityEngagedBy:     cloneUint64Uint64Map(r.proximityEngagedBy),
 		ProximityAggroSuppress: cloneUint64Uint64SetMap(r.staticActorProximityAggroSuppress),
 		DeathReward:            cloneStaticActorDeathRewardMap(r.staticActorDeathReward),
 		SessionTargets:         cloneUint64Uint32Map(r.sessionCombatTargets),
@@ -1770,6 +1777,7 @@ func (r *sharedWorldRegistry) restoreStaticActorCombatStateLocked(snapshot stati
 	r.staticActorCombatRespawnAt = cloneUint64TimeMap(snapshot.RespawnAt)
 	r.staticActorCombatSnapshot = cloneUint64Uint64Map(snapshot.Snapshot)
 	r.staticActorCombatEngagedBy = cloneUint64Uint64Map(snapshot.EngagedBy)
+	r.proximityEngagedBy = cloneUint64Uint64Map(snapshot.ProximityEngagedBy)
 	r.staticActorProximityAggroSuppress = cloneUint64Uint64SetMap(snapshot.ProximityAggroSuppress)
 	r.staticActorDeathReward = cloneStaticActorDeathRewardMap(snapshot.DeathReward)
 	r.sessionCombatTargets = cloneUint64Uint32Map(snapshot.SessionTargets)
@@ -1910,6 +1918,7 @@ func (r *sharedWorldRegistry) restoreStillDeadSpawnGroupCombatStateLocked(entity
 		r.staticActorCombatRespawnAt = make(map[uint64]time.Time)
 	}
 	r.staticActorCombatHP[entityID] = 0
+	delete(r.proximityEngagedBy, entityID)
 	r.staticActorCombatRespawnAt[entityID] = respawnAt
 	r.assignStaticActorCombatSnapshotLocked(entityID)
 	if engagedBy := r.staticActorCombatEngagedBy[entityID]; engagedBy != 0 {
@@ -2091,6 +2100,7 @@ func (r *sharedWorldRegistry) restoreDamagedSpawnGroupCombatStateLocked(entityID
 		r.staticActorCombatHP = make(map[uint64]uint8)
 	}
 	r.staticActorCombatHP[entityID] = currentHP
+	delete(r.proximityEngagedBy, entityID)
 	if r.staticActorCombatRespawnAt != nil {
 		delete(r.staticActorCombatRespawnAt, entityID)
 	}
@@ -2226,6 +2236,7 @@ func (r *sharedWorldRegistry) setStaticActorCombatEngagementLocked(entityID uint
 		return
 	}
 	r.staticActorCombatEngagedBy[entityID] = subjectID
+	delete(r.proximityEngagedBy, entityID)
 	r.clearProximityAggroSuppressForActorLocked(entityID)
 }
 
@@ -2248,6 +2259,7 @@ func (r *sharedWorldRegistry) ClearStaticActorCombatEngagement(entityID uint64, 
 		return false
 	}
 	delete(r.staticActorCombatEngagedBy, entityID)
+	delete(r.proximityEngagedBy, entityID)
 	r.markProximityAggroSuppressLocked(entityID, subjectID)
 	return true
 }
@@ -2312,6 +2324,7 @@ func (r *sharedWorldRegistry) clearStaticActorCombatEngagementsBySubjectLocked(s
 			continue
 		}
 		delete(r.staticActorCombatEngagedBy, entityID)
+		delete(r.proximityEngagedBy, entityID)
 		// Always mark the releasing subject. seedProximity skips bootstrap HP-floor
 		// candidates, but death-floor /restart_here recovery needs that same owner
 		// suppressed while still inside aggro radius after live HP is restored.
@@ -2461,6 +2474,7 @@ func (r *sharedWorldRegistry) releaseStaticActorCombatEngagementLocked(actor wor
 		return
 	}
 	engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]
+	delete(r.proximityEngagedBy, actor.Entity.ID)
 	if engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
 	}
@@ -2515,6 +2529,24 @@ func (r *sharedWorldRegistry) syncRespawnPrefixesSnapshot() map[string]struct{} 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneStringSet(r.syncRespawnPrefixes)
+}
+
+func (r *sharedWorldRegistry) replaceTargetSwitchRefs(refs map[string]struct{}) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.targetSwitchRefs = cloneStringSet(refs)
+}
+
+func (r *sharedWorldRegistry) targetSwitchRefsSnapshot() map[string]struct{} {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneStringSet(r.targetSwitchRefs)
 }
 
 func (r *sharedWorldRegistry) replaceSharedHPPrefixes(prefixes map[string]struct{}) {
@@ -2687,6 +2719,7 @@ func (r *sharedWorldRegistry) copyOptInPackSharedHPLocked(actor worldruntime.Sta
 			continue
 		}
 		r.staticActorCombatHP[sibling.Entity.ID] = remainingHP
+		delete(r.proximityEngagedBy, sibling.Entity.ID)
 		if remainingHP == 0 {
 			r.releaseStaticActorCombatEngagementLocked(sibling, true)
 			r.scheduleStaticActorCombatRespawnLocked(sibling)
@@ -2947,6 +2980,7 @@ func (r *sharedWorldRegistry) flushReadyStaticActorRespawnLocked(entityID uint64
 		r.staticActorCombatHP = make(map[uint64]uint8)
 	}
 	r.staticActorCombatHP[entityID] = resetHP
+	delete(r.proximityEngagedBy, entityID)
 	r.assignStaticActorCombatSnapshotLocked(entityID)
 	r.releaseStaticActorCombatEngagementLocked(respawnActor, true)
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
@@ -3067,6 +3101,7 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	}
 	if _, ok := r.sessionEntryLocked(engagedBy); !ok {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		delete(r.proximityEngagedBy, actor.Entity.ID)
 		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false
@@ -3074,6 +3109,7 @@ func (r *sharedWorldRegistry) staticActorAggroLiteBlocksFreshTargetLocked(subjec
 	engagedOwner, ok := r.playerCharacter(engagedBy)
 	if !ok || characterAtBootstrapHPFloor(engagedOwner) {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		delete(r.proximityEngagedBy, actor.Entity.ID)
 		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 		r.clearSessionCombatTargetLocked(engagedBy)
 		return false
@@ -3104,9 +3140,11 @@ func staticActorSpawnGroupAggroLiteCombatKind(combatKind string) bool {
 	return ok
 }
 
-// AcquireProximitySpawnGroupAggro scans live unengaged spawn-backed practice
-// mobs and establishes aggro-lite engagement for the nearest eligible live
-// same-map session inside the actor's effective aggro radius. Acquisition
+// AcquireProximitySpawnGroupAggro scans live spawn-backed practice mobs and
+// establishes aggro-lite engagement for the nearest eligible live same-map
+// session inside the actor's effective aggro radius. An undamaged actor with
+// no selected player target may switch from its current in-radius owner only
+// to a strictly closer eligible candidate. Acquisition
 // itself stays pure: it does not invent selected-target ownership, emit
 // immediate retaliation, or arm delayed retaliation. Chase scheduling is synced
 // by the runtime consumer after engagement is newly established, and the engaged
@@ -3151,14 +3189,33 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint
 		if r.clearProximityAggroSuppressIfOutsideRadiusLocked(actor, candidates) {
 			suppressCleared = append(suppressCleared, actor.Entity.ID)
 		}
-		if existing := r.staticActorCombatEngagedBy[actor.Entity.ID]; existing != 0 {
-			continue
-		}
 		if currentHP, ok := r.staticActorCombatHP[actor.Entity.ID]; ok && currentHP == 0 {
 			continue
 		}
 		if _, waiting := r.staticActorCombatRespawnAt[actor.Entity.ID]; waiting {
 			continue
+		}
+		existing := r.staticActorCombatEngagedBy[actor.Entity.ID]
+		if existing != 0 {
+			if _, enabled := r.targetSwitchRefs[actor.SpawnGroupRef]; !enabled || r.proximityEngagedBy[actor.Entity.ID] != existing {
+				continue
+			}
+			// The first accepted hit damages the mob, and selected combat intent
+			// also protects a lock. Switching never steals either kind of fight.
+			fullHP, ok := worldruntime.BootstrapStaticActorCurrentHP(actor.CombatKind)
+			if !ok || fullHP == 0 || r.staticActorCombatHP[actor.Entity.ID] != fullHP {
+				continue
+			}
+			selected := false
+			for _, targetVID := range r.sessionCombatTargets {
+				if targetVID == uint32(actor.Entity.ID) {
+					selected = true
+					break
+				}
+			}
+			if selected {
+				continue
+			}
 		}
 		eligible := make([]worldruntime.SpawnAggroCandidate, 0, len(candidates))
 		for _, candidate := range candidates {
@@ -3171,9 +3228,36 @@ func (r *sharedWorldRegistry) AcquireProximitySpawnGroupAggro() (acquired []uint
 		if !ok {
 			continue
 		}
-		before := r.staticActorCombatEngagedBy[actor.Entity.ID]
+		if existing != 0 {
+			owner, ok := r.playerCharacter(existing)
+			if !ok || characterAtBootstrapHPFloor(owner) {
+				continue
+			}
+			ownerPos := r.spawnAggroCandidatePositionLocked(owner)
+			ownerEval, ok := worldruntime.EvaluateStaticActorSpawnAggroAcquisition(actor, ownerPos, worldruntime.EffectiveStaticActorSpawnAggroRadiusForActor(actor))
+			if !ok || !ownerEval.Acquired || selected.EntityID == existing {
+				continue
+			}
+			actorPos := ownerEval.Current
+			ownerDX, ownerDY := int64(actorPos.X)-int64(ownerPos.X), int64(actorPos.Y)-int64(ownerPos.Y)
+			candidateDX, candidateDY := int64(actorPos.X)-int64(selected.Position.X), int64(actorPos.Y)-int64(selected.Position.Y)
+			ownerDistance := ownerDX*ownerDX + ownerDY*ownerDY
+			candidateDistance := candidateDX*candidateDX + candidateDY*candidateDY
+			if candidateDistance >= ownerDistance {
+				continue
+			}
+			// A switch is not an explicit release: the former owner stays
+			// unsuppressed and the existing chase deadline remains armed.
+			r.staticActorCombatEngagedBy[actor.Entity.ID] = selected.EntityID
+			r.proximityEngagedBy[actor.Entity.ID] = selected.EntityID
+			continue
+		}
 		r.setStaticActorCombatEngagementLocked(actor.Entity.ID, selected.EntityID)
-		if before == 0 && r.staticActorCombatEngagedBy[actor.Entity.ID] == selected.EntityID {
+		if r.staticActorCombatEngagedBy[actor.Entity.ID] == selected.EntityID {
+			if r.proximityEngagedBy == nil {
+				r.proximityEngagedBy = make(map[uint64]uint64)
+			}
+			r.proximityEngagedBy[actor.Entity.ID] = selected.EntityID
 			acquired = append(acquired, actor.Entity.ID)
 		}
 	}
@@ -5837,6 +5921,7 @@ func (r *sharedWorldRegistry) updateStaticActor(entityID uint64, name string, ma
 	}
 	if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+		delete(r.proximityEngagedBy, actor.Entity.ID)
 		r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(previous); ok {
@@ -6149,6 +6234,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupReturnHome(entityID uint64, maxStep 
 	}
 	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		delete(r.proximityEngagedBy, updated.Entity.ID)
 		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
 	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
@@ -6294,6 +6380,7 @@ func (r *sharedWorldRegistry) StepSpawnGroupHomeward(entityID uint64, maxStep in
 	}
 	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		delete(r.proximityEngagedBy, updated.Entity.ID)
 		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
 	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
@@ -6413,6 +6500,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 		r.syncStaticActorCombatStateLocked(actor)
 		if engagedBy := r.staticActorCombatEngagedBy[actor.Entity.ID]; engagedBy != 0 {
 			delete(r.staticActorCombatEngagedBy, actor.Entity.ID)
+			delete(r.proximityEngagedBy, actor.Entity.ID)
 			r.markProximityAggroSuppressLocked(actor.Entity.ID, engagedBy)
 		}
 		if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
@@ -6483,6 +6571,7 @@ func (r *sharedWorldRegistry) ReturnSpawnGroupHome(entityID uint64) (SpawnGroupL
 	}
 	if engagedBy := r.staticActorCombatEngagedBy[updated.Entity.ID]; engagedBy != 0 {
 		delete(r.staticActorCombatEngagedBy, updated.Entity.ID)
+		delete(r.proximityEngagedBy, updated.Entity.ID)
 		r.markProximityAggroSuppressLocked(updated.Entity.ID, engagedBy)
 	}
 	if targetVID, ok := worldruntime.StaticActorVisibilityVID(actor); ok {
@@ -6732,6 +6821,9 @@ func (r *sharedWorldRegistry) AttemptSelectedStaticActorAttack(subjectID uint64,
 		return attempt
 	}
 	r.staticActorCombatHP[actor.Entity.ID] = nextHP
+	// Once damaged, this is a combat lock even if the same owner was acquired
+	// first by proximity. A later heal cannot make that hit switchable again.
+	delete(r.proximityEngagedBy, actor.Entity.ID)
 	r.copyOptInPackSharedHPLocked(actor, nextHP)
 	r.setStaticActorCombatEngagementLocked(actor.Entity.ID, subjectID)
 	if actor.SpawnGroupRef != "" && staticActorSpawnGroupAggroLiteCombatKind(actor.CombatKind) {

@@ -17,6 +17,305 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
+func TestGameRuntimeProximityTargetSwitchToCloserLiveCandidate(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SwitchOwner", 0x010301b1, 0x020401b1, 1850, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	closer := peerVisibilityCharacter("SwitchCloser", 0x010301b2, 0x020401b2, 1950, 2800, 0, 101, 201)
+	closer.MapIndex = 42
+	closer.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "switch-owner", 0x51515151, owner)
+	issuePeerTicket(t, store, "switch-closer", 0x52525252, closer)
+	currentTime := time.Unix(1700002900, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius",
+		VisibilityRadius: 400, VisibilitySectorSize: 200,
+	}, store, nil, staticstore.NewMemoryStore(), interactionstore.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("new target-switch runtime: %v", err)
+	}
+	runtime.now = func() time.Time { return currentTime }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+		Ref: "practice.target_switch", TargetSwitch: true, Name: "SwitchMob", MapIndex: 42, X: 1700, Y: 2800,
+		RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+	}}})
+	if err != nil {
+		t.Fatalf("import switch actor: %v", err)
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.target_switch")
+	if !ok {
+		t.Fatal("missing switch actor")
+	}
+	exported, err := runtime.ExportContentBundle()
+	if err != nil || len(exported.SpawnGroups) != 1 || !exported.SpawnGroups[0].TargetSwitch {
+		t.Fatalf("opt-in did not round-trip through runtime export: %+v, %v", exported.SpawnGroups, err)
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-owner", 0x51515151)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	closerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-closer", 0x52525252)
+	defer closeSessionFlow(t, closerFlow)
+	_ = flushServerFrames(t, closerFlow)
+	ownerEntity, _ := runtime.sharedWorld.playerEntityByName("SwitchOwner")
+	closerEntity, _ := runtime.sharedWorld.playerEntityByName("SwitchCloser")
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+		t.Fatal("first in-radius owner was not acquired")
+	}
+	// Equal distance does not displace the incumbent, even if the new entity
+	// would win a fresh nearest-candidate tie.
+	for index, x := range []int32{1550, 1750} {
+		_, err := closerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+			Func: 1, Rot: 12, X: x, Y: 2800, Time: uint32(0x51525370 + index),
+		})))
+		if err != nil {
+			t.Fatalf("move closer candidate: %v", err)
+		}
+		_ = flushServerFrames(t, closerFlow)
+		if index == 0 && !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+			t.Fatal("equal-distance candidate stole engagement")
+		}
+	}
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, closerEntity.Entity.ID) {
+		t.Fatal("closer candidate did not take engagement")
+	}
+	if snapshot, ok := runtime.CombatTargetSnapshot("SwitchCloser"); ok {
+		t.Fatalf("switch invented player target intent: %+v", snapshot)
+	}
+	if attempt := runtime.sharedWorld.AttemptStaticActorCombatTarget(ownerEntity.Entity.ID, uint32(group.EntityID)); attempt.Accepted || attempt.Failure != StaticActorCombatTargetFailureTargetEngaged {
+		t.Fatalf("previous owner should be gated after switch: %+v", attempt)
+	}
+	currentTime = currentTime.Add(bootstrapPracticeMobServerOriginRetaliationDelay)
+	for _, raw := range flushServerFrames(t, ownerFlow) {
+		if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatal("old owner received retaliation after switch")
+		}
+	}
+	gotNewRetaliation := false
+	for _, raw := range flushServerFrames(t, closerFlow) {
+		if _, err := worldproto.DecodePlayerPointChange(decodeSingleFrame(t, raw)); err == nil {
+			gotNewRetaliation = true
+		}
+	}
+	if !gotNewRetaliation {
+		t.Fatal("new owner did not receive the owned delayed retaliation")
+	}
+	currentTime = currentTime.Add(bootstrapSpawnGroupChaseStepDelay - bootstrapPracticeMobServerOriginRetaliationDelay)
+	_ = flushServerFrames(t, closerFlow)
+	stepped, ok := runtime.SpawnGroup(group.EntityID)
+	if !ok || stepped.X != 1750 || stepped.Y != 2800 {
+		t.Fatalf("already-armed chase did not replan toward new owner: %+v, ok=%v", stepped, ok)
+	}
+	// An accepted hit establishes the older combat lock, which proximity
+	// switching must never steal even when the first player moves nearer.
+	_, err = closerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(group.EntityID)})))
+	if err != nil {
+		t.Fatalf("select target after switch: %v", err)
+	}
+	drainAcceptedTargetCreateNewIfQueued(t, closerFlow)
+	_, err = closerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{
+		AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(group.EntityID),
+	})))
+	if err != nil {
+		t.Fatalf("hit target after switch: %v", err)
+	}
+	_, err = ownerFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+		Func: 1, Rot: 12, X: 1701, Y: 2800, Time: 0x51525373,
+	})))
+	if err != nil {
+		t.Fatalf("move old owner nearer after hit: %v", err)
+	}
+	_ = flushServerFrames(t, ownerFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, closerEntity.Entity.ID) {
+		t.Fatal("post-hit lock was stolen by proximity switch")
+	}
+}
+
+// Retarget safety gates are checked against a real proximity-acquired owner;
+// only the test fixtures mutate candidate positions and suppress state.
+func TestGameRuntimeProximityTargetSwitchSafetyGates(t *testing.T) {
+	for _, scenario := range []struct {
+		name      string
+		gate      func(*testing.T, *gameRuntime, uint64, uint64, uint64)
+		wantOwner bool
+	}{
+		{name: "omitted opt-in", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.replaceTargetSwitchRefs(nil)
+		}, wantOwner: true},
+		{name: "bundle replacement disables opt-in", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			bundle, err := r.ExportContentBundle()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(bundle.SpawnGroups) != 1 || !bundle.SpawnGroups[0].TargetSwitch {
+				t.Fatal("missing opt-in in export")
+			}
+			bundle.SpawnGroups[0].TargetSwitch = false
+			if _, err := r.ImportContentBundle(bundle); err != nil {
+				t.Fatal(err)
+			}
+			exported, err := r.ExportContentBundle()
+			if err != nil || len(exported.SpawnGroups) != 1 || exported.SpawnGroups[0].TargetSwitch {
+				t.Fatalf("flag not removed: %+v, %v", exported.SpawnGroups, err)
+			}
+		}, wantOwner: false},
+		{name: "selected without hit", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			r.sharedWorld.setSessionCombatTargetLocked(owner, uint32(actor))
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "suppressed contender", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			r.sharedWorld.markProximityAggroSuppressLocked(actor, closer)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "return required actor", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			mob, ok := r.sharedWorld.entities.StaticActor(actor)
+			if !ok {
+				t.Fatal("missing actor")
+			}
+			mob.Position.X = 2301
+			r.sharedWorld.entities.UpdateStaticActor(mob)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "dead actor", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			r.sharedWorld.staticActorCombatHP[actor] = 0
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "out of radius owner", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			player, _ := r.sharedWorld.playerCharacter(owner)
+			player.X = 1950
+			r.sharedWorld.entities.UpdatePlayer(owner, player)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "cross-map contender", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			player, _ := r.sharedWorld.playerCharacter(closer)
+			player.MapIndex = 43
+			r.sharedWorld.entities.UpdatePlayer(closer, player)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "floored incumbent", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			player, _ := r.sharedWorld.playerCharacter(owner)
+			player.Points[bootstrapPlayerPointValueIndex] = 0
+			r.sharedWorld.entities.UpdatePlayer(owner, player)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+		{name: "floored contender", gate: func(t *testing.T, r *gameRuntime, actor, owner, closer uint64) {
+			r.sharedWorld.mu.Lock()
+			player, _ := r.sharedWorld.playerCharacter(closer)
+			player.Points[bootstrapPlayerPointValueIndex] = 0
+			r.sharedWorld.entities.UpdatePlayer(closer, player)
+			r.sharedWorld.mu.Unlock()
+		}, wantOwner: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			store := loginticket.NewFileStore(t.TempDir())
+			owner := peerVisibilityCharacter("GateOwner", 0x010301d1, 0x020401d1, 1850, 2800, 0, 101, 201)
+			owner.MapIndex = 42
+			owner.Points[bootstrapPlayerPointValueIndex] = 50
+			closer := peerVisibilityCharacter("GateCloser", 0x010301d2, 0x020401d2, 1750, 2800, 0, 101, 201)
+			closer.MapIndex = 42
+			closer.Points[bootstrapPlayerPointValueIndex] = 50
+			issuePeerTicket(t, store, "gate-owner", 0xd1d1d1d1, owner)
+			issuePeerTicket(t, store, "gate-closer", 0xd2d2d2d2, closer)
+			runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+				LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 400, VisibilitySectorSize: 200,
+			}, store, nil, staticstore.NewMemoryStore(), interactionstore.NewMemoryStore())
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime.now = func() time.Time { return time.Unix(1700002920, 0) }
+			_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{{
+				Ref: "practice.switch_gate", TargetSwitch: true, Name: "GateMob", MapIndex: 42, X: 1700, Y: 2800,
+				RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob),
+			}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			group, _ := runtime.SpawnGroupByRef("practice.switch_gate")
+			ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gate-owner", 0xd1d1d1d1)
+			defer closeSessionFlow(t, ownerFlow)
+			_ = flushServerFrames(t, ownerFlow)
+			ownerEntity, _ := runtime.sharedWorld.playerEntityByName("GateOwner")
+			if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID) {
+				t.Fatal("missing proximity acquisition")
+			}
+			closerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "gate-closer", 0xd2d2d2d2)
+			defer closeSessionFlow(t, closerFlow)
+			closerEntity, _ := runtime.sharedWorld.playerEntityByName("GateCloser")
+			scenario.gate(t, runtime, group.EntityID, ownerEntity.Entity.ID, closerEntity.Entity.ID)
+			runtime.sharedWorld.AcquireProximitySpawnGroupAggro()
+			if got := runtime.sharedWorld.StaticActorCombatEngagedBySubject(group.EntityID, ownerEntity.Entity.ID); got != scenario.wantOwner {
+				t.Fatalf("unexpected engagement after %s: owner=%v", scenario.name, got)
+			}
+		})
+	}
+}
+
+// Pack assist installs an unhit sibling lock without a proximity acquisition.
+// Even an opted-in sibling must not transfer this lock to a nearer player.
+func TestGameRuntimeProximityTargetSwitchPreservesPackAssistOwner(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("SwitchPackOwner", 0x010301c1, 0x020401c1, 1750, 2800, 0, 101, 201)
+	owner.MapIndex = 42
+	owner.Points[bootstrapPlayerPointValueIndex] = 50
+	closer := peerVisibilityCharacter("SwitchPackCloser", 0x010301c2, 0x020401c2, 2120, 2800, 0, 101, 201)
+	closer.MapIndex = 42
+	closer.Points[bootstrapPlayerPointValueIndex] = 50
+	issuePeerTicket(t, store, "switch-pack-owner", 0xc1c1c1c1, owner)
+	issuePeerTicket(t, store, "switch-pack-closer", 0xc2c2c2c2, closer)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{
+		LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius",
+		VisibilityRadius: 400, VisibilitySectorSize: 200,
+	}, store, nil, staticstore.NewMemoryStore(), interactionstore.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.now = func() time.Time { return time.Unix(1700002910, 0) }
+	_, err = runtime.ImportContentBundle(contentbundle.Bundle{SpawnGroups: []contentbundle.SpawnGroup{
+		{Ref: "practice.switch_pack.m01", Name: "HitMember", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)},
+		{Ref: "practice.switch_pack.m02", TargetSwitch: true, Name: "AssistMember", MapIndex: 42, X: 2000, Y: 2800, RaceNum: 20350, CombatProfile: string(worldruntime.StaticActorCombatProfilePracticeMob)},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hit, ok := runtime.SpawnGroupByRef("practice.switch_pack.m01")
+	if !ok {
+		t.Fatal("missing hit member")
+	}
+	sibling, ok := runtime.SpawnGroupByRef("practice.switch_pack.m02")
+	if !ok {
+		t.Fatal("missing opted-in sibling")
+	}
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-pack-owner", 0xc1c1c1c1)
+	defer closeSessionFlow(t, ownerFlow)
+	_ = flushServerFrames(t, ownerFlow)
+	_, err = ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: uint32(hit.EntityID)})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainAcceptedTargetCreateNewIfQueued(t, ownerFlow)
+	_, err = ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: uint32(hit.EntityID)})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownerEntity, _ := runtime.sharedWorld.playerEntityByName("SwitchPackOwner")
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(sibling.EntityID, ownerEntity.Entity.ID) {
+		t.Fatal("accepted hit did not copy pack-assist lock to unhit sibling")
+	}
+	closerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "switch-pack-closer", 0xc2c2c2c2)
+	defer closeSessionFlow(t, closerFlow)
+	_ = flushServerFrames(t, closerFlow)
+	if !runtime.sharedWorld.StaticActorCombatEngagedBySubject(sibling.EntityID, ownerEntity.Entity.ID) {
+		t.Fatal("proximity switch stole a pack-assist sibling lock")
+	}
+}
+
 func TestGameRuntimeProximityAggroSuppressesReacquireUntilLeaveAndReenterAfterInRadiusRelease(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("AggroSuppressOwner", 0x01030196, 0x02040196, 1850, 2800, 0, 101, 201)
