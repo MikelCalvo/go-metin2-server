@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and the first deliberately narrow runtime emission policy: one self-only `CREATE_FLY` presentation companion after an accepted client `FLY_TARGETING`, the bootstrap presentation `USE_SKILL`, or the bootstrap presentation `SHOOT` against the currently selected visible combat target. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers, and the owner socket receives one self-only server `FLY_TARGETING` echo beside that projectile.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and a narrow runtime emission policy: `CREATE_FLY` accompanies accepted client `FLY_TARGETING`, bootstrap presentation `USE_SKILL` and `SHOOT`, and a selected-target normal `ATTACK` that kills a visible combat actor **after an accepted fly-targeting intent**. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers, and the owner socket receives one self-only server `FLY_TARGETING` echo beside that projectile.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -9,7 +9,7 @@ It sits next to:
 
 ## Scope
 
-This slice owns three fixed server-to-client packet codecs plus the first `FLY_TARGETING`, bootstrap presentation `USE_SKILL`, and bootstrap presentation `SHOOT` emission rules.
+This note owns three fixed server-to-client packet codecs plus `FLY_TARGETING`, bootstrap presentation `USE_SKILL`/`SHOOT`, and one selected-target killing-hit emission rule.
 
 The packets are:
 
@@ -102,7 +102,7 @@ That echo stays self-only. The same accepted request still queues only `CREATE_F
 - it does not emit server `ADD_FLY_TARGETING`, knockdown, or PvP/duel packets
 - the server `FLY_TARGETING` echo does not replace `CREATE_FLY`, `DAMAGE_INFO`, `TARGET`, or `DEAD`
 
-Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. `USE_SKILL` uses the same fail-closed rule, and any `skill_vnum` other than bootstrap presentation `1` also stays fail-closed. `SHOOT` uses the same selected-target rule, and any `shoot_type` other than bootstrap presentation `1` also stays fail-closed. Client `ADD_FLY_TARGETING` and ordinary `ATTACK` still do not emit `CREATE_FLY` or server `FLY_TARGETING`. A repeat of the same accepted client `FLY_TARGETING` emits another self-only echo beside another `CREATE_FLY`. A repeat of the same accepted `USE_SKILL` or `SHOOT` emits another presentation `CREATE_FLY` and still omits the server echo; this slice does not own a skill cooldown or a shot cooldown.
+Unsupported `FLY_TARGETING` without that policy stays fail-closed: missing selection, `target_vid = 0`, VID mismatch, stale/dead/invisible/out-of-range targets, zero-HP owners, and any path that is not this accepted selected-target request return no frames and leave combat state unchanged. `USE_SKILL` uses the same fail-closed rule, and any `skill_vnum` other than bootstrap presentation `1` also stays fail-closed. `SHOOT` uses the same selected-target rule, and any `shoot_type` other than bootstrap presentation `1` also stays fail-closed. Client `ADD_FLY_TARGETING` and non-lethal or rejected `ATTACK` still do not emit `CREATE_FLY` or server `FLY_TARGETING`; killing `ATTACK` emits no server `FLY_TARGETING`. A repeat of the same accepted client `FLY_TARGETING` emits another self-only echo beside another `CREATE_FLY`. A repeat of the same accepted `USE_SKILL` or `SHOOT` emits another presentation `CREATE_FLY` and still omits the server echo; this slice does not own a skill cooldown or a shot cooldown.
 
 ## Relationship to current combat slices
 
@@ -112,7 +112,7 @@ Current accepted normal attacks still use the already-owned combat presentation 
 - content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
 - sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-This first GREEN adds the selected-target `FLY_TARGETING` → `CREATE_FLY` presentation companion, queues that same `CREATE_FLY` frame to currently visible live peers, returns one self-only server `FLY_TARGETING` echo beside it, and reuses the self-only `CREATE_FLY` companion for one accepted bootstrap presentation `USE_SKILL` and one accepted bootstrap presentation `SHOOT`. Later skill resource/cooldown tables, hit-timing, shot-type catalogs, skill/shoot peer fanout, peer fanout of the server `FLY_TARGETING` echo, or server `ADD_FLY_TARGETING` echoes must freeze their own policy instead of widening this seam by implication.
+The killing-hit companion reuses the selected-target visibility/version check before damage: an accepted client `FLY_TARGETING` for the current selection arms **one** subsequent accepted normal hit on that same actor/version. Only if that hit actually crosses the zero-HP edge does it emit an additional self-only `CREATE_FLY(type=0, start_vid=owner_vid, end_vid=target_vid)`. A non-lethal accepted hit consumes the intent without a killing fly; rejected/cadence-denied hits do not consume it. Explicit target clear, changed selection/version, or session reset discards the intent; stale or dead targets still fail closed. On the owner socket the killing fly follows `DEAD(target_vid)`, `TARGET(0, 0)` and the existing killing-hit `DAMAGE_INFO`, and precedes any owned reward. It does not add hit delay, a second damage path, another `FLY_TARGETING` echo or peer fly fanout; peers keep their existing death/damage visibility surfaces. A plain normal killing hit without a preceding accepted fly intent retains the existing frame count. Presentation-only `FLY_TARGETING`, `USE_SKILL`, and `SHOOT` remain unchanged. Peer killing-hit fly fanout belongs to COMBAT-FLY-PEER-FANOUT; ADD_FLY_TARGETING, travel duration and visual types beyond type=0 remain deferred.
 
 ## Non-goals
 
@@ -124,7 +124,7 @@ This slice does not freeze:
 - multi-target or chained projectile behavior, including client/server `ADD_FLY_TARGETING`,
 - peer fanout of bootstrap presentation `USE_SKILL` or `SHOOT` fly effects,
 - peer fanout of the server `FLY_TARGETING` echo,
-- killing-hit fly effects,
+- peer killing-hit fly effects,
 - server `ADD_FLY_TARGETING` runtime emission,
 - any replacement for `DAMAGE_INFO`, `TARGET`, or `DEAD` as the current combat result surfaces.
 
@@ -140,5 +140,6 @@ After this slice:
 - an accepted client `SHOOT` with bootstrap presentation `shoot_type = 1` while that same target is selected emits the same self-only `CREATE_FLY`,
 - that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
 - visible peers receive no fly-effect frame from `USE_SKILL` or `SHOOT`,
-- unsupported `FLY_TARGETING` without the new policy, other `USE_SKILL` vnums, other `SHOOT` types, `ADD_FLY_TARGETING`, and ordinary `ATTACK` stay fail-closed for fly emission,
-- later ranged/projectile/skill slices can start from this tested packet shape and this first `FLY_TARGETING` emission rule instead of re-discovering them.
+- unsupported `FLY_TARGETING` without the new policy, other `USE_SKILL` vnums, other `SHOOT` types, `ADD_FLY_TARGETING`, and non-lethal or rejected `ATTACK` stay fail-closed for fly emission,
+- one accepted selected-target normal killing hit after an accepted `FLY_TARGETING` intent emits one self-only `CREATE_FLY` after its death/clear/damage prefix and before owned reward; non-lethal, unarmed and rejected hits emit none,
+- later ranged/projectile/skill slices can start from this tested packet shape and the selected-target rule instead of re-discovering them.
