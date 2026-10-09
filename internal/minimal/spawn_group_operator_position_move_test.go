@@ -7,6 +7,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/contentbundle"
 	"github.com/MikelCalvo/go-metin2-server/internal/interactionstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
+	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
 	movep "github.com/MikelCalvo/go-metin2-server/internal/proto/move"
 	worldproto "github.com/MikelCalvo/go-metin2-server/internal/proto/world"
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
@@ -14,8 +15,8 @@ import (
 )
 
 // Live same-map spawn-backed operator/runtime position updates reuse retained-viewer
-// MOVE instead of delete/readd. Presentation/name/race refreshes stay on the already-
-// owned delete/readd path.
+// MOVE then bootstrap CHANGE_SPEED instead of delete/readd. Presentation/name/race
+// refreshes stay on the already-owned delete/readd path.
 func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionUsesRetainedViewerMove(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	viewer := peerVisibilityCharacter("OperatorPositionMoveViewer", 0x010301fa, 0x020401fa, 1200, 2200, 0, 110, 210)
@@ -71,13 +72,13 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionUsesRetainedViewer
 	}
 
 	queued := flushServerFrames(t, flow)
-	if len(queued) != 1 {
+	if len(queued) != 2 {
 		if len(queued) == 4 {
 			if _, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, queued[0])); err == nil {
 				t.Fatalf("expected retained-viewer MOVE for same-map live spawn-backed position update, got delete/readd (%d frames)", len(queued))
 			}
 		}
-		t.Fatalf("expected 1 retained-viewer MOVE frame, got %d", len(queued))
+		t.Fatalf("expected retained-viewer MOVE then CHANGE_SPEED, got %d frames", len(queued))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -88,6 +89,15 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionUsesRetainedViewer
 	}
 	if moveAck.Duration == 0 {
 		t.Fatalf("expected retained-viewer MOVE to carry a non-zero bootstrap duration, got %+v", moveAck)
+	}
+	assertOperatorPositionChangeSpeed(t, queued[1], uint32(group.EntityID))
+}
+
+func assertOperatorPositionChangeSpeed(t *testing.T, raw []byte, vid uint32) {
+	t.Helper()
+	speed, err := worldproto.DecodeChangeSpeed(decodeSingleFrame(t, raw))
+	if err != nil || speed.VID != vid || speed.MovingSpeed != worldproto.BootstrapCharacterMovingSpeed {
+		t.Fatalf("expected CHANGE_SPEED for actor %d at bootstrap speed, got %+v err=%v", vid, speed, err)
 	}
 }
 
@@ -173,7 +183,7 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPresentationKeepsDeleteRea
 
 // Same-map live spawn-backed position MOVE must also honor AOI membership:
 // old-position-only viewers get CHARACTER_DEL, newly-visible viewers get the
-// ordinary add/info/update burst, and retained viewers still get MOVE only.
+// ordinary add/info/update burst, and retained viewers get MOVE then CHANGE_SPEED.
 func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionQueuesOldPositionOnlyDeleteAndNewlyVisibleAdd(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	// Geometry with VisibilityRadius=800:
@@ -262,8 +272,8 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionQueuesOldPositionO
 	}
 
 	retainedQueued := flushServerFrames(t, retainedFlow)
-	if len(retainedQueued) == 0 {
-		t.Fatal("expected retained viewer to receive MOVE replication")
+	if len(retainedQueued) != 2 {
+		t.Fatalf("expected retained viewer to receive MOVE then CHANGE_SPEED, got %d frames", len(retainedQueued))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, retainedQueued[0]))
 	if err != nil {
@@ -272,6 +282,7 @@ func TestGameRuntimeUpdateStaticActorSameMapSpawnGroupPositionQueuesOldPositionO
 	if moveAck.VID != mobVID || moveAck.X != 2100 || moveAck.Y != 2200 || moveAck.Duration == 0 {
 		t.Fatalf("unexpected retained-viewer MOVE payload: %+v", moveAck)
 	}
+	assertOperatorPositionChangeSpeed(t, retainedQueued[1], mobVID)
 	if queuedFramesContainCharacterDeleteForVID(t, retainedQueued, mobVID) {
 		t.Fatal("expected retained viewer not to receive CHARACTER_DEL across same-map position MOVE")
 	}
@@ -398,8 +409,8 @@ func TestSharedWorldRegistryUpdateStaticActorSameMapSpawnGroupPositionClearsEnga
 	}
 
 	queued := ownerPending.flush()
-	if len(queued) != 2 {
-		t.Fatalf("expected retained-viewer MOVE plus selected-target clear for position-only update, got %d frames", len(queued))
+	if len(queued) != 3 {
+		t.Fatalf("expected retained-viewer MOVE, CHANGE_SPEED, and selected-target clear for position-only update, got %d frames", len(queued))
 	}
 	moveAck, err := movep.DecodeMoveAck(decodeSingleFrame(t, queued[0]))
 	if err != nil {
@@ -407,6 +418,11 @@ func TestSharedWorldRegistryUpdateStaticActorSameMapSpawnGroupPositionClearsEnga
 	}
 	if moveAck.VID != targetVID || moveAck.X != 1250 || moveAck.Y != 2200 || moveAck.Duration == 0 {
 		t.Fatalf("unexpected retained-viewer MOVE payload for position-only update: %+v", moveAck)
+	}
+	assertOperatorPositionChangeSpeed(t, queued[1], targetVID)
+	clear, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, queued[2]))
+	if err != nil || clear.TargetVID != 0 || clear.HPPercent != 0 {
+		t.Fatalf("expected selected-target clear after speed companion, got %+v err=%v", clear, err)
 	}
 
 	afterUpdate := registry.AttemptStaticActorCombatTarget(watcherID, targetVID)
