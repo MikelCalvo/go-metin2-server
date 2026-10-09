@@ -4959,6 +4959,7 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 		var sharedWorldID uint64
 		var joinedSharedWorld bool
 		var activeCombatTargetVID uint32
+		var activeCombatTargetMarkerVID uint32
 		var activeCombatTargetSnapshotVersion uint64
 		var nextAllowedNormalAttackAt time.Time
 		activeCharacterPosition := bootstrapCharacterPositionGeneral
@@ -5835,6 +5836,7 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 				}
 			}
 			activeCombatTargetVID = 0
+			activeCombatTargetMarkerVID = 0
 			activeCombatTargetSnapshotVersion = 0
 			nextAllowedNormalAttackAt = time.Time{}
 			pendingPracticeMobServerOriginRetaliation = false
@@ -10502,7 +10504,14 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 						return gameflow.TargetResult{Accepted: false}
 					}
 					if packet.TargetVID == 0 {
+						// Only an accepted explicit clear removes the marker created for
+						// this session's selected combat target. Other clear paths keep
+						// their existing TARGET HP/visibility behavior.
+						previousMarkerVID := activeCombatTargetMarkerVID
 						clearActiveCombatTarget()
+						if previousMarkerVID != 0 {
+							pending.Enqueue([][]byte{combatproto.EncodeServerTargetDelete(combatproto.ServerTargetDeletePacket{ID: int32(previousMarkerVID)})})
+						}
 						return gameflow.TargetResult{Accepted: true}
 					}
 					resolution := runtime.resolveStaticActorCombatTarget(sharedWorldID, packet.TargetVID)
@@ -10529,7 +10538,10 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 							sharedWorld.SetSessionCombatRetaliation(sharedWorldID, resolution.Packet.TargetVID, resolution.SnapshotVersion, pendingPracticeMobServerOriginRetaliationAt)
 						}
 					}
-					maybeEnqueueAcceptedTargetCreateNew(pending, resolution)
+					activeCombatTargetMarkerVID = 0
+					if maybeEnqueueAcceptedTargetCreateNew(pending, resolution) {
+						activeCombatTargetMarkerVID = resolution.Packet.TargetVID
+					}
 					return gameflow.TargetResult{Accepted: true, Frames: [][]byte{combatproto.EncodeServerTarget(*resolution.Packet)}}
 				},
 				HandleAttack: func(packet combatproto.ClientAttackPacket) gameflow.AttackResult {
@@ -16508,9 +16520,9 @@ func staticActorKillingHitDamageInfoRuntimeEmissionOwned(actor StaticActorSnapsh
 	return staticActorSpawnBackedSelfDamageInfoRuntimeEmissionOwned(actor) || staticActorDamageInfoRuntimeEmissionOwned(actor)
 }
 
-func maybeEnqueueAcceptedTargetCreateNew(pending *pendingServerFrames, resolution staticActorCombatTargetResolution) {
+func maybeEnqueueAcceptedTargetCreateNew(pending *pendingServerFrames, resolution staticActorCombatTargetResolution) bool {
 	if pending == nil || !resolution.Accepted || resolution.Packet == nil || resolution.Packet.TargetVID == 0 {
-		return
+		return false
 	}
 	raw, err := combatproto.EncodeServerTargetCreateNew(combatproto.ServerTargetCreateNewPacket{
 		ID:         int32(resolution.Packet.TargetVID),
@@ -16519,9 +16531,10 @@ func maybeEnqueueAcceptedTargetCreateNew(pending *pendingServerFrames, resolutio
 		Type:       bootstrapTargetMarkerType,
 	})
 	if err != nil {
-		return
+		return false
 	}
 	pending.Enqueue([][]byte{raw})
+	return true
 }
 
 func isServerTargetCreateNewFrame(raw []byte) bool {
