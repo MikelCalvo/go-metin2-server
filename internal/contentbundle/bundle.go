@@ -43,27 +43,34 @@ type StaticActor struct {
 	InteractionRef  string `json:"interaction_ref,omitempty"`
 }
 
+// PatrolPoint is a single offset from the preserved authored spawn home.
+type PatrolPoint struct {
+	DX int32 `json:"dx"`
+	DY int32 `json:"dy"`
+}
+
 type SpawnGroup struct {
-	Ref                string   `json:"ref"`
-	TargetSwitch       bool     `json:"target_switch,omitempty"`
-	Name               string   `json:"name,omitempty"`
-	MapIndex           uint32   `json:"map_index"`
-	X                  int32    `json:"x"`
-	Y                  int32    `json:"y"`
-	RaceNum            uint32   `json:"race_num"`
-	CombatProfile      string   `json:"combat_profile"`
-	RewardExperience   uint64   `json:"reward_experience,omitempty"`
-	RewardGold         uint64   `json:"reward_gold,omitempty"`
-	RewardDropVnums    []uint32 `json:"reward_drop_vnums,omitempty"`
-	RewardDropTableRef string   `json:"reward_drop_table_ref,omitempty"`
-	RewardQuestRef     string   `json:"reward_quest_ref,omitempty"`
-	RewardQuestFlag    string   `json:"reward_quest_flag,omitempty"`
-	RewardQuestFrom    uint32   `json:"reward_quest_from,omitempty"`
-	RewardQuestTo      uint32   `json:"reward_quest_to,omitempty"`
-	RewardQuestText    string   `json:"reward_quest_text,omitempty"`
-	RequireQuestRef    string   `json:"require_quest_ref,omitempty"`
-	RequireQuestFlag   string   `json:"require_quest_flag,omitempty"`
-	RequireQuestFrom   uint32   `json:"require_quest_from,omitempty"`
+	Ref                string       `json:"ref"`
+	TargetSwitch       bool         `json:"target_switch,omitempty"`
+	PatrolPoint        *PatrolPoint `json:"patrol_point,omitempty"`
+	Name               string       `json:"name,omitempty"`
+	MapIndex           uint32       `json:"map_index"`
+	X                  int32        `json:"x"`
+	Y                  int32        `json:"y"`
+	RaceNum            uint32       `json:"race_num"`
+	CombatProfile      string       `json:"combat_profile"`
+	RewardExperience   uint64       `json:"reward_experience,omitempty"`
+	RewardGold         uint64       `json:"reward_gold,omitempty"`
+	RewardDropVnums    []uint32     `json:"reward_drop_vnums,omitempty"`
+	RewardDropTableRef string       `json:"reward_drop_table_ref,omitempty"`
+	RewardQuestRef     string       `json:"reward_quest_ref,omitempty"`
+	RewardQuestFlag    string       `json:"reward_quest_flag,omitempty"`
+	RewardQuestFrom    uint32       `json:"reward_quest_from,omitempty"`
+	RewardQuestTo      uint32       `json:"reward_quest_to,omitempty"`
+	RewardQuestText    string       `json:"reward_quest_text,omitempty"`
+	RequireQuestRef    string       `json:"require_quest_ref,omitempty"`
+	RequireQuestFlag   string       `json:"require_quest_flag,omitempty"`
+	RequireQuestFrom   uint32       `json:"require_quest_from,omitempty"`
 }
 
 type RegenSpawn struct {
@@ -1034,6 +1041,9 @@ func Canonicalize(bundle Bundle) (Bundle, error) {
 	}
 	normalizedStaticActors := normalizeStaticActors(bundle.StaticActors)
 	normalizedCombatProfiles := normalizeCombatProfiles(bundle.CombatProfiles)
+	if !validPatrolPoints(bundle.SpawnGroups, normalizedCombatProfiles) {
+		return Bundle{}, ErrInvalidBundle
+	}
 	regenSpawnGroups, ok := spawnGroupsFromRegenSpawns(bundle.RegenSpawns)
 	if !ok {
 		return Bundle{}, ErrInvalidBundle
@@ -1139,6 +1149,58 @@ func TargetSwitchSpawnRefs(bundle Bundle) map[string]struct{} {
 		}
 	}
 	return refs
+}
+
+// PatrolPointsBySpawnRef retains the authoring-only waypoint overlay by ref.
+func PatrolPointsBySpawnRef(bundle Bundle) map[string]PatrolPoint {
+	points := make(map[string]PatrolPoint)
+	for _, group := range bundle.SpawnGroups {
+		if group.PatrolPoint != nil {
+			points[group.Ref] = *group.PatrolPoint
+		}
+	}
+	return points
+}
+
+func validPatrolPoints(groups []SpawnGroup, profiles []worldruntime.StaticActorCombatProfileSnapshot) bool {
+	for _, group := range groups {
+		if group.PatrolPoint == nil {
+			continue
+		}
+		profile := group.CombatProfile
+		if profile == "" {
+			profile = worldruntime.StaticActorCombatProfilePracticeMob
+		}
+		defaults, ok := worldruntime.BootstrapStaticActorCombatProfileDefaults(profile)
+		for _, snapshot := range profiles {
+			if snapshot.Profile == profile {
+				var delayOK bool
+				defaults.RoamDelay, delayOK = worldruntime.StaticActorCombatProfileRoamDelay(snapshot.RoamDelayMs)
+				if !delayOK {
+					return false
+				}
+				defaults.MaxStep = snapshot.MaxStep
+				defaults.LeashRadius = snapshot.LeashRadius
+				ok = true
+				break
+			}
+		}
+		if !ok || worldruntime.EffectiveStaticActorSpawnRoamDelayFromDefaults(defaults) <= 0 {
+			return false
+		}
+		point := group.PatrolPoint
+		dx, dy := int64(point.DX), int64(point.DY)
+		x, y := int64(group.X)+dx, int64(group.Y)+dy
+		if dx == 0 && dy == 0 || x < -1<<31 || x > 1<<31-1 || y < -1<<31 || y > 1<<31-1 {
+			return false
+		}
+		step := int64(worldruntime.EffectiveStaticActorSpawnMaxStepFromDefaults(defaults))
+		leash := int64(worldruntime.EffectiveStaticActorSpawnLeashRadiusFromDefaults(defaults))
+		if dx < -step || dx > step || dy < -step || dy > step || dx < -leash || dx > leash || dy < -leash || dy > leash || dx*dx+dy*dy > step*step || dx*dx+dy*dy > leash*leash {
+			return false
+		}
+	}
+	return true
 }
 
 // SyncRespawnPackPrefixes returns the authored multi-count regen prefixes that
@@ -4882,6 +4944,9 @@ func validCombatProfileSnapshot(profile worldruntime.StaticActorCombatProfileSna
 	if _, ok := worldruntime.StaticActorCombatProfileHomewardDelay(profile.HomewardDelayMs); !ok {
 		return false
 	}
+	if _, ok := worldruntime.StaticActorCombatProfileRoamDelay(profile.RoamDelayMs); !ok {
+		return false
+	}
 	if !worldruntime.ValidStaticActorCombatProfileMaxStep(profile.MaxStep) {
 		return false
 	}
@@ -4929,6 +4994,7 @@ func combatProfileSnapshotMatchesDefaults(snapshot worldruntime.StaticActorComba
 		candidateDefaults.ChaseDelay == defaults.ChaseDelay &&
 		candidateDefaults.ReturnDelay == defaults.ReturnDelay &&
 		candidateDefaults.HomewardDelay == defaults.HomewardDelay &&
+		candidateDefaults.RoamDelay == defaults.RoamDelay &&
 		candidateDefaults.MaxStep == defaults.MaxStep &&
 		candidateDefaults.ReactionDelay == defaults.ReactionDelay &&
 		candidateDefaults.RetaliationPointDelta == defaults.RetaliationPointDelta &&
@@ -4951,6 +5017,10 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
 	homewardDelay, ok := worldruntime.StaticActorCombatProfileHomewardDelay(snapshot.HomewardDelayMs)
+	if !ok {
+		return worldruntime.StaticActorCombatProfileDefaults{}, false
+	}
+	roamDelay, ok := worldruntime.StaticActorCombatProfileRoamDelay(snapshot.RoamDelayMs)
 	if !ok {
 		return worldruntime.StaticActorCombatProfileDefaults{}, false
 	}
@@ -4983,6 +5053,7 @@ func combatProfileSnapshotDefaults(snapshot worldruntime.StaticActorCombatProfil
 		ChaseDelay:            chaseDelay,
 		ReturnDelay:           returnDelay,
 		HomewardDelay:         homewardDelay,
+		RoamDelay:             roamDelay,
 		MaxStep:               snapshot.MaxStep,
 		ReactionDelay:         reactionDelay,
 		RetaliationPointDelta: snapshot.RetaliationPointDelta,
@@ -5296,6 +5367,7 @@ func normalizeSpawnGroups(spawnGroups []SpawnGroup, profileSnapshots []worldrunt
 	dropTablesByRef := dropTableMapByRef(dropTables)
 	normalized := make([]SpawnGroup, len(spawnGroups))
 	for i, spawnGroup := range spawnGroups {
+		spawnGroup.PatrolPoint = nil // authored overlay is process-local, not canonical
 		spawnGroup.Name = strings.TrimSpace(spawnGroup.Name)
 		spawnGroup.CombatProfile = strings.TrimSpace(spawnGroup.CombatProfile)
 		if spawnGroup.CombatProfile == "" {
@@ -5352,6 +5424,10 @@ func cloneSpawnGroups(spawnGroups []SpawnGroup) []SpawnGroup {
 	cloned := make([]SpawnGroup, len(spawnGroups))
 	for i, spawnGroup := range spawnGroups {
 		cloned[i] = spawnGroup
+		if spawnGroup.PatrolPoint != nil {
+			point := *spawnGroup.PatrolPoint
+			cloned[i].PatrolPoint = &point
+		}
 		cloned[i].RewardDropVnums = cloneUint32s(spawnGroup.RewardDropVnums)
 	}
 	return cloned

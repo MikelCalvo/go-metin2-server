@@ -619,6 +619,8 @@ type gameRuntime struct {
 	spawnHomewardStepDueAt  map[uint64]time.Time
 	spawnRoamMu             sync.Mutex
 	spawnRoamStepDueAt      map[uint64]time.Time
+	patrolPointMu           sync.RWMutex
+	patrolPoints            map[string]contentbundle.PatrolPoint
 	chaseSpeedMu            sync.Mutex
 	chaseSpeeds             []spawnGroupChaseChangeSpeedDelivery
 	now                     func() time.Time
@@ -2843,6 +2845,25 @@ func (r *gameRuntime) syncSpawnGroupRoamStepScheduleForEntity(entityID uint64) {
 	r.scheduleSpawnGroupRoamStep(entityID)
 }
 
+func (r *gameRuntime) patrolPointsSnapshot() map[string]contentbundle.PatrolPoint {
+	r.patrolPointMu.RLock()
+	defer r.patrolPointMu.RUnlock()
+	points := make(map[string]contentbundle.PatrolPoint, len(r.patrolPoints))
+	for ref, point := range r.patrolPoints {
+		points[ref] = point
+	}
+	return points
+}
+
+func (r *gameRuntime) replacePatrolPoints(points map[string]contentbundle.PatrolPoint) {
+	r.patrolPointMu.Lock()
+	defer r.patrolPointMu.Unlock()
+	r.patrolPoints = make(map[string]contentbundle.PatrolPoint, len(points))
+	for ref, point := range points {
+		r.patrolPoints[ref] = point
+	}
+}
+
 func (r *gameRuntime) planSpawnGroupRoamStep(entityID uint64) (worldruntime.SpawnLeashRoamStepPlan, bool) {
 	if r == nil || r.sharedWorld == nil || r.sharedWorld.entities == nil || entityID == 0 {
 		return worldruntime.SpawnLeashRoamStepPlan{}, false
@@ -2853,7 +2874,30 @@ func (r *gameRuntime) planSpawnGroupRoamStep(entityID uint64) (worldruntime.Spaw
 	if !ok {
 		return worldruntime.SpawnLeashRoamStepPlan{}, false
 	}
-	return worldruntime.PlanStaticActorSpawnLeashRoamStep(actor, worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor), r.effectiveSpawnGroupMaxStep(entityID))
+	radius := worldruntime.EffectiveStaticActorSpawnLeashRadiusForActor(actor)
+	maxStep := r.effectiveSpawnGroupMaxStep(entityID)
+	r.patrolPointMu.RLock()
+	point, authored := r.patrolPoints[actor.SpawnGroupRef]
+	r.patrolPointMu.RUnlock()
+	if !authored {
+		return worldruntime.PlanStaticActorSpawnLeashRoamStep(actor, radius, maxStep)
+	}
+	// Use the owned chase/leash planner as the classifier and step cap, with
+	// authored home as the only origin; fail closed instead of clipping a route.
+	evaluation, ok := worldruntime.EvaluateStaticActorCurrentSpawnLeash(actor, radius)
+	if !ok || evaluation.ReturnRequired || evaluation.Status != worldruntime.SpawnLeashStatusAtHome || !evaluation.Current.Equal(evaluation.Home) {
+		return worldruntime.SpawnLeashRoamStepPlan{}, false
+	}
+	x, y := int64(evaluation.Home.X)+int64(point.DX), int64(evaluation.Home.Y)+int64(point.DY)
+	if x < -1<<31 || x > 1<<31-1 || y < -1<<31 || y > 1<<31-1 {
+		return worldruntime.SpawnLeashRoamStepPlan{}, false
+	}
+	destination := worldruntime.NewPosition(evaluation.Home.MapIndex, int32(x), int32(y))
+	planned, ok := worldruntime.PlanStaticActorSpawnChaseStep(actor, destination, radius, maxStep)
+	if !ok || !planned.Complete || !planned.Next.Equal(destination) || destination.Equal(evaluation.Home) {
+		return worldruntime.SpawnLeashRoamStepPlan{}, false
+	}
+	return worldruntime.SpawnLeashRoamStepPlan{Evaluation: evaluation, Next: destination}, true
 }
 
 func (r *gameRuntime) dueSpawnGroupRoamStepIDs() []uint64 {
@@ -3145,6 +3189,7 @@ func (r *gameRuntime) flushDueSpawnGroupHomewardSteps() {
 		}
 		if step.Step.Complete || !r.spawnGroupHomewardStepStillEligible(entityID) {
 			r.clearSpawnGroupHomewardStep(entityID)
+			r.syncSpawnGroupRoamStepScheduleForEntity(entityID)
 			continue
 		}
 	}
@@ -15393,6 +15438,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return contentbundle.Bundle{}, err
 	}
 	if reflect.DeepEqual(previousBundle, normalized) {
+		r.replacePatrolPoints(contentbundle.PatrolPointsBySpawnRef(bundle))
 		r.sharedWorld.replaceTargetSwitchRefs(contentbundle.TargetSwitchSpawnRefs(bundle))
 		r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 		r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
@@ -15405,6 +15451,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		return normalized, nil
 	}
 	previousActors := r.StaticActors()
+	previousPatrolPoints := r.patrolPointsSnapshot()
 	previousWeightedDropEntries := r.weightedDropEntriesSnapshot()
 	previousTargetSwitchRefs := r.sharedWorld.targetSwitchRefsSnapshot()
 	previousSyncRespawnPrefixes := r.syncRespawnPrefixesSnapshot()
@@ -15459,6 +15506,7 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 		rollbackErr = errors.Join(rollbackErr, r.replaceCubeRecipes(cubestore.Snapshot{NPCs: previousBundle.CubeRecipes}))
 		rollbackErr = errors.Join(rollbackErr, r.replaceInteractionDefinitions(interactionstore.Snapshot{Definitions: previousBundle.InteractionDefinitions}))
 		r.replaceQuestFlagGraphs(previousBundle.QuestFlagGraphs)
+		r.replacePatrolPoints(previousPatrolPoints)
 		r.replaceWeightedDropEntries(previousWeightedDropEntries)
 		r.sharedWorld.replaceTargetSwitchRefs(previousTargetSwitchRefs)
 		r.replaceSyncRespawnPrefixes(previousSyncRespawnPrefixes)
@@ -15496,12 +15544,19 @@ func (r *gameRuntime) ImportContentBundle(bundle contentbundle.Bundle) (contentb
 	r.pruneSpawnGroupReturnStepSchedules()
 	r.pruneSpawnGroupChaseStepSchedules()
 	r.pruneSpawnGroupHomewardStepSchedules()
+	r.replacePatrolPoints(contentbundle.PatrolPointsBySpawnRef(bundle))
 	r.replaceWeightedDropEntries(contentbundle.WeightedDropEntriesBySpawnGroupRef(bundle))
 	r.sharedWorld.replaceTargetSwitchRefs(contentbundle.TargetSwitchSpawnRefs(bundle))
 	r.replaceSyncRespawnPrefixes(contentbundle.SyncRespawnPackPrefixes(bundle))
 	r.replaceSharedHPPrefixes(contentbundle.SharedHPPackPrefixes(bundle))
 	r.replaceRegenRespawnDelayMs(contentbundle.RegenRespawnDelayMsBySpawnGroupRef(bundle))
 	r.replaceRegenFacingAngle(contentbundle.RegenFacingAngleBySpawnGroupRef(bundle))
+	// Registration ran before the authored overlay was installed. Reconcile the
+	// idle deadlines against the committed route without touching chase/return.
+	for _, actor := range r.SpawnGroups() {
+		r.clearSpawnGroupRoamStep(actor.EntityID)
+		r.syncSpawnGroupRoamStepScheduleForEntity(actor.EntityID)
+	}
 	if r.sharedWorld != nil {
 		r.sharedWorld.flushStaticActorImportFanout()
 	}

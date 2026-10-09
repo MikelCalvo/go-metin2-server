@@ -1,6 +1,8 @@
 package minimal
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -14,6 +16,142 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/staticstore"
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
+
+// An authored point rides the existing idle roam and homeward clocks.
+func TestGameRuntimeAuthoredPatrolPointOutAndBack(t *testing.T) {
+	const profile = "practice_authored_patrol_wolf"
+	store := loginticket.NewFileStore(t.TempDir())
+	viewer := peerVisibilityCharacter("PatrolViewer", 0x01030372, 0x02040372, 2000, 2800, 0, 122, 222)
+	viewer.MapIndex = 42
+	issuePeerTicket(t, store, "patrol-viewer", 0xb1b1b1b1, viewer)
+	now := time.Unix(1700005000, 0)
+	runtime, err := newGameRuntimeWithAccountStoreAndContentStores(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1", VisibilityMode: "radius", VisibilityRadius: 400, VisibilitySectorSize: 200}, store, nil, staticstore.NewMemoryStore(), interactionstore.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.now = func() time.Time { return now }
+	t.Cleanup(func() { worldruntime.UnregisterStaticActorCombatProfileForTest(profile) })
+	base := contentbundle.Bundle{
+		SpawnGroups:    []contentbundle.SpawnGroup{{Ref: "practice.patrol_wolf", Name: "PatrolWolf", MapIndex: 42, X: 1700, Y: 2800, RaceNum: 20350, CombatProfile: profile, PatrolPoint: &contentbundle.PatrolPoint{DX: 0, DY: 50}}},
+		CombatProfiles: []worldruntime.StaticActorCombatProfileSnapshot{{Profile: profile, MaxHP: 24, AttackValue: 8, DefenseValue: 2, RespawnDelayMs: 1500, RoamDelayMs: 2000, HomewardDelayMs: 1000, MaxStep: 50, AggroRadius: 100, LeashRadius: 150}},
+	}
+	for _, bad := range []contentbundle.PatrolPoint{{}, {DX: 51}, {DY: -151}, {DX: 40, DY: 40}, {DX: 1<<31 - 1}} {
+		candidate := base
+		candidate.SpawnGroups = append([]contentbundle.SpawnGroup(nil), base.SpawnGroups...)
+		candidate.SpawnGroups[0].PatrolPoint = &bad
+		if _, err := runtime.ImportContentBundle(candidate); err == nil {
+			t.Fatalf("expected invalid patrol waypoint %+v to fail before mutation", bad)
+		}
+	}
+	noRoam := base
+	noRoam.CombatProfiles = append([]worldruntime.StaticActorCombatProfileSnapshot(nil), base.CombatProfiles...)
+	noRoam.CombatProfiles[0].RoamDelayMs = 0
+	if _, err := runtime.ImportContentBundle(noRoam); err == nil {
+		t.Fatal("route without opt-in roam delay was accepted")
+	}
+	canonical, err := runtime.ImportContentBundle(base)
+	if err != nil {
+		t.Fatalf("import authored point: %v", err)
+	}
+	if canonical.SpawnGroups[0].PatrolPoint != nil {
+		t.Fatal("authored route leaked into canonical bundle")
+	}
+	group, ok := runtime.SpawnGroupByRef("practice.patrol_wolf")
+	if !ok {
+		t.Fatal("missing authored spawn")
+	}
+	id := group.EntityID
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "patrol-viewer", 0xb1b1b1b1)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	assertMove := func(frames [][]byte, x, y int32) {
+		t.Helper()
+		found := 0
+		for _, raw := range frames {
+			frame := decodeSingleFrame(t, raw)
+			if moved, err := movep.DecodeMoveAck(frame); err == nil && moved.VID == uint32(id) {
+				if moved.X != x || moved.Y != y {
+					t.Fatalf("unexpected patrol MOVE %+v", moved)
+				}
+				found++
+			}
+			if speed, err := worldproto.DecodeChangeSpeed(frame); err == nil && speed.VID == uint32(id) {
+				t.Fatalf("idle patrol emitted chase speed: %+v", speed)
+			}
+			if deleted, err := worldproto.DecodeCharacterDeleteNotice(frame); err == nil && deleted.VID == uint32(id) {
+				t.Fatalf("retained viewer lost actor: %+v", deleted)
+			}
+		}
+		if found != 1 {
+			t.Fatalf("expected one actor MOVE to %d,%d, got %d in %d frames", x, y, found, len(frames))
+		}
+	}
+	now = now.Add(2 * time.Second)
+	assertMove(flushServerFrames(t, flow), 1700, 2850)
+	if actor, ok := runtime.SpawnGroup(id); !ok || actor.SpawnLeash == nil || actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusWithinRadius {
+		t.Fatalf("expected outbound waypoint within leash: %+v", actor)
+	}
+	now = now.Add(time.Second)
+	assertMove(flushServerFrames(t, flow), 1700, 2800)
+	if actor, ok := runtime.SpawnGroup(id); !ok || actor.SpawnLeash == nil || actor.SpawnLeash.Status != worldruntime.SpawnLeashStatusAtHome {
+		t.Fatalf("expected authored home after return: %+v", actor)
+	}
+	updated := base
+	updated.SpawnGroups = append([]contentbundle.SpawnGroup(nil), base.SpawnGroups...)
+	updated.SpawnGroups[0].PatrolPoint = &contentbundle.PatrolPoint{DX: -50}
+	if _, err := runtime.ImportContentBundle(updated); err != nil {
+		t.Fatal(err)
+	}
+	if actor, ok := runtime.SpawnGroupByRef("practice.patrol_wolf"); !ok || actor.EntityID != id {
+		t.Fatal("no-op authored reimport replaced live actor")
+	}
+	now = now.Add(2 * time.Second)
+	assertMove(flushServerFrames(t, flow), 1650, 2800)
+	exported, err := runtime.ExportContentBundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(encoded) == 0 || bytes.Contains(encoded, []byte("patrol_point")) || exported.SpawnGroups[0].PatrolPoint != nil {
+		t.Fatal("patrol point leaked into exported content")
+	}
+	// Out-of-leash recovery keeps priority even with an authored route.
+	if _, ok := runtime.UpdateStaticActor(id, "PatrolWolf", 42, 2000, 2800, 20350); !ok {
+		t.Fatal("displace outside leash")
+	}
+	if _, ok := runtime.planSpawnGroupRoamStep(id); ok || runtime.stepSpawnGroupRoam(id) {
+		t.Fatal("return-required actor planned or applied an idle route")
+	}
+	if actor, ok := runtime.SpawnGroup(id); !ok || actor.X != 2000 || !actor.SpawnLeash.ReturnRequired {
+		t.Fatalf("out-of-leash actor moved: %+v", actor)
+	}
+	if _, ok := runtime.UpdateStaticActor(id, "PatrolWolf", 42, 1700, 2800, 20350); !ok {
+		t.Fatal("return to home before dead interval")
+	}
+	_ = flushServerFrames(t, flow) // drain operator relocation MOVE
+	// Death floor suppresses a previously armed idle step; no corpse MOVE.
+	runtime.sharedWorld.mu.Lock()
+	runtime.sharedWorld.staticActorCombatHP[id] = 0
+	runtime.sharedWorld.staticActorCombatRespawnAt[id] = now.Add(time.Hour)
+	runtime.sharedWorld.mu.Unlock()
+	now = now.Add(4 * time.Second)
+	for _, raw := range flushServerFrames(t, flow) {
+		if moved, err := movep.DecodeMoveAck(decodeSingleFrame(t, raw)); err == nil && moved.VID == uint32(id) {
+			t.Fatalf("dead actor walked: %+v", moved)
+		}
+	}
+	if actor, ok := runtime.SpawnGroup(id); !ok || actor.X != 1700 || actor.Y != 2800 {
+		t.Fatalf("death-floor actor displaced: %+v", actor)
+	}
+	// The due executor refuses a death-floor actor even when the old route
+	// deadline was armed before its HP reached zero.
+	if runtime.stepSpawnGroupRoam(id) {
+		t.Fatal("death-floor actor applied an idle route")
+	}
+}
 
 // Live chase executor must honor the already-frozen leash-clamp clear rule:
 // a complete step that stops on the effective leash boundary clears the pending

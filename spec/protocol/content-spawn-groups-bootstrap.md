@@ -35,7 +35,7 @@ This contract currently applies only to:
 - atomic bootstrap visibility for content-bundle replacement: live sessions receive static-actor replacement visibility only after the full replacement succeeds; successful replacements replay deletes for removed actors before newly imported actor bootstrap bursts, and failed replacement/rollback paths discard all staged delete/add visibility frames instead of leaking partial content to online sessions
 
 This contract does **not** yet claim:
-- pack behaviors, pathfinding around obstacles, or authored patrol routes (one opt-in idle roam / wander step around authored home is owned below; WORLD-PATROL stays the later route companion)
+- pack behaviors, pathfinding around obstacles, or general authored patrol graphs (one out-and-back waypoint is owned below)
 - pack behaviors or multi-wave encounters
 - random loot tables beyond one authored weighted `drop_tables[].entries` pick, quest rewards, or corpse interactions
 - spawn conditions, timers authored per player, or scripting hooks
@@ -651,6 +651,12 @@ Explicit non-goals for this anti-leak freeze alone:
 
 ## First opt-in idle roam / wander step
 
+### WORLD-PATROL: one authored out-and-back waypoint (freeze)
+
+`spawn_groups[].patrol_point` optionally authors one `{dx,dy}` offset from that group's preserved spawn home. It is an **authoring-only, process-local overlay** (like `target_switch`): canonical export, FileStore snapshots, and daemon restart do not retain it. Reimport the authored bundle to restore the route. An omitted point leaves the owned +x roam unchanged. A point requires a positive profile `roam_delay_ms`, nonzero offset, representable destination coordinates, and squared offset distance no greater than both the profile's effective `max_step` and effective leash radius; invalid input rejects the entire bundle before mutation. No implicit clamping or cross-map movement. A successful no-op authored reimport refreshes the overlay without resetting a live pending roam deadline; replacement/rollback does not leak route changes.
+
+Only a live, unengaged `at_home` spawn actor may take the due roam step to that waypoint, through the existing roam deadline / static-actor persistence / retained-viewer `MOVE` (no chase `CHANGE_SPEED`). The result is `within_radius` and the already-owned homeward timer returns it to authored home; after that, the roam clock may arm again. Chase, return, death floor and homeward retain priority; no player occupancy, pathfinding, pack AI assist, target switching, or second scheduler is added. This is a single waypoint plus implicit home, not a general waypoint graph.
+
 Question frozen here:
 
 **Once spawn-backed actors stay at authored home until chase, homeward, or return, what is the smallest honest opt-in so one live unengaged `at_home` actor can take a single wander step around that home without turning default mobs into roamers?**
@@ -662,7 +668,7 @@ Contract (now GREEN):
 - flush order is due respawns, then return, then homeward, then this one roam step, then chase
 - chase, homeward, and return still win: an engaged actor, a `return_required` actor, or an actor already arming homeward or return does not roam
 - after the one step the actor is `within_radius` and the existing homeward seam owns the walk back
-- pack-member assist, occupancy detours, and authored patrol routes stay deferred (WORLD-PATROL is the later route companion)
+- pack-member assist and occupancy detours stay on their separately owned chase seams; general authored patrol graphs remain deferred
 
 ### Runtime proof
 
@@ -672,7 +678,7 @@ Contract (now GREEN):
 ## Explicit non-goals
 
 This slice does **not** yet freeze:
-- patrol routes, pack AI assist, and pathfinding around obstacles (one opt-in idle roam / wander step around authored home is specified below; WORLD-PATROL stays the later authored-route companion)
+- general multi-waypoint patrol graphs, pack AI assist, and pathfinding around obstacles (one authored out-and-back point is frozen above)
 - broader hostile retaliation beyond the first fresh-third-party `TARGET` gate, the first same-target `250ms` normal-attack cadence window, one profile-resolved sustained delayed self-only server-origin retaliation cadence at a time, and the frozen proximity aggro-radius acquisition seam below
 - random spawn selection from a pool
 - random loot tables, broader kill rewards, or corpse gameplay

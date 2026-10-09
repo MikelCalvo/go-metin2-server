@@ -427,6 +427,10 @@ Explicit non-goals for this freeze:
 - pathfinding, patrol, or continuous interpolation
 - live damaged-HP daemon-restart durability (owned separately by `content-spawn-groups-bootstrap.md`)
 
+## WORLD-PATROL: one authored idle waypoint
+
+An opt-in `spawn_groups[].patrol_point` is a single offset from preserved authored home, validated against effective profile `max_step` and leash. Only an unengaged live `at_home` spawn uses the already-owned roam deadline and server `MOVE` to reach the point. The existing `within_radius` homeward deadline returns it to home and re-arms idle roam after completion. Return-required actors remain on return-step; death-floor actors cannot take a due idle step. No second timer loop, pathfinding, pack assist, player occupancy, or target-switching policy is introduced. The waypoint is an import-only overlay, not durable/exported route state; see `content-spawn-groups-bootstrap.md` for the authored contract.
+
 ## First owned within-radius homeward-step after engagement release
 
 Question frozen here:
