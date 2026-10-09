@@ -48,7 +48,14 @@ The default visibility policy remains `whole_map`:
 - visibility still requires the same local channel and effective `MapIndex`
 - the subject and peer must be within `visibility_radius` using squared-distance comparison on their current `x/y` positions
 
-The first sector helper is intentionally a deterministic coordinate utility, not a full sector-bucket AOI dispatcher.  Negative coordinates use floor-style division so `-1` with a sector size of `200` remains in sector `-1` instead of collapsing into sector `0`.
+The first sector helper is a deterministic coordinate utility. Negative coordinates use floor-style division so `-1` with a sector size of `200` remains in sector `-1` instead of collapsing into sector `0`.
+
+### First sector-bucket visibility fanout (opt-in)
+
+- `visibility_mode = sector_bucket` uses the existing positive `visibility_sector_size` setting; zero/negative sizes are rejected at startup. No radius is implied or required. The default remains `whole_map`, and `radius` keeps its existing distance check (its sector size is not a visibility cutoff). The unconfigured `sector` spelling is not an alias.
+- Within this local process, a viewer sees a subject only if their effective map indexes and floor-divided `(x, y)` sector coordinates match. Map `0` still aliases map `1`. Two people on opposite sides of a sector edge are not visible even if adjacent; two people anywhere in the same bucket are visible. Negative coordinates follow the existing floor division.
+- This is a visibility-policy gate on the existing map-index AOI paths, not a new packet format or a persistent sector index. Existing peer enter/leave/movement and static actor/ground-item visibility fanout uses the same topology gate and keeps its current frames and ordering for admitted viewers. Out-of-sector viewers get no ongoing subject frames; on an edge crossing, the former viewer gets the existing delete and the new viewer the existing add, not a raw movement frame across sectors. Local talking chat follows visible-world scope; shout, guild, party and whisper keep their separate existing scopes.
+- `GET /local/runtime-config` reports `visibility_mode = sector_bucket` and the selected sector size; it does not expose or allocate remote channel ownership.
 
 The active runtime topology can be inspected through the loopback-only `GET /local/runtime-config` endpoint on `gamed`, which reports the local channel id and the selected visibility policy parameters.
 
@@ -56,7 +63,7 @@ The active runtime topology can be inspected through the loopback-only `GET /loc
 
 Earlier slices had already frozen map-index world scope and the first chat-scope hardening, but the actual decisions still lived as ad-hoc helper logic in `internal/minimal`.
 
-This slice makes the current bootstrap topology explicit without pretending that the project already has real shard routing or channel ownership transfer.  Radius AOI is now an owned bootstrap policy option, but it is still process-local and deliberately smaller than a final sector/shard visibility system.
+This slice makes the current bootstrap topology explicit without pretending that the project already has real shard routing or channel ownership transfer. Radius and sector AOI are process-local policy options, deliberately smaller than a final sector/shard visibility system.
 
 That gives the shared-world runtime a stable boundary to build on next:
 - topology first
@@ -68,6 +75,6 @@ That gives the shared-world runtime a stable boundary to build on next:
 This slice does not yet add:
 - real per-character channel persistence
 - inter-channel routing or remote ownership handoff
-- sector-bucket fanout or a final range-culling world service
+- a persistent sector occupancy index or a final range-culling world service
 - a final client-facing warp packet contract
 - global world registries or shard discovery

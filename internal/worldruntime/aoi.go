@@ -13,6 +13,21 @@ type RadiusVisibilityPolicy struct {
 	SectorSize int32
 }
 
+// SectorVisibilityPolicy admits only viewers in the subject's local map/sector
+// bucket. It shares the existing visible-world fanout, not a remote dispatcher.
+type SectorVisibilityPolicy struct {
+	SectorSize int32
+}
+
+func (p SectorVisibilityPolicy) CanSee(topology BootstrapTopology, subject loginticket.Character, peer loginticket.Character) bool {
+	if p.SectorSize <= 0 || topology.EffectiveChannelID(subject) != topology.EffectiveChannelID(peer) {
+		return false
+	}
+	subjectKey := SectorKeyForPosition(NewPosition(topology.EffectiveMapIndex(subject), subject.X, subject.Y), p.SectorSize)
+	peerKey := SectorKeyForPosition(NewPosition(topology.EffectiveMapIndex(peer), peer.X, peer.Y), p.SectorSize)
+	return subjectKey == peerKey
+}
+
 func SectorKeyForPosition(position Position, sectorSize int32) SectorKey {
 	if !position.Valid() {
 		return SectorKey{}
