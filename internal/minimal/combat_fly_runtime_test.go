@@ -70,12 +70,12 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 		t.Fatalf("expected mismatched fly-targeting to stay fail-closed, got %d frames", len(mismatch))
 	}
 
-	addFly, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID, X: 1700, Y: -2800})))
+	addFly, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID + 1, X: 1700, Y: -2800})))
 	if err != nil {
 		t.Fatalf("unexpected add-fly-targeting guard error: %v", err)
 	}
 	if len(addFly) != 0 {
-		t.Fatalf("expected selected add-fly-targeting to stay fail-closed, got %d frames", len(addFly))
+		t.Fatalf("expected mismatched add-fly-targeting to stay fail-closed, got %d frames", len(addFly))
 	}
 
 	shootOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: 0x83})))
@@ -205,6 +205,134 @@ func TestGameSessionFlowAcceptedFlyTargetingEmitsSelfOnlyCreateFly(t *testing.T)
 	assertDamageInfoFrame(t, peerHitQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "peer hit after fly presentation")
 }
 
+func TestGameSessionFlowAddFlyTargetingSelectedDummySelfOnly(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AddFlyOwner", 0x01030291, 0x02040291, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("AddFlyPeer", 0x01030292, 0x02040292, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "add-fly-owner", 0x91919192, owner)
+	issuePeerTicket(t, store, "add-fly-peer", 0x92929293, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new add-fly runtime: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "AddFlyDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register add-fly dummy")
+	}
+	targetVID := uint32(actor.EntityID)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "add-fly-owner", 0x91919192)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "add-fly-peer", 0x92929293)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+
+	add := func(vid uint32, x, y int32) [][]byte {
+		t.Helper()
+		out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: vid, X: x, Y: y})))
+		if err != nil {
+			t.Fatalf("add-fly targeting: %v", err)
+		}
+		return out
+	}
+	if out := add(targetVID, 1700, -2800); len(out) != 0 {
+		t.Fatalf("unselected add-fly should fail closed: %d frames", len(out))
+	}
+	if selected, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID}))); err != nil || len(selected) != 1 {
+		t.Fatalf("select dummy: frames=%d err=%v", len(selected), err)
+	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "AddFlyDummy", targetVID)
+	for _, vid := range []uint32{0, targetVID + 1} {
+		if out := add(vid, 1700, -2800); len(out) != 0 {
+			t.Fatalf("invalid add-fly VID %d should fail closed: %d frames", vid, len(out))
+		}
+	}
+	if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
+		t.Fatalf("rejected add-fly queued peer frames: %d", len(extra))
+	}
+	for _, coords := range [][2]int32{{1700, -2800}, {0, 0}} {
+		out := add(targetVID, coords[0], coords[1])
+		if len(out) != 2 {
+			t.Fatalf("accepted add-fly should echo and create exactly one self projectile: %d frames", len(out))
+		}
+		echo, err := combatproto.DecodeServerAddFlyTargeting(decodeSingleFrame(t, out[0]))
+		if err != nil || echo != (combatproto.ServerFlyTargetingPacket{ShooterVID: owner.VID, TargetVID: targetVID, X: coords[0], Y: coords[1]}) {
+			t.Fatalf("self add-fly echo: %+v, %v", echo, err)
+		}
+		fly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, out[1]))
+		if err != nil || fly != (combatproto.ServerCreateFlyPacket{Type: bootstrapCreateFlyType, StartVID: owner.VID, EndVID: targetVID}) {
+			t.Fatalf("self add-fly projectile: %+v, %v", fly, err)
+		}
+		if extra := flushServerFrames(t, ownerFlow); len(extra) != 0 {
+			t.Fatalf("accepted add-fly queued duplicate owner frames: %d", len(extra))
+		}
+		if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
+			t.Fatalf("accepted add-fly unexpectedly fanned out to peer: %d", len(extra))
+		}
+	}
+	attack, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
+	if err != nil || len(attack) != 2 {
+		t.Fatalf("ordinary first attack after add-fly: frames=%d err=%v", len(attack), err)
+	}
+	refresh, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, attack[0]))
+	if err != nil || refresh.TargetVID != targetVID || refresh.HPPercent != 90 {
+		t.Fatalf("add-fly must not change target HP before first hit: %+v, %v", refresh, err)
+	}
+	assertDamageInfoFrame(t, attack[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "hit after add-fly")
+	if extra := flushServerFrames(t, peerFlow); len(extra) != 1 {
+		t.Fatalf("ordinary hit should queue only peer damage-info: %d", len(extra))
+	} else {
+		assertDamageInfoFrame(t, extra[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "peer hit after add-fly")
+	}
+	if _, ok := runtime.UpdateStaticActor(actor.EntityID, "AddFlyDummy", bootstrapMapIndex, 1600, 2200, 20350); !ok {
+		t.Fatal("move add-fly dummy outside combat range")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	if out := add(targetVID, 1700, -2800); len(out) != 0 {
+		t.Fatalf("out-of-range add-fly must fail closed: %d frames", len(out))
+	}
+	if _, ok := runtime.UpdateStaticActor(actor.EntityID, "AddFlyDummy", bootstrapMapIndex, 50000, 50000, 20350); !ok {
+		t.Fatal("move add-fly dummy outside visibility and combat range")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	if out := add(targetVID, 1700, -2800); len(out) != 0 {
+		t.Fatalf("no add-fly after selected target leaves visibility: %d frames", len(out))
+	}
+	if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
+		t.Fatalf("invisible add-fly queued peer frames: %d", len(extra))
+	}
+}
+
+func TestGameSessionFlowAddFlyTargetingZeroHPOwnerFailsClosed(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("AddFlyFloor", 0x01030293, 0x02040293, 1100, 2100, 0, 101, 201)
+	owner.Points[bootstrapPlayerPointValueIndex] = 0
+	issuePeerTicket(t, store, "add-fly-floor", 0x93939394, owner)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new floor runtime: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "FloorAddFlyDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register floor add-fly dummy")
+	}
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "add-fly-floor", 0x93939394)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+	vid := uint32(actor.EntityID)
+	if selected, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: vid}))); err != nil || len(selected) != 0 {
+		t.Fatalf("zero-HP selection must fail closed: frames=%d err=%v", len(selected), err)
+	}
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: vid, X: 1700, Y: -2800}))); err != nil || len(out) != 0 {
+		t.Fatalf("zero-HP add-fly must fail closed: frames=%d err=%v", len(out), err)
+	}
+	if extra := flushServerFrames(t, flow); len(extra) != 0 {
+		t.Fatalf("zero-HP add-fly queued frames: %d", len(extra))
+	}
+}
+
 func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *testing.T) {
 	const profile = "fly_killing_hit_profile"
 	if !worldruntime.RegisterStaticActorCombatProfile(profile, worldruntime.StaticActorCombatProfileDefaults{
@@ -263,7 +391,7 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 	}
 	for _, raw := range [][]byte{
 		combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID + 1}),
-		combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID}),
+		combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID + 1}),
 	} {
 		out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, raw))
 		if err != nil || len(out) != 0 {
@@ -342,6 +470,9 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 	if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
 		t.Fatalf("dead target must not emit peer frames, got %d", len(extra))
 	}
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID}))); err != nil || len(out) != 0 {
+		t.Fatalf("add-fly targeting after death must fail closed: frames=%d err=%v", len(out), err)
+	}
 }
 
 func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing.T) {
@@ -374,6 +505,16 @@ func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing
 	}
 	selectTarget(0)
 	selectTarget(targetVID)
+	if out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAddFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID, X: 1700, Y: -2800}))); err != nil || len(out) != 2 {
+		t.Fatalf("add-fly presentation after clear: frames=%d err=%v", len(out), err)
+	} else {
+		if _, err := combatproto.DecodeServerAddFlyTargeting(decodeSingleFrame(t, out[0])); err != nil {
+			t.Fatalf("decode add-fly after clear: %v", err)
+		}
+		if _, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, out[1])); err != nil {
+			t.Fatalf("decode add-fly projectile after clear: %v", err)
+		}
+	}
 	now := time.Unix(1_700_000_900, 0)
 	runtime.now = func() time.Time { return now }
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP/worldruntime.TrainingDummyBootstrapDamagePerNormalAttack); hit++ {
@@ -383,7 +524,7 @@ func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing
 		}
 		if hit == int(worldruntime.TrainingDummyBootstrapMaxHP/worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
 			if len(out) != 3 {
-				t.Fatalf("unarmed death after explicit clear must keep three frames, got %d", len(out))
+				t.Fatalf("unarmed death after explicit clear and add-fly must keep three frames, got %d", len(out))
 			}
 			stripTrainingDummyKillingHitDeathPrefix(t, out, targetVID, "cleared fly intent")
 		}

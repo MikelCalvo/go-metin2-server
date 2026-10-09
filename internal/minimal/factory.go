@@ -114,6 +114,15 @@ func encodeBootstrapFlyTargetingEcho(shooterVID, targetVID uint32, x, y int32) [
 	})
 }
 
+func encodeBootstrapAddFlyTargetingEcho(shooterVID, targetVID uint32, x, y int32) []byte {
+	return combatproto.EncodeServerAddFlyTargeting(combatproto.ServerFlyTargetingPacket{
+		ShooterVID: shooterVID,
+		TargetVID:  targetVID,
+		X:          x,
+		Y:          y,
+	})
+}
+
 const bootstrapTargetMarkerType = combatproto.ServerTargetMarkerTypeCharacter
 const itemDropRejectedInfoMessage = "You cannot drop this item."
 const itemPickupInventoryFullInfoMessage = "You have too many items."
@@ -10407,6 +10416,22 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						Frames: [][]byte{
 							encodeBootstrapFlyTargetingEcho(startVID, endVID, packet.X, packet.Y),
 							flyFrame,
+						},
+					}
+				},
+				HandleAddFlyTargeting: func(packet combatproto.ClientFlyTargetingPacket) gameflow.FlyTargetingResult {
+					stateMu.Lock()
+					defer stateMu.Unlock()
+
+					startVID, endVID, _, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					if !ok {
+						return gameflow.FlyTargetingResult{Accepted: false}
+					}
+					return gameflow.FlyTargetingResult{
+						Accepted: true,
+						Frames: [][]byte{
+							encodeBootstrapAddFlyTargetingEcho(startVID, endVID, packet.X, packet.Y),
+							encodeBootstrapCreateFly(startVID, endVID),
 						},
 					}
 				},
