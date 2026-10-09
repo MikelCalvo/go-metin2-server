@@ -59,7 +59,7 @@ Payload layout:
 - header: `0x0A12`
 - payload length: `4`
 - total frame length: `8`
-- status: documented and codec-owned in `internal/proto/combat`; emitted on accepted explicit owner `TARGET(0)` after a selected non-zero marker
+- status: documented and codec-owned in `internal/proto/combat`; emitted on accepted explicit owner `TARGET(0)` only for a marker successfully queued for the current selected target
 
 Payload layout:
 1. `int32 id` (little-endian)
@@ -85,7 +85,7 @@ On that accepted request the owner socket already receives:
 
 1. `GC TARGET(target_vid, current_hp_percent)`
 
-The same accepted selection then queues exactly one self-only `GC TARGET_CREATE_NEW` through the pending server-frame path. Visible peers receive no marker fanout. An accepted explicit `TARGET(0)` with that selected non-zero target clears the selection without an HP echo and queues exactly one self-only `GC TARGET_DELETE(id = int32(previous_target_vid))`. Clearing again without a selected marker queues nothing. A rejected clear (including a dead or non-live owner) must neither clear nor enqueue a delete. No peer receives the delete. A pending create, if not yet drained, precedes its delete. Implicit target invalidation, death, restart, quest and map paths do not create this explicit-clear delete.
+The same accepted selection queues one self-only `GC TARGET_CREATE_NEW` through the pending server-frame path when the actor name fits the fixed marker field. A valid combat actor with a name of 33 or more bytes still receives the selected-target HP ack, but its marker encoder rejects the name and no create is queued. Visible peers receive no marker fanout. An accepted explicit `TARGET(0)` clears the selection without an HP echo and queues exactly one self-only `GC TARGET_DELETE(id = int32(previous_target_vid))` **only if that selection successfully queued a create**. A failed create, including a long-name selection that replaces a previously marked target, cannot invent a delete for the current selection. Clearing again without a selected marker queues nothing. A rejected clear (including a dead or non-live owner) must neither clear nor enqueue a delete. No peer receives the delete. A pending create, if not yet drained, precedes its delete. Implicit target invalidation, death, restart, quest and map paths do not create this explicit-clear delete.
 
 One successful same-map pending-frame chase step that already queues retained-viewer `MOVE` for an actor the living owner still has selected now also queues exactly one self-only `GC TARGET_UPDATE` to that owner. The update uses the already-created marker id (`id = int32(target_vid)`) and the stepped coordinates (`x`, `y`). It is delivered on that same pending-frame flush after the chase `MOVE` and after any same-flush delayed-retaliation frames, using the owned codec. It does not replace `TARGET(0x0A10)` as the HP carrier, does not emit `TARGET_DELETE`, and does not fan the marker out to peers who can see the chase `MOVE` but do not hold that selection. A chase step with no living selected owner, a stationary complete plan, homeward, return-step, and operator/runtime position `MOVE` still omit `TARGET_UPDATE`. Owners already at the bootstrap `0`-HP floor stay skipped.
 
@@ -126,7 +126,7 @@ After this slice:
 - `TARGET_CREATE_NEW`, `TARGET_UPDATE`, and `TARGET_DELETE` remain listed in the packet matrix as documented server target-marker packet shapes,
 - `internal/proto/combat` can encode and decode their exact fixed-width payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- an accepted non-zero client `TARGET` still returns one self-only `GC TARGET(target_vid, hp_percent)` and then queues one self-only `GC TARGET_CREATE_NEW` using the already-owned actor name/VID and `type = character`,
+- an accepted non-zero client `TARGET` still returns one self-only `GC TARGET(target_vid, hp_percent)` and queues one self-only `GC TARGET_CREATE_NEW` using the already-owned actor name/VID and `type = character` when the name is encodable (up to 32 bytes),
 - one successful same-map chase step for that still-selected living owner queues exactly one self-only `GC TARGET_UPDATE(id = int32(target_vid), x, y)` at the stepped coordinates without replacing the HP carrier,
-- accepted explicit owner `TARGET(0)` after a selected non-zero marker queues exactly one self-only `TARGET_DELETE` for that marker id, without an HP echo; repeated or rejected clears do not queue a delete,
+- accepted explicit owner `TARGET(0)` after a successfully queued selected non-zero marker queues exactly one self-only `TARGET_DELETE` for that marker id, without an HP echo; unencodable actor names still get HP acks but do not produce a marker or a delete, and repeated or rejected clears do not queue a delete,
 - rejected selection, ordinary hits, homeward/return-step movement, implicit clears, and peer sockets still omit marker deletes.

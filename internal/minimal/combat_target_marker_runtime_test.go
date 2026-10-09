@@ -210,6 +210,79 @@ func assertSelfOnlyTargetDelete(t *testing.T, queued [][]byte, id int32) {
 	}
 }
 
+func TestGameSessionFlowTargetClearSkipsMarkerWhenAcceptedNameCannotBeEncoded(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("LongNameOwner", 0x010301C4, 0x020401C4, 1100, 2100, 0, 101, 201)
+	issuePeerTicket(t, store, "long-name-owner", 0xC4C4C4C4, owner)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new marker-delete runtime: %v", err)
+	}
+	// The actor name is valid for the world, but the fixed target_name[33]
+	// marker field cannot encode 33 bytes plus a terminating NUL.
+	const longName = "ActorNameExactlyThirtyThreeBytes!"
+	if len(longName) != 33 {
+		t.Fatalf("test name must be 33 bytes, got %d", len(longName))
+	}
+	longActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, longName, bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register long-name target")
+	}
+	shortActor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "ShortDummy", bootstrapMapIndex, 1210, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register short-name target")
+	}
+	longVID, shortVID := uint32(longActor.EntityID), uint32(shortActor.EntityID)
+	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "long-name-owner", 0xC4C4C4C4)
+	defer closeSessionFlow(t, flow)
+	flushServerFrames(t, flow)
+
+	selectTarget := func(vid uint32) {
+		t.Helper()
+		frames, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: vid})))
+		if err != nil || len(frames) != 1 {
+			t.Fatalf("accepted selection must retain HP ack: frames=%d err=%v", len(frames), err)
+		}
+		ack, err := combatproto.DecodeServerTarget(decodeSingleFrame(t, frames[0]))
+		if err != nil || ack.TargetVID != vid || ack.HPPercent != 100 {
+			t.Fatalf("selected target HP ack changed: ack=%+v err=%v", ack, err)
+		}
+	}
+	clearTarget := func() {
+		t.Helper()
+		frames, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{})))
+		if err != nil || len(frames) != 0 {
+			t.Fatalf("accepted clear should remain silent: frames=%d err=%v", len(frames), err)
+		}
+	}
+
+	selectTarget(longVID)
+	selectTarget(longVID)
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("unencodable target invented marker create: %d", len(queued))
+	}
+	clearTarget()
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("unencodable target invented marker delete: %d", len(queued))
+	}
+
+	selectTarget(shortVID)
+	flushSelfOnlyTargetCreateNew(t, flow, "ShortDummy", shortVID)
+	selectTarget(longVID) // supersedes the marker without creating a new one
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("unencodable replacement invented marker frames: %d", len(queued))
+	}
+	clearTarget()
+	if queued := flushServerFrames(t, flow); len(queued) != 0 {
+		t.Fatalf("clear of unencodable replacement deleted another marker: %d", len(queued))
+	}
+
+	selectTarget(shortVID)
+	flushSelfOnlyTargetCreateNew(t, flow, "ShortDummy", shortVID)
+	clearTarget()
+	assertSelfOnlyTargetDelete(t, flushServerFrames(t, flow), int32(shortVID))
+}
+
 func TestGameSessionFlowHPFloorRejectsTargetClearWithoutMarkerDelete(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("FloorDeleteOwner", 0x010301C3, 0x020401C3, 1100, 2100, 0, 101, 201)
