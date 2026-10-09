@@ -241,6 +241,10 @@ Explicit non-goals for this chase-step executor freeze:
 - chasing while `return_required` or across map boundaries
 - operator POST chase-step triggers
 
+## WORLD-PLAYER-OCCUPANCY: live player on a chase cell
+
+The already-owned same-map chase detour also treats a **live, connected player** at the exact preferred or candidate `x/y` on the actor's effective map as occupancy. Resolve player positions at pending inspection and again at due execution (including the bootstrap effective map for stored map index zero). Exclude the engaged owner: chasing onto that owner's position remains permitted. A floored or disconnected player, or a player on another map, is not occupancy. Keep the existing deterministic perpendicular candidate order, leash and max-step checks, blocked-axis rule, no-move completion and chase re-arm behavior. Only the chase detour changes; return/homeward, ground items, map collision attributes, navmesh and pack flocking remain outside this seam. No real-client QA has been run for this change.
+
 ## First owned occupancy-avoiding chase-step seam
 
 Question frozen here:
@@ -250,14 +254,14 @@ Question frozen here:
 Contract for one occupancy-avoiding chase detour:
 
 - reuse the already-owned `PlanStaticActorSpawnChaseStep` straight-line result as the preferred `next`
-- a chase cell is occupied only when another **live** static actor (not the chasing entity, not a dead corpse) currently sits on the same map at that exact `x/y`; the engaged owner player is not occupancy
+- a chase cell is occupied when another **live** static actor (not the chasing entity, not a dead corpse), or a live connected player other than the engaged owner, currently sits on the same map at that exact `x/y`
 - if that preferred `next` is free, keep the straight-line plan unchanged
 - if it is occupied, skip remaining candidates on the blocked axis (same `y` when the preferred cell shares `y`, same `x` when it shares `x`) and replace `next` with the first perpendicular axis-aligned candidate at most `max_step` away that:
   - stays on the same map
   - stays `at_home` / `within_radius` against the actor's preserved authored home
   - is not the current cell and not the occupied preferred cell
   - does not reverse the dominant chase axis (the larger of `|dx|` / `|dy|` toward the preferred `next`)
-  - is not itself occupied by another live static actor
+  - is not itself occupied by another live static actor or a live connected non-owner player
 - candidate order is nearest squared-distance to the blocked preferred `next`, then higher `y`, then higher `x`
 - a successful detour is **not** complete merely because it avoided the blocker; re-arm while the actor remains chase-eligible so a later beat can continue around
 - if every candidate fails, treat the due step as a complete no-move at the current cell (clear chase, do not walk into the occupied cell, preserve engagement / selected-target)
@@ -267,13 +271,13 @@ Contract for one occupancy-avoiding chase detour:
 Current implementation status:
 
 - live due chase and read-only chase inspection honor that occupancy detour in `internal/minimal`
-- focused coverage owns a blocker sitting on the first `+100` east cell: pending inspection and the retained-viewer `MOVE` sidestep one cell north (`1700,2801`) instead of landing on the blocker, engagement / selected-target stay preserved, and chase re-arms (`TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep`)
+- focused coverage owns a live static blocker and a live connected non-owner player sitting on the first `+100` east cell: pending inspection and the retained-viewer `MOVE` sidestep one cell north (`1700,2801`) instead of landing on either blocker; engagement / selected-target stay preserved and chase re-arms (`TestGameRuntimeFlushServerFramesDetoursOccupiedSpawnGroupChaseStep`, `TestGameRuntimeFlushServerFramesDetoursLivePlayerSpawnGroupChaseStep`)
 - the older leash-clamp re-arm proof stays the free-cell straight-line twin
 
 Explicit non-goals for this occupancy detour freeze:
 
 - navmesh, A*, waypoint graphs, or multi-beat search around concave geometry
-- treating players, ground items, or map collision attributes as occupancy
+- treating ground items or map collision attributes as occupancy (live non-owner players are included by WORLD-PLAYER-OCCUPANCY)
 - pack AI, flocking, or synchronized sibling MOVE
 - inventing cross-map chase MOVE / `GC WARP`
 - changing homeward / return-step planners in the same slice
