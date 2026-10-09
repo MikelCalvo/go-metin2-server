@@ -2674,7 +2674,7 @@ func (r *gameRuntime) spawnGroupChaseStepSnapshot(entityID uint64, dueAt time.Ti
 	if !ok {
 		return SpawnGroupPendingChaseStepSnapshot{}, false
 	}
-	plan = applySpawnGroupChaseOccupancyDetour(entityID, r.sharedWorld.StaticActors(), plan, maxStep)
+	plan = applySpawnGroupChaseOccupancyDetour(entityID, r.sharedWorld.StaticActors(), r.sharedWorld.spawnChasePlayerOccupancy(engagedBy), plan, maxStep)
 	remaining := dueAt.Sub(now).Milliseconds()
 	if remaining < 0 {
 		remaining = 0
@@ -3385,7 +3385,7 @@ func spawnGroupChaseSquaredDistance(left worldruntime.Position, right worldrunti
 	return dx*dx + dy*dy
 }
 
-func spawnGroupChaseCellOccupied(entityID uint64, actors []StaticActorSnapshot, cell worldruntime.Position) bool {
+func spawnGroupChaseCellOccupied(entityID uint64, actors []StaticActorSnapshot, players []worldruntime.Position, cell worldruntime.Position) bool {
 	if !cell.Valid() {
 		return false
 	}
@@ -3397,6 +3397,11 @@ func spawnGroupChaseCellOccupied(entityID uint64, actors []StaticActorSnapshot, 
 			continue
 		}
 		return true
+	}
+	for _, player := range players {
+		if player.Equal(cell) {
+			return true
+		}
 	}
 	return false
 }
@@ -3422,7 +3427,7 @@ func spawnGroupChaseDetourReversesDominantAxis(current worldruntime.Position, pr
 		(dy > 0 && candidate.Y < current.Y) || (dy < 0 && candidate.Y > current.Y)
 }
 
-func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSnapshot, plan worldruntime.SpawnChaseStepPlan, maxStep int32) worldruntime.SpawnChaseStepPlan {
+func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSnapshot, players []worldruntime.Position, plan worldruntime.SpawnChaseStepPlan, maxStep int32) worldruntime.SpawnChaseStepPlan {
 	if maxStep <= 0 || !plan.Next.Valid() || !plan.Evaluation.Current.Valid() {
 		return plan
 	}
@@ -3430,7 +3435,7 @@ func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSn
 	if plan.Complete && plan.Next.Equal(current) {
 		return plan
 	}
-	if !plan.Next.SameMap(current) || !spawnGroupChaseCellOccupied(entityID, actors, plan.Next) {
+	if !plan.Next.SameMap(current) || !spawnGroupChaseCellOccupied(entityID, actors, players, plan.Next) {
 		return plan
 	}
 	preferred := plan.Next
@@ -3463,7 +3468,7 @@ func applySpawnGroupChaseOccupancyDetour(entityID uint64, actors []StaticActorSn
 			if !ok || leash.ReturnRequired {
 				continue
 			}
-			if spawnGroupChaseCellOccupied(entityID, actors, candidate) {
+			if spawnGroupChaseCellOccupied(entityID, actors, players, candidate) {
 				continue
 			}
 			dist := spawnGroupChaseSquaredDistance(candidate, preferred)
@@ -3655,7 +3660,7 @@ func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, resche
 		r.clearSpawnGroupHomewardStep(entityID)
 		return SpawnGroupReturnStepSnapshot{}, false
 	}
-	plan = applySpawnGroupChaseOccupancyDetour(entityID, current, plan, maxStep)
+	plan = applySpawnGroupChaseOccupancyDetour(entityID, current, r.sharedWorld.spawnChasePlayerOccupancy(engagedBy), plan, maxStep)
 	if plan.Complete && plan.Next.Equal(worldruntime.NewPosition(current[idx].MapIndex, current[idx].X, current[idx].Y)) {
 		r.clearSpawnGroupChaseStep(entityID)
 		r.clearSpawnGroupHomewardStep(entityID)

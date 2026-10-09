@@ -7130,6 +7130,29 @@ func (r *sharedWorldRegistry) spawnAggroCandidatePositionLocked(character logint
 	return worldruntime.NewPosition(r.topology.EffectiveMapIndex(character), character.X, character.Y)
 }
 
+// Snapshot only connected, living non-owner players for the chase detour.
+// Use the same effective map as proximity acquisition; the owner's cell is
+// intentionally reachable by the chasing actor.
+func (r *sharedWorldRegistry) spawnChasePlayerOccupancy(ownerID uint64) []worldruntime.Position {
+	if r == nil || r.entities == nil {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var positions []worldruntime.Position
+	for _, character := range r.entities.PlayerCharacters() {
+		player, ok := r.entities.PlayerByVID(character.VID)
+		if !ok || player.Entity.ID == ownerID || characterAtBootstrapHPFloor(character) {
+			continue
+		}
+		if _, connected := r.sessionEntryLocked(player.Entity.ID); !connected {
+			continue
+		}
+		positions = append(positions, r.spawnAggroCandidatePositionLocked(character))
+	}
+	return positions
+}
+
 func (r *sharedWorldRegistry) playerCharacter(id uint64) (loginticket.Character, bool) {
 	playerEntity, ok := r.playerEntity(id)
 	if !ok {
