@@ -1,6 +1,6 @@
 # Combat Fly-Effect Bootstrap
 
-This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and a narrow runtime emission policy: `CREATE_FLY` accompanies accepted client `FLY_TARGETING`, bootstrap presentation `USE_SKILL` and `SHOOT`, and a selected-target normal `ATTACK` that kills a visible combat actor **after an accepted fly-targeting intent**. An accepted client `FLY_TARGETING` also queues that same `CREATE_FLY` to currently visible live peers, and the owner socket receives one self-only server `FLY_TARGETING` echo beside that projectile.
+This note freezes the first owned server fly-effect packet shapes for `go-metin2-server` and a narrow runtime emission policy: `CREATE_FLY` accompanies accepted client `FLY_TARGETING`, bootstrap presentation `USE_SKILL` and `SHOOT`, and a selected-target normal `ATTACK` that kills a visible combat actor **after an accepted fly-targeting intent**. Accepted client `FLY_TARGETING` and `SHOOT(shoot_type = 1)` also queue that same `CREATE_FLY` to currently visible live peers that can see the selected target; the owner socket receives a self-only server `FLY_TARGETING` echo only for accepted client `FLY_TARGETING`.
 
 It sits next to:
 - `combat-normal-attack-bootstrap.md`
@@ -94,7 +94,7 @@ An accepted client `FLY_TARGETING` also returns, on that same owner socket and b
 
 1. `GC FLY_TARGETING(shooter_vid = owner_vid, target_vid = target_vid, x = request_x, y = request_y)`
 
-An accepted client `ADD_FLY_TARGETING` instead returns its matching `GC ADD_FLY_TARGETING` echo before its own `CREATE_FLY`, both self-only. The accepted primary `FLY_TARGETING` request still queues only `CREATE_FLY` to currently visible live peers that can already see the selected combat target. Peers already at the bootstrap `0`-HP floor stay skipped. Bootstrap presentation `USE_SKILL` and `SHOOT` stay one self-only `CREATE_FLY` and do not emit server targeting echoes. The companions are presentation only, not a second combat simulation:
+An accepted client `ADD_FLY_TARGETING` instead returns its matching `GC ADD_FLY_TARGETING` echo before its own `CREATE_FLY`, both self-only. Accepted primary `FLY_TARGETING` and bootstrap `SHOOT(shoot_type = 1)` each queue only `CREATE_FLY` to currently visible live peers that can already see the selected combat target. Peers already at the bootstrap `0`-HP floor stay skipped. Bootstrap presentation `USE_SKILL` stays self-only; neither skill nor shoot emits server targeting echoes. The companions are presentation only, not a second combat simulation:
 
 - it does not mutate selected-target HP
 - it does not rewrite the selected target
@@ -123,7 +123,7 @@ This slice does not freeze:
 - projectile hit timing or travel duration,
 - visual effect type meanings beyond bootstrap `CREATE_FLY` `type = 0`,
 - multi-target or chained projectile behavior beyond the same-selected-target `ADD_FLY_TARGETING` self-only echo,
-- peer fanout of bootstrap presentation `USE_SKILL` or `SHOOT` fly effects,
+- peer fanout of bootstrap presentation `USE_SKILL` fly effects,
 - peer fanout of the server `FLY_TARGETING` echo,
 - peer killing-hit fly effects,
 - peer fanout for the server `ADD_FLY_TARGETING` echo or its `CREATE_FLY` companion,
@@ -138,9 +138,9 @@ After this slice:
 - an accepted client `FLY_TARGETING` against the currently selected visible combat target emits one self-only `GC FLY_TARGETING(shooter_vid = owner_vid, target_vid = target_vid, x = request_x, y = request_y)` followed by one `GC CREATE_FLY(type = 0, start_vid = owner_vid, end_vid = target_vid)`, and queues only that `CREATE_FLY` frame to currently visible live peers,
 - peers already at the bootstrap `0`-HP floor receive no fly-effect frame, and no peer receives the server `FLY_TARGETING` echo,
 - an accepted client `USE_SKILL` with bootstrap presentation `skill_vnum = 1` against that same selected target emits the same self-only `CREATE_FLY`,
-- an accepted client `SHOOT` with bootstrap presentation `shoot_type = 1` while that same target is selected emits the same self-only `CREATE_FLY`,
+- an accepted client `SHOOT` with bootstrap presentation `shoot_type = 1` while that same target is selected emits the same `CREATE_FLY` to the owner and currently visible live peers that can see the target, skipping peers at the bootstrap `0`-HP floor,
 - that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
-- visible peers receive no fly-effect frame from `USE_SKILL` or `SHOOT`,
+- visible peers receive no fly-effect frame from `USE_SKILL`; `SHOOT` queues only `CREATE_FLY` (never a targeting echo), without replacing `DAMAGE_INFO`, `TARGET`, or `DEAD`,
 - an accepted same-selected-target client `ADD_FLY_TARGETING` emits exactly one self-only `GC ADD_FLY_TARGETING` before one self-only `GC CREATE_FLY`; unmatched or unsupported `ADD_FLY_TARGETING`, other `USE_SKILL` vnums, other `SHOOT` types, and non-lethal or rejected `ATTACK` stay fail-closed for fly emission,
 - one accepted selected-target normal killing hit after an accepted `FLY_TARGETING` intent emits one self-only `CREATE_FLY` after its death/clear/damage prefix and before owned reward; non-lethal, unarmed and rejected hits emit none,
 - later ranged/projectile/skill slices can start from this tested packet shape and the selected-target rule instead of re-discovering them.
