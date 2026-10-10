@@ -8401,11 +8401,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 							DestinationVID: target.Character.VID,
 							Mode:           combatproto.ServerPVPModeRevenge,
 						})
-						queued := sharedWorld.enqueueToEntityLocked(target.Entity.ID, [][]byte{frame})
-						sharedWorld.mu.Unlock()
-						if !queued {
+						if !sharedWorld.enqueueToEntityLocked(target.Entity.ID, [][]byte{frame}) {
+							sharedWorld.mu.Unlock()
 							return gameflow.ChatResult{Accepted: false}
 						}
+						for _, viewer := range sharedWorld.scopesLocked().VisibleTargets(sharedWorldID, selected) {
+							if viewer.Entity.ID == target.Entity.ID || characterAtBootstrapHPFloor(viewer.Character) {
+								continue
+							}
+							sharedWorld.enqueueToEntityLocked(viewer.Entity.ID, [][]byte{frame})
+						}
+						sharedWorld.mu.Unlock()
 						return gameflow.ChatResult{Accepted: true, Frames: [][]byte{frame}}
 					}
 					if command, ok := slashGameCommand(packet.Message); ok {
