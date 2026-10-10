@@ -1,6 +1,9 @@
 package minimal
 
 import (
+	"maps"
+	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/MikelCalvo/go-metin2-server/internal/accountstore"
@@ -8,7 +11,6 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/loginticket"
 	chatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/chat"
 	combatproto "github.com/MikelCalvo/go-metin2-server/internal/proto/combat"
-	"strconv"
 )
 
 func TestGameRuntimePVPSlashPaintsChallengeMarkForVisiblePeer(t *testing.T) {
@@ -17,9 +19,15 @@ func TestGameRuntimePVPSlashPaintsChallengeMarkForVisiblePeer(t *testing.T) {
 	owner := peerVisibilityCharacter("PVPChallenger", 0x01030801, 0x02040801, 1100, 2100, 0, 101, 201)
 	peer := peerVisibilityCharacter("PVPTarget", 0x01030802, 0x02040802, 1120, 2120, 0, 101, 201)
 	watcher := peerVisibilityCharacter("PVPWatcher", 0x01030803, 0x02040803, 1140, 2140, 0, 101, 201)
+	floor := peerVisibilityCharacter("PVPFloorWatcher", 0x01030804, 0x02040804, 1160, 2160, 0, 101, 201)
+	floor.Points[bootstrapPlayerPointValueIndex] = 0
+	otherMap := peerVisibilityCharacter("PVPOtherMap", 0x01030805, 0x02040805, 1180, 2180, 0, 101, 201)
+	otherMap.MapIndex = 42
 	issuePeerTicket(t, ticketStore, "pvp-challenger", 0x70708001, owner)
 	issuePeerTicket(t, ticketStore, "pvp-target", 0x70708002, peer)
 	issuePeerTicket(t, ticketStore, "pvp-watcher", 0x70708003, watcher)
+	issuePeerTicket(t, ticketStore, "pvp-floor-watcher", 0x70708004, floor)
+	issuePeerTicket(t, ticketStore, "pvp-other-map", 0x70708005, otherMap)
 	if err := accounts.Save(accountstore.Account{Login: "pvp-challenger", Empire: owner.Empire, Characters: cloneCharacters([]loginticket.Character{owner})}); err != nil {
 		t.Fatalf("seed pvp challenger account: %v", err)
 	}
@@ -28,6 +36,12 @@ func TestGameRuntimePVPSlashPaintsChallengeMarkForVisiblePeer(t *testing.T) {
 	}
 	if err := accounts.Save(accountstore.Account{Login: "pvp-watcher", Empire: watcher.Empire, Characters: cloneCharacters([]loginticket.Character{watcher})}); err != nil {
 		t.Fatalf("seed pvp watcher account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "pvp-floor-watcher", Empire: floor.Empire, Characters: cloneCharacters([]loginticket.Character{floor})}); err != nil {
+		t.Fatalf("seed pvp floor watcher account: %v", err)
+	}
+	if err := accounts.Save(accountstore.Account{Login: "pvp-other-map", Empire: otherMap.Empire, Characters: cloneCharacters([]loginticket.Character{otherMap})}); err != nil {
+		t.Fatalf("seed pvp other map account: %v", err)
 	}
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, ticketStore, accounts)
 	if err != nil {
@@ -39,9 +53,19 @@ func TestGameRuntimePVPSlashPaintsChallengeMarkForVisiblePeer(t *testing.T) {
 	defer closeSessionFlow(t, peerFlow)
 	watcherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pvp-watcher", 0x70708003)
 	defer closeSessionFlow(t, watcherFlow)
+	floorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pvp-floor-watcher", 0x70708004)
+	defer closeSessionFlow(t, floorFlow)
+	otherMapFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "pvp-other-map", 0x70708005)
+	defer closeSessionFlow(t, otherMapFlow)
 	_ = flushServerFrames(t, ownerFlow)
 	_ = flushServerFrames(t, peerFlow)
 	_ = flushServerFrames(t, watcherFlow)
+	_ = flushServerFrames(t, floorFlow)
+	_ = flushServerFrames(t, otherMapFlow)
+	runtime.sharedWorld.mu.Lock()
+	before := runtime.sharedWorld.snapshotCharactersLocked()
+	beforeTargets := maps.Clone(runtime.sharedWorld.sessionCombatTargets)
+	runtime.sharedWorld.mu.Unlock()
 
 	out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, chatproto.EncodeClientChat(chatproto.ClientChatPacket{
 		Type:    chatproto.ChatTypeTalking,
@@ -59,11 +83,26 @@ func TestGameRuntimePVPSlashPaintsChallengeMarkForVisiblePeer(t *testing.T) {
 		t.Fatalf("expected target to receive one queued PVP frame, got %d", len(queued))
 	}
 	assertPVPPresentationFrame(t, queued[0], owner.VID, peer.VID, "target queued response")
-	if watcherQueued := flushServerFrames(t, watcherFlow); len(watcherQueued) != 0 {
-		t.Fatalf("expected a third visible player to receive no PVP frame, got %d", len(watcherQueued))
+	watcherQueued := flushServerFrames(t, watcherFlow)
+	if len(watcherQueued) != 1 {
+		t.Fatalf("expected one PVP frame for living visible watcher, got %d", len(watcherQueued))
+	}
+	assertPVPPresentationFrame(t, watcherQueued[0], owner.VID, peer.VID, "living watcher queued response")
+	if floorQueued := flushServerFrames(t, floorFlow); len(floorQueued) != 0 {
+		t.Fatalf("expected zero-HP viewer to receive no PVP frame, got %d", len(floorQueued))
+	}
+	if otherQueued := flushServerFrames(t, otherMapFlow); len(otherQueued) != 0 {
+		t.Fatalf("expected other-map viewer to receive no PVP frame, got %d", len(otherQueued))
 	}
 	if talk := flushServerFrames(t, ownerFlow); len(talk) != 0 {
 		t.Fatalf("expected accepted /pvp to leave no extra challenger frames, got %d", len(talk))
+	}
+	runtime.sharedWorld.mu.Lock()
+	after := runtime.sharedWorld.snapshotCharactersLocked()
+	afterTargets := maps.Clone(runtime.sharedWorld.sessionCombatTargets)
+	runtime.sharedWorld.mu.Unlock()
+	if !reflect.DeepEqual(after, before) || !reflect.DeepEqual(afterTargets, beforeTargets) {
+		t.Fatalf("presentation mark changed live HP, targets or inventory: before=%+v targets=%+v after=%+v targets=%+v", before, beforeTargets, after, afterTargets)
 	}
 }
 

@@ -33,7 +33,7 @@ The first owned mode constants are:
 - `2` — fight / active PVP relation presentation
 - `3` — revenge / revenge-style presentation
 
-The current Go runtime does not emit this packet yet.
+The current Go runtime emits this packet only for the presentation-only talking-chat `/pvp` seam described below.
 
 ### `DUEL_START`
 
@@ -66,7 +66,7 @@ Current accepted bootstrap combat still uses the already-owned surfaces:
 - player zero-HP retaliation edges use `PLAYER_POINT_CHANGE`, `DEAD(owner_vid)`, and `TARGET(0, 0)`,
 - server fly-effect packet shapes now have presentation-only `CREATE_FLY` emits on accepted selected-target `FLY_TARGETING`, `USE_SKILL(skill_vnum = 1)`, and `SHOOT(shoot_type = 1)`; server `FLY_TARGETING` / `ADD_FLY_TARGETING` stay unemitted.
 
-The Go runtime emits `GC::PVP` from one presentation seam only: a living owner sends talking-chat `/pvp <visible_player_vid>` naming another living player already visible on the same map. Both the requester and that named player receive one `PVP(source_vid = requester, destination_vid = named player, mode = revenge)`. A third visible player receives nothing. The command does not change HP, targets, inventory, or any duel/karma/safe-zone state, and it is not spoken as chat.
+The Go runtime emits `GC::PVP` from one presentation seam only: a living owner sends talking-chat `/pvp <visible_player_vid>` naming another living player already visible on the same map. The requester receives one `PVP(source_vid = requester, destination_vid = named player, mode = revenge)`; the named player and every other currently visible living player on that map each receive the same frame once. A zero-HP viewer, non-visible player, or player on another map receives none. The command does not change HP, targets, inventory, or any duel/karma/safe-zone state, and it is not spoken as chat.
 
 Malformed `/pvp`, a non-talking chat type, a missing or non-visible id, a self id, a mob or dummy id, and a zero-HP requester or target fail closed with no `PVP` frame. Ordinary targeting, attacks, retaliation, death, restart, and other slash commands still omit `PVP` and `DUEL_START`.
 
@@ -79,7 +79,7 @@ This slice does not freeze:
 - duel request/invite/accept/reject choreography beyond the single challenge-mark paint above,
 - party/guild war semantics,
 - PvP flagging, karma, revenge eligibility, or safe-zone rules,
-- peer fanout of `PVP` to anyone other than the requester and the named visible player,
+- inter-map or non-visible fanout of `PVP`,
 - interaction between PvP/duel state and current target, death, restart, or reward rules.
 
 ## Success definition
@@ -88,5 +88,5 @@ After this slice:
 - `PVP` and `DUEL_START` are listed in the packet matrix as documented server combat presentation packet shapes,
 - `internal/proto/combat` can encode and decode their exact payloads,
 - malformed or wrong-header frames fail closed at the codec layer,
-- one accepted talking-chat `/pvp <visible_player_vid>` emits `GC::PVP(mode = revenge)` to the requester and the named living visible player only,
+- one accepted talking-chat `/pvp <visible_player_vid>` emits `GC::PVP(mode = revenge)` to the requester, named living visible player, and other living visible same-map players once each; zero-HP viewers stay skipped,
 - `DUEL_START` and every other gameplay path still do not emit PVP or duel frames.
