@@ -10464,13 +10464,17 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 					if packet.ShootType != bootstrapShootPresentationType {
 						return gameflow.ShootResult{Accepted: false}
 					}
-					startVID, endVID, _, ok := selectedTargetCreateFlyPresentation(activeCombatTargetVID)
+					startVID, endVID, actorEntityID, ok := selectedTargetCreateFlyPresentation(activeCombatTargetVID)
 					if !ok {
 						return gameflow.ShootResult{Accepted: false}
 					}
+					flyFrame := encodeBootstrapCreateFly(startVID, endVID)
+					if sharedWorld != nil && actorEntityID != 0 {
+						sharedWorld.EnqueueStaticActorFramesToVisiblePeers(actorEntityID, sharedWorldID, [][]byte{flyFrame})
+					}
 					return gameflow.ShootResult{
 						Accepted: true,
-						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
+						Frames:   [][]byte{flyFrame},
 					}
 				},
 				HandleTarget: func(packet combatproto.ClientTargetPacket) gameflow.TargetResult {

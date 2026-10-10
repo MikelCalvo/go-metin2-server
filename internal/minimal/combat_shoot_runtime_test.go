@@ -9,7 +9,7 @@ import (
 	"github.com/MikelCalvo/go-metin2-server/internal/worldruntime"
 )
 
-func TestGameSessionFlowAcceptedShootEmitsSelfOnlyCreateFly(t *testing.T) {
+func TestGameSessionFlowAcceptedShootFansOutCreateFlyToVisibleLivePeers(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("ShootOwner", 0x010301B1, 0x020401B1, 1100, 2100, 0, 101, 201)
 	peer := peerVisibilityCharacter("ShootPeer", 0x010301B2, 0x020401B2, 1120, 2100, 0, 102, 202)
@@ -48,6 +48,9 @@ func TestGameSessionFlowAcceptedShootEmitsSelfOnlyCreateFly(t *testing.T) {
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected unselected shoot to queue no CREATE_FLY, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("expected unselected shoot to queue no peer frames, got %d", len(queued))
 	}
 
 	selectOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: targetVID})))
@@ -90,9 +93,26 @@ func TestGameSessionFlowAcceptedShootEmitsSelfOnlyCreateFly(t *testing.T) {
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected accepted shoot not to queue extra owner frames, got %d", len(queued))
 	}
-	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
-		t.Fatalf("expected visible peer to receive no CREATE_FLY, got %d", len(queued))
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
+		t.Fatalf("expected one visible peer CREATE_FLY, got %d", len(queued))
+	} else if peerFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, queued[0])); err != nil || peerFly != selfFly {
+		t.Fatalf("expected peer CREATE_FLY to match self %+v, got %+v, %v", selfFly, peerFly, err)
 	}
+
+	floorPeer := peerVisibilityCharacter("ShootFloorPeer", 0x010301B3, 0x020401B3, 1140, 2100, 0, 103, 203)
+	floorPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	otherMapPeer := peerVisibilityCharacter("ShootOtherMapPeer", 0x010301B4, 0x020401B4, 50000, 50000, 0, 104, 204)
+	otherMapPeer.MapIndex = bootstrapMapIndex + 1
+	issuePeerTicket(t, store, "shoot-floor-peer", 0xB3B3B3B3, floorPeer)
+	issuePeerTicket(t, store, "shoot-other-map-peer", 0xB4B4B4B4, otherMapPeer)
+	floorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "shoot-floor-peer", 0xB3B3B3B3)
+	defer closeSessionFlow(t, floorFlow)
+	otherMapFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "shoot-other-map-peer", 0xB4B4B4B4)
+	defer closeSessionFlow(t, otherMapFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	flushServerFrames(t, floorFlow)
+	flushServerFrames(t, otherMapFlow)
 
 	repeatOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: bootstrapShootPresentationType})))
 	if err != nil {
@@ -107,6 +127,17 @@ func TestGameSessionFlowAcceptedShootEmitsSelfOnlyCreateFly(t *testing.T) {
 	}
 	if repeatFly.Type != bootstrapCreateFlyType || repeatFly.StartVID != owner.VID || repeatFly.EndVID != targetVID {
 		t.Fatalf("unexpected repeat CREATE_FLY: %+v", repeatFly)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
+		t.Fatalf("expected one repeat visible peer CREATE_FLY, got %d", len(queued))
+	} else if peerFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, queued[0])); err != nil || peerFly != repeatFly {
+		t.Fatalf("repeat peer CREATE_FLY: %+v, %v", peerFly, err)
+	}
+	if queued := flushServerFrames(t, floorFlow); len(queued) != 0 {
+		t.Fatalf("zero-HP peer must not receive CREATE_FLY, got %d frames", len(queued))
+	}
+	if queued := flushServerFrames(t, otherMapFlow); len(queued) != 0 {
+		t.Fatalf("peer outside target visibility must not receive CREATE_FLY, got %d frames", len(queued))
 	}
 
 	attackOut, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
@@ -132,4 +163,26 @@ func TestGameSessionFlowAcceptedShootEmitsSelfOnlyCreateFly(t *testing.T) {
 		t.Fatalf("expected visible peer to receive only DAMAGE_INFO after dummy hit, got %d", len(peerHitQueued))
 	}
 	assertDamageInfoFrame(t, peerHitQueued[0], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "peer hit after shoot presentation")
+	if _, ok := runtime.UpdateStaticActor(actor.EntityID, "ShootPresentationDummy", bootstrapMapIndex, 1600, 2200, 20350); !ok {
+		t.Fatal("move selected dummy outside combat range")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: bootstrapShootPresentationType}))); err != nil || len(out) != 0 {
+		t.Fatalf("out-of-range selected shoot must fail closed: frames=%d err=%v", len(out), err)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("out-of-range shoot must not queue peer fly frames, got %d", len(queued))
+	}
+	if _, ok := runtime.UpdateStaticActor(actor.EntityID, "ShootPresentationDummy", bootstrapMapIndex, 50000, 50000, 20350); !ok {
+		t.Fatal("move selected dummy outside visibility")
+	}
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientShoot(combatproto.ClientShootPacket{ShootType: bootstrapShootPresentationType}))); err != nil || len(out) != 0 {
+		t.Fatalf("invisible selected shoot must fail closed: frames=%d err=%v", len(out), err)
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 0 {
+		t.Fatalf("invisible shoot must not queue peer fly frames, got %d", len(queued))
+	}
 }
