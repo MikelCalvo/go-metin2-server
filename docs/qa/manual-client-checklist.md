@@ -1375,6 +1375,8 @@ Expected result:
 
 Automated sector-policy check (real-client QA deferred): with opt-in `visibility_mode = sector_bucket` and positive `visibility_sector_size`, same-map peers in the same floor-divided bucket retain the normal peer entry and movement frames; a peer in the next bucket receives no visibility frames from that subject until an edge-crossing visibility diff admits them. A different map stays isolated even with matching coordinates. The default whole-map and radius modes keep their existing behavior; this is not cross-channel routing or a client warp packet.
 
+Automated channel-persistence check (real-client QA deferred): account snapshots retain each non-empty character's local `channel_id` across reconnect, location updates and backup/restore. Old snapshots without it default to channel 1. The process still advertises and owns only its local channel; a snapshot assigned to a different channel rejects login rather than exposing the player or chat across processes. No client-side channel switch is claimed.
+
 ### 6.3 Peer movement replication
 
 - [ ] Move character A while watching from B

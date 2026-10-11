@@ -11217,6 +11217,11 @@ func loadOrCreateAccount(store accountstore.Store, login string) (accountstore.A
 	}
 	account, err := store.Load(login)
 	if err == nil {
+		// This process owns only its local channel. A persisted assignment on
+		// another channel cannot be satisfied by a local login or routed away.
+		if !account.MatchesLocalChannel(accountstore.DefaultLocalChannelID) {
+			return accountstore.Account{}, false
+		}
 		if normalized, changed := normalizeBootstrapStubAccount(account); changed {
 			if err := store.Save(normalized); err != nil {
 				return accountstore.Account{}, false
