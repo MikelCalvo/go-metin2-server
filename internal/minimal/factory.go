@@ -3773,6 +3773,9 @@ func (r *gameRuntime) RuntimeConfigSnapshot() RuntimeConfigSnapshot {
 		snapshot.VisibilityMode = "radius"
 		snapshot.VisibilityRadius = policy.Radius
 		snapshot.VisibilitySectorSize = policy.SectorSize
+	case worldruntime.SectorVisibilityPolicy:
+		snapshot.VisibilityMode = "sector_bucket"
+		snapshot.VisibilitySectorSize = policy.SectorSize
 	case worldruntime.WholeMapVisibilityPolicy:
 		// keep defaults
 	default:
@@ -4813,6 +4816,11 @@ func bootstrapTopologyFromConfig(cfg config.Service) (worldruntime.BootstrapTopo
 			return worldruntime.BootstrapTopology{}, ErrInvalidVisibilitySectorSize
 		}
 		return topology.WithRadiusVisibilityPolicy(cfg.VisibilityRadius, cfg.VisibilitySectorSize), nil
+	case "sector_bucket":
+		if cfg.VisibilitySectorSize <= 0 {
+			return worldruntime.BootstrapTopology{}, ErrInvalidVisibilitySectorSize
+		}
+		return topology.WithSectorVisibilityPolicy(cfg.VisibilitySectorSize), nil
 	default:
 		return worldruntime.BootstrapTopology{}, ErrInvalidVisibilityMode
 	}

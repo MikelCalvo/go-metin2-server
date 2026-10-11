@@ -60,6 +60,10 @@ func (t BootstrapTopology) WithRadiusVisibilityPolicy(radius int32, sectorSize i
 	return t.WithVisibilityPolicy(RadiusVisibilityPolicy{Radius: radius, SectorSize: sectorSize})
 }
 
+func (t BootstrapTopology) WithSectorVisibilityPolicy(sectorSize int32) BootstrapTopology {
+	return t.WithVisibilityPolicy(SectorVisibilityPolicy{SectorSize: sectorSize})
+}
+
 func (t BootstrapTopology) SharesVisibleWorld(left loginticket.Character, right loginticket.Character) bool {
 	return t.VisibilityPolicy().CanSee(t, left, right)
 }

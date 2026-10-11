@@ -121,3 +121,19 @@ func TestBootstrapTopologyCanSwitchBackToWholeMapVisibilityPolicy(t *testing.T) 
 		t.Fatalf("expected whole-map visibility policy after explicit reset, got %T", topology.VisibilityPolicy())
 	}
 }
+
+func TestBootstrapTopologyCanSelectSectorVisibilityWithoutChangingOtherModes(t *testing.T) {
+	topology := NewBootstrapTopology(1).WithSectorVisibilityPolicy(200)
+	policy, ok := topology.VisibilityPolicy().(SectorVisibilityPolicy)
+	if !ok || policy.SectorSize != 200 {
+		t.Fatalf("expected sector visibility policy with size 200, got %+v", topology.VisibilityPolicy())
+	}
+	left := visibilityCharacter("Left", 0x02040101, 42, 1799, 2800)
+	right := visibilityCharacter("Right", 0x02040102, 42, 1800, 2800)
+	if topology.SharesVisibleWorld(left, right) || !topology.WithWholeMapVisibilityPolicy().SharesVisibleWorld(left, right) || !topology.WithRadiusVisibilityPolicy(400, 200).SharesVisibleWorld(left, right) {
+		t.Fatal("sector edge only gates sector mode, not whole-map or radius mode")
+	}
+	if NewBootstrapTopology(1).WithSectorVisibilityPolicy(0).SharesVisibleWorld(left, left) {
+		t.Fatal("nonpositive sector size must not silently admit visibility")
+	}
+}
