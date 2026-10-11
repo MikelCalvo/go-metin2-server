@@ -10518,13 +10518,17 @@ func newGameRuntimeWithOptionalGroundSQL(cfg config.Service, store loginticket.S
 					if packet.SkillVnum != bootstrapUseSkillPresentationVnum {
 						return gameflow.UseSkillResult{Accepted: false}
 					}
-					startVID, endVID, _, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
+					startVID, endVID, actorEntityID, ok := selectedTargetCreateFlyPresentation(packet.TargetVID)
 					if !ok {
 						return gameflow.UseSkillResult{Accepted: false}
 					}
+					flyFrame := encodeBootstrapCreateFly(startVID, endVID)
+					if sharedWorld != nil && actorEntityID != 0 {
+						sharedWorld.EnqueueStaticActorFramesToVisiblePeers(actorEntityID, sharedWorldID, [][]byte{flyFrame})
+					}
 					return gameflow.UseSkillResult{
 						Accepted: true,
-						Frames:   [][]byte{encodeBootstrapCreateFly(startVID, endVID)},
+						Frames:   [][]byte{flyFrame},
 					}
 				},
 				HandleShoot: func(packet combatproto.ClientShootPacket) gameflow.ShootResult {

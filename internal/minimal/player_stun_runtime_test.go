@@ -93,7 +93,7 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 		t.Fatalf("unexpected sitting use-skill error: %v", err)
 	}
 	if len(skillOut) != 1 {
-		t.Fatalf("expected sitting use-skill to emit one self-only CREATE_FLY, got %d", len(skillOut))
+		t.Fatalf("expected sitting use-skill to emit one owner CREATE_FLY, got %d", len(skillOut))
 	}
 	sittingFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, skillOut[0]))
 	if err != nil {
@@ -104,6 +104,11 @@ func TestGameSessionFlowAcceptedSittingDummyHitEmitsSelfOnlyStun(t *testing.T) {
 	}
 	if queued := flushServerFrames(t, ownerFlow); len(queued) != 0 {
 		t.Fatalf("expected sitting use-skill to queue no STUN, got %d", len(queued))
+	}
+	if queued := flushServerFrames(t, peerFlow); len(queued) != 1 {
+		t.Fatalf("expected one visible peer CREATE_FLY after sitting use-skill, got %d", len(queued))
+	} else if peerFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, queued[0])); err != nil || peerFly != sittingFly {
+		t.Fatalf("expected peer CREATE_FLY to match sitting owner %+v, got %+v, %v", sittingFly, peerFly, err)
 	}
 
 	sittingHit, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: targetVID})))
