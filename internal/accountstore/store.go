@@ -44,6 +44,36 @@ type Account struct {
 	Login      string                  `json:"login"`
 	Empire     uint8                   `json:"empire"`
 	Characters []loginticket.Character `json:"characters"`
+	// CharacterChannels is keyed by character ID, not select-screen slot.
+	// The file codec stores channel_id on each character beside map_index;
+	// loginticket.Character deliberately remains a channel-agnostic packet shape.
+	CharacterChannels map[uint32]uint8 `json:"-"`
+}
+
+const DefaultLocalChannelID uint8 = 1
+
+func (a Account) ChannelForCharacter(id uint32) uint8 {
+	if id == 0 {
+		return 0
+	}
+	if channel := a.CharacterChannels[id]; channel != 0 {
+		return channel
+	}
+	return DefaultLocalChannelID
+}
+
+// MatchesLocalChannel never turns a persisted remote assignment into a local
+// session. Routing and remote ownership are not available in the bootstrap.
+func (a Account) MatchesLocalChannel(local uint8) bool {
+	if local == 0 {
+		return false
+	}
+	for _, character := range a.Characters {
+		if character.ID != 0 && a.ChannelForCharacter(character.ID) != local {
+			return false
+		}
+	}
+	return true
 }
 
 type SnapshotSummary struct {
@@ -335,6 +365,9 @@ func (s *FileStore) Save(account Account) error {
 	if err := validateAccountUniqueInventorySlots(account); err != nil {
 		return err
 	}
+	if err := s.preserveCharacterChannels(&account); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return fmt.Errorf("create account store dir: %w", err)
 	}
@@ -348,7 +381,11 @@ func (s *FileStore) Save(account Account) error {
 		_ = os.Remove(temp.Name())
 	}()
 
-	if err := json.NewEncoder(temp).Encode(account); err != nil {
+	encoded, err := encodeAccountWithChannels(account)
+	if err != nil {
+		return fmt.Errorf("encode account: %w", err)
+	}
+	if _, err := temp.Write(append(encoded, '\n')); err != nil {
 		return fmt.Errorf("encode account: %w", err)
 	}
 	if err := s.syncFile(temp); err != nil {
@@ -862,11 +899,78 @@ func decodeAccountStrict(raw []byte, account *Account) error {
 	if !utf8.Valid(raw) {
 		return errors.New("invalid utf-8")
 	}
+	original := json.NewDecoder(bytes.NewReader(raw))
+	var originalValue json.RawMessage
+	if err := original.Decode(&originalValue); err != nil {
+		return err
+	}
+	if err := original.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return errors.New("unexpected trailing JSON value")
+		}
+		return err
+	}
+	// Extract the local-only field before the existing strict ticket codec sees
+	// the character. Unknown account/character fields still fail closed there.
+	var envelope struct {
+		Characters []json.RawMessage `json:"characters"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return err
+	}
+	channels := make(map[uint32]uint8)
+	for i, characterRaw := range envelope.Characters {
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(characterRaw, &fields); err != nil {
+			return err
+		}
+		if channelRaw, ok := fields["channel_id"]; ok {
+			if string(channelRaw) == "null" {
+				return errors.New("null character channel_id")
+			}
+			var channel uint8
+			if err := json.Unmarshal(channelRaw, &channel); err != nil || channel == 0 {
+				return fmt.Errorf("invalid character channel_id in slot %d", i)
+			}
+			var identity struct {
+				ID uint32 `json:"id"`
+			}
+			if err := json.Unmarshal(characterRaw, &identity); err != nil || identity.ID == 0 {
+				return fmt.Errorf("channel_id on empty character slot %d", i)
+			}
+			channels[identity.ID] = channel
+			delete(fields, "channel_id")
+			var err error
+			envelope.Characters[i], err = json.Marshal(fields)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	// Replace only the character array, keeping the outer strict decoder and
+	// its trailing-data check intact.
+	var outer map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &outer); err != nil {
+		return err
+	}
+	if len(envelope.Characters) != 0 {
+		charactersRaw, err := json.Marshal(envelope.Characters)
+		if err != nil {
+			return err
+		}
+		outer["characters"] = charactersRaw
+	}
+	var err error
+	raw, err = json.Marshal(outer)
+	if err != nil {
+		return err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(account); err != nil {
 		return err
 	}
+	account.CharacterChannels = channels
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
 			return errors.New("unexpected trailing JSON value")
@@ -933,6 +1037,17 @@ func emptyCharacterSlotCountsCompatible(got, want int, allowMissing bool) bool {
 }
 
 func validateAccount(account Account) error {
+	ids := make(map[uint32]bool, len(account.Characters))
+	for _, character := range account.Characters {
+		if character.ID != 0 {
+			ids[character.ID] = true
+		}
+	}
+	for id, channel := range account.CharacterChannels {
+		if !ids[id] || channel == 0 {
+			return fmt.Errorf("%w: invalid channel for character id %d", ErrInvalidAccount, id)
+		}
+	}
 	if err := validateUniqueCharacterIdentity(account.Characters); err != nil {
 		return err
 	}

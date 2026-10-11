@@ -76,6 +76,9 @@ func (s *MemoryStore) Save(account Account) error {
 	if s.accounts == nil {
 		s.accounts = make(map[string]Account)
 	}
+	if previous, ok := s.accounts[strings.ToLower(account.Login)]; ok {
+		preserveChannelAssignments(&account, previous)
+	}
 	s.accounts[strings.ToLower(account.Login)] = cloneAccount(account)
 	return nil
 }
@@ -145,9 +148,14 @@ func (s *MemoryStore) ExportCharacterMyShopUnitPrices() (CharacterMyShopUnitPric
 }
 
 func cloneAccount(account Account) Account {
+	channels := make(map[uint32]uint8, len(account.CharacterChannels))
+	for id, channel := range account.CharacterChannels {
+		channels[id] = channel
+	}
 	return Account{
-		Login:      account.Login,
-		Empire:     account.Empire,
-		Characters: loginticket.CloneCharacters(account.Characters),
+		Login:             account.Login,
+		Empire:            account.Empire,
+		Characters:        loginticket.CloneCharacters(account.Characters),
+		CharacterChannels: channels,
 	}
 }

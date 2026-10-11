@@ -2277,6 +2277,7 @@ func TestFileStoreSaveThenLoadRoundTrip(t *testing.T) {
 	if err := store.Save(want); err != nil {
 		t.Fatalf("save account: %v", err)
 	}
+	want.CharacterChannels = map[uint32]uint8{1: DefaultLocalChannelID}
 	got, err := store.Load("mkmk")
 	if err != nil {
 		t.Fatalf("load account: %v", err)
@@ -2314,6 +2315,7 @@ func TestFileStoreSaveThenLoadRoundTripInstanceSocketsIncludingZero(t *testing.T
 	if err := store.Save(want); err != nil {
 		t.Fatalf("save account with instance sockets: %v", err)
 	}
+	want.CharacterChannels = map[uint32]uint8{1: DefaultLocalChannelID}
 	got, err := store.Load("socket-host")
 	if err != nil {
 		t.Fatalf("load account with instance sockets: %v", err)
@@ -2361,6 +2363,7 @@ func TestFileStoreSaveThenLoadRoundTripInstanceAttributesIncludingZero(t *testin
 	if err := store.Save(want); err != nil {
 		t.Fatalf("save account with instance attributes: %v", err)
 	}
+	want.CharacterChannels = map[uint32]uint8{1: DefaultLocalChannelID}
 	got, err := store.Load("attr-host")
 	if err != nil {
 		t.Fatalf("load account with instance attributes: %v", err)
@@ -2409,6 +2412,7 @@ func TestFileStoreSaveThenLoadRoundTripMyShopUnitPrices(t *testing.T) {
 	if err := store.Save(want); err != nil {
 		t.Fatalf("save account with myshop unit prices: %v", err)
 	}
+	want.CharacterChannels = map[uint32]uint8{1: DefaultLocalChannelID}
 	// Save canonicalizes ascending vnum order.
 	want.Characters[0].MyShopUnitPrices = []loginticket.MyShopUnitPrice{
 		{Vnum: 27001, UnitPrice: 500},

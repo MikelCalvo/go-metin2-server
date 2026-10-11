@@ -13,7 +13,10 @@ The goal of this slice is narrow:
 
 - one running `gamed` process currently owns one bootstrap channel
 - the first explicit local channel id is `1`
-- bootstrap sessions handled by the current process are treated as belonging to that local channel
+- account FileStore snapshots persist each non-empty character's `channel_id` alongside its existing `map_index`; MemoryStore retains the same identity in-process; an omitted `channel_id` in an older snapshot means channel `1`
+- an explicitly zero `channel_id`, or channel state on an empty slot, is invalid; non-zero other-channel ids are retained, not silently rewritten to `1`
+- login against a process whose local channel differs from any persisted character channel is rejected rather than pretending to route that character to another process; no cross-process lookup is attempted
+- accepted bootstrap sessions remain on the already-owned local channel for visibility and chat
 - there is no cross-channel routing in this slice
 
 ### Effective map identity
@@ -73,7 +76,6 @@ That gives the shared-world runtime a stable boundary to build on next:
 ## Explicit non-goals
 
 This slice does not yet add:
-- real per-character channel persistence
 - inter-channel routing or remote ownership handoff
 - a persistent sector occupancy index or a final range-culling world service
 - a final client-facing warp packet contract
