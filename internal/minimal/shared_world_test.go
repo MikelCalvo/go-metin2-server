@@ -13785,6 +13785,99 @@ func TestNewGameSessionFactoryDoesNotQueuePeerMoveAcrossMaps(t *testing.T) {
 	}
 }
 
+func TestNewGameSessionFactorySectorBucketFanoutKeepsFramesAndSwapsViewersAtEdge(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	same := peerVisibilityCharacter("Same", 0x01030101, 0x02040101, 1700, 2800, 0, 101, 201)
+	mover := peerVisibilityCharacter("Mover", 0x01030102, 0x02040102, 1720, 2820, 2, 102, 202)
+	adjacent := peerVisibilityCharacter("Adjacent", 0x01030103, 0x02040103, 1820, 2820, 0, 103, 203)
+	otherMap := peerVisibilityCharacter("OtherMap", 0x01030104, 0x02040104, 1820, 2820, 0, 104, 204)
+	otherMap.MapIndex = 42
+	for _, entry := range []struct {
+		login string
+		key   uint32
+		actor loginticket.Character
+	}{
+		{"same", 0x11111111, same}, {"mover", 0x22222222, mover},
+		{"adjacent", 0x33333333, adjacent}, {"other-map", 0x44444444, otherMap},
+	} {
+		issuePeerTicket(t, store, entry.login, entry.key, entry.actor)
+	}
+	factory, err := newGameSessionFactory(config.Service{
+		LegacyAddr: ":13000", PublicAddr: "127.0.0.1",
+		VisibilityMode: "sector_bucket", VisibilitySectorSize: 200,
+	}, store)
+	if err != nil {
+		t.Fatalf("sector bucket factory: %v", err)
+	}
+	sameFlow, _ := enterGameWithLoginTicket(t, factory, "same", 0x11111111)
+	moverFlow, moverEnter := enterGameWithLoginTicket(t, factory, "mover", 0x22222222)
+	if len(moverEnter) != 8 {
+		t.Fatalf("same-sector entrant should receive existing peer bootstrap, got %d frames", len(moverEnter))
+	}
+	peerAdd, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, moverEnter[5]))
+	if err != nil || peerAdd.VID != same.VID {
+		t.Fatalf("same-sector entrant should see existing peer add, got %+v, %v", peerAdd, err)
+	}
+	if frames := flushServerFrames(t, sameFlow); len(frames) != 3 {
+		t.Fatalf("same-sector viewer should receive existing three-frame add, got %d", len(frames))
+	} else if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, frames[0])); err != nil || add.VID != mover.VID {
+		t.Fatalf("same-sector add should name mover, got %+v, %v", add, err)
+	}
+	adjacentFlow, adjacentEnter := enterGameWithLoginTicket(t, factory, "adjacent", 0x33333333)
+	otherMapFlow, otherMapEnter := enterGameWithLoginTicket(t, factory, "other-map", 0x44444444)
+	if len(adjacentEnter) != 5 || len(otherMapEnter) != 5 {
+		t.Fatalf("out-of-sector and out-of-map entrants must not bootstrap mover, got %d and %d", len(adjacentEnter), len(otherMapEnter))
+	}
+	for name, flow := range map[string]service.SessionFlow{"same": sameFlow, "mover": moverFlow, "adjacent": adjacentFlow, "other-map": otherMapFlow} {
+		if frames := flushServerFrames(t, flow); len(frames) != 0 {
+			t.Fatalf("%s received unrelated bootstrap frames: %d", name, len(frames))
+		}
+	}
+	move := func(x int32) {
+		t.Helper()
+		out, err := moverFlow.HandleClientFrame(decodeSingleFrame(t, movep.EncodeMove(movep.MovePacket{
+			Func: 1, Arg: 0, Rot: 12, X: x, Y: 2850, Time: 0x11121314,
+		})))
+		if err != nil || !ownerMoveAckWithSpeed(t, out) {
+			t.Fatalf("mover self ack at x=%d: frames=%d err=%v", x, len(out), err)
+		}
+	}
+	move(1750) // Still in [1600,1800): only the old viewer receives the original MOVE.
+	if frames := flushServerFrames(t, sameFlow); len(frames) != 1 {
+		t.Fatalf("same-sector viewer should receive one move, got %d", len(frames))
+	} else if ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, frames[0])); err != nil || ack.VID != mover.VID || ack.X != 1750 || ack.Y != 2850 || ack.Time != 0x11121314 {
+		t.Fatalf("same-sector viewer should keep original move wire, got %+v, %v", ack, err)
+	}
+	if frames := flushServerFrames(t, adjacentFlow); len(frames) != 0 {
+		t.Fatalf("adjacent-sector viewer received pre-crossing move: %d", len(frames))
+	}
+	move(1820) // The old viewer gets DELETE, not the MOVE across the edge.
+	if frames := flushServerFrames(t, sameFlow); len(frames) != 1 {
+		t.Fatalf("old-sector viewer should receive one delete, got %d", len(frames))
+	} else if deleted, err := worldproto.DecodeCharacterDeleteNotice(decodeSingleFrame(t, frames[0])); err != nil || deleted.VID != mover.VID {
+		t.Fatalf("old-sector delete should name mover, got %+v, %v", deleted, err)
+	}
+	if frames := flushServerFrames(t, adjacentFlow); len(frames) != 3 {
+		t.Fatalf("new-sector viewer should receive existing three-frame add, got %d", len(frames))
+	} else if add, err := worldproto.DecodeCharacterAdd(decodeSingleFrame(t, frames[0])); err != nil || add.VID != mover.VID || add.X != 1820 || add.Y != 2850 {
+		t.Fatalf("new-sector add should carry mover at destination, got %+v, %v", add, err)
+	}
+	if frames := flushServerFrames(t, moverFlow); len(frames) != 4 {
+		t.Fatalf("mover should lose old peer and gain new peer (delete + three add), got %d", len(frames))
+	}
+	move(1850)
+	if frames := flushServerFrames(t, adjacentFlow); len(frames) != 1 {
+		t.Fatalf("new-sector viewer should receive subsequent move, got %d", len(frames))
+	} else if ack, err := movep.DecodeMoveAck(decodeSingleFrame(t, frames[0])); err != nil || ack.VID != mover.VID || ack.X != 1850 {
+		t.Fatalf("new-sector move should keep existing wire, got %+v, %v", ack, err)
+	}
+	for name, flow := range map[string]service.SessionFlow{"old sector": sameFlow, "other map": otherMapFlow} {
+		if frames := flushServerFrames(t, flow); len(frames) != 0 {
+			t.Fatalf("%s received out-of-scope mover frames: %d", name, len(frames))
+		}
+	}
+}
+
 func TestNewGameSessionFactoryRadiusAOIMoveIntoRangeBootstrapsPeerVisibility(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peerOne := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
