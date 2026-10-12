@@ -10579,7 +10579,11 @@ func newGameRuntimeWithStoresAndTransferTriggersAndItemAndQuestStore(cfg config.
 						// A killing hit already starts with DEAD, TARGET(0, 0), and
 						// (for owned combat profiles) DAMAGE_INFO. Keep that prefix
 						// intact and place the presentation before any reward.
-						frames = append(frames, encodeBootstrapCreateFly(flyStartVID, flyEndVID))
+						flyFrame := encodeBootstrapCreateFly(flyStartVID, flyEndVID)
+						frames = append(frames, flyFrame)
+						// Death/damage fanout was queued by the hit resolver. Queue the
+						// same presentation after that prefix only for visible live peers.
+						sharedWorld.EnqueueStaticActorFramesToVisiblePeers(resolution.Actor.EntityID, sharedWorldID, [][]byte{flyFrame})
 					}
 					deathRewardScalarAccountSaveFailed := false
 					if !resolution.DeathReward.Empty() {

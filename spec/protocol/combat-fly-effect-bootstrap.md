@@ -113,7 +113,7 @@ Current accepted normal attacks still use the already-owned combat presentation 
 - content practice-mob retaliation continues to use `PLAYER_POINT_CHANGE` and the current delayed server-frame cadence,
 - sitting standalone dummy hits may still queue the owned self-only `STUN` companion.
 
-The killing-hit companion reuses the selected-target visibility/version check before damage: an accepted client `FLY_TARGETING` for the current selection arms **one** subsequent accepted normal hit on that same actor/version. `ADD_FLY_TARGETING` alone does not arm or consume this intent. Only if that hit actually crosses the zero-HP edge does it emit an additional self-only `CREATE_FLY(type=0, start_vid=owner_vid, end_vid=target_vid)`. A non-lethal accepted hit consumes the intent without a killing fly; rejected/cadence-denied hits do not consume it. Explicit target clear, changed selection/version, or session reset discards the intent; stale or dead targets still fail closed. On the owner socket the killing fly follows `DEAD(target_vid)`, `TARGET(0, 0)` and the existing killing-hit `DAMAGE_INFO`, and precedes any owned reward. It does not add hit delay, a second damage path, another targeting echo or peer fly fanout; peers keep their existing death/damage visibility surfaces. A plain normal killing hit without a preceding accepted primary fly intent retains the existing frame count. Peer killing-hit fly fanout belongs to COMBAT-FLY-PEER-FANOUT; chained ADD_FLY_TARGETING, travel duration and visual types beyond type=0 remain deferred.
+The killing-hit companion reuses the selected-target visibility/version check before damage: an accepted client `FLY_TARGETING` for the current selection arms **one** subsequent accepted normal hit on that same actor/version. `ADD_FLY_TARGETING` alone does not arm or consume this intent. Only if that hit actually crosses the zero-HP edge does it emit one `CREATE_FLY(type=0, start_vid=owner_vid, end_vid=target_vid)` to the owner and queue that same frame once to currently visible live peers that can see the killed actor. A non-lethal accepted hit consumes the intent without a killing fly; rejected/cadence-denied hits do not consume it. Explicit target clear, changed selection/version, or session reset discards the intent; stale or dead targets still fail closed. On the owner socket the killing fly follows `DEAD(target_vid)`, `TARGET(0, 0)` and the existing killing-hit `DAMAGE_INFO`, and precedes any owned reward. Peer death fanout keeps its existing `DEAD` / optional selected-peer `TARGET` clear / `DAMAGE_INFO` prefix, then the fly is queued after that prefix. Zero-HP or out-of-visibility peers receive no new frame. A plain killing hit, an ADD-only intent, or a non-lethal consumed intent never creates a killing-hit peer fly. This does not add hit delay, a second damage path or another targeting echo; chained ADD_FLY_TARGETING, travel duration and visual types beyond type=0 remain deferred.
 
 ## Non-goals
 
@@ -125,7 +125,7 @@ This slice does not freeze:
 - multi-target or chained projectile behavior beyond the same-selected-target `ADD_FLY_TARGETING` self-only echo,
 - skill damage, resources and cooldowns beyond presentation-only peer fly fanout,
 - peer fanout of the server `FLY_TARGETING` echo,
-- peer killing-hit fly effects,
+- projectile effects on other hit kinds or on unarmed kills,
 - peer fanout for the server `ADD_FLY_TARGETING` echo or its `CREATE_FLY` companion,
 - any replacement for `DAMAGE_INFO`, `TARGET`, or `DEAD` as the current combat result surfaces.
 
@@ -142,5 +142,5 @@ After this slice:
 - that `CREATE_FLY` does not mutate HP, cadence, retaliation, selection, points, inventory, or persistence, and it does not spend skill points or start a cooldown,
 - `USE_SKILL` and `SHOOT` queue only `CREATE_FLY` to peers (never a targeting echo), without replacing `DAMAGE_INFO`, `TARGET`, or `DEAD`,
 - an accepted same-selected-target client `ADD_FLY_TARGETING` emits exactly one self-only `GC ADD_FLY_TARGETING` before one self-only `GC CREATE_FLY`; unmatched or unsupported `ADD_FLY_TARGETING`, other `USE_SKILL` vnums, other `SHOOT` types, and non-lethal or rejected `ATTACK` stay fail-closed for fly emission,
-- one accepted selected-target normal killing hit after an accepted `FLY_TARGETING` intent emits one self-only `CREATE_FLY` after its death/clear/damage prefix and before owned reward; non-lethal, unarmed and rejected hits emit none,
+- one accepted selected-target normal killing hit after an accepted `FLY_TARGETING` intent emits one owner `CREATE_FLY` after its death/clear/damage prefix and before owned reward and queues one matching fly after the existing death/damage prefix to each currently visible live peer; non-lethal, unarmed, ADD-only and rejected hits emit no killing-hit fly,
 - later ranged/projectile/skill slices can start from this tested packet shape and the selected-target rule instead of re-discovering them.

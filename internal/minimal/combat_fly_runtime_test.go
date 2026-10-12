@@ -347,11 +347,22 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("FlyKiller", 0x01030194, 0x02040194, 1100, 2100, 0, 101, 201)
 	peer := peerVisibilityCharacter("FlyWitness", 0x01030195, 0x02040195, 1120, 2100, 0, 102, 202)
+	floorPeer := peerVisibilityCharacter("FlyFloorWitness", 0x01030197, 0x02040197, 1140, 2100, 0, 103, 203)
+	floorPeer.Points[bootstrapPlayerPointValueIndex] = 0
+	distantPeer := peerVisibilityCharacter("FlyDistantWitness", 0x01030198, 0x02040198, 50000, 50000, 0, 104, 204)
+	distantPeer.MapIndex = bootstrapMapIndex + 1
 	issuePeerTicket(t, store, "fly-killer", 0x94949494, owner)
 	issuePeerTicket(t, store, "fly-witness", 0x95959595, peer)
+	issuePeerTicket(t, store, "fly-floor-witness", 0x97979797, floorPeer)
+	issuePeerTicket(t, store, "fly-distant-witness", 0x98989898, distantPeer)
 	accounts := accountstore.NewFileStore(t.TempDir())
-	if err := accounts.Save(accountstore.Account{Login: "fly-killer", Empire: owner.Empire, Characters: []loginticket.Character{owner}}); err != nil {
-		t.Fatalf("seed reward account: %v", err)
+	for _, entry := range []struct {
+		login     string
+		character loginticket.Character
+	}{{"fly-killer", owner}, {"fly-witness", peer}, {"fly-floor-witness", floorPeer}, {"fly-distant-witness", distantPeer}} {
+		if err := accounts.Save(accountstore.Account{Login: entry.login, Empire: entry.character.Empire, Characters: []loginticket.Character{entry.character}}); err != nil {
+			t.Fatalf("seed fly account %s: %v", entry.login, err)
+		}
 	}
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, accounts)
 	if err != nil {
@@ -368,8 +379,14 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 	defer closeSessionFlow(t, ownerFlow)
 	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-witness", 0x95959595)
 	defer closeSessionFlow(t, peerFlow)
+	floorFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-floor-witness", 0x97979797)
+	defer closeSessionFlow(t, floorFlow)
+	distantFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-distant-witness", 0x98989898)
+	defer closeSessionFlow(t, distantFlow)
 	flushServerFrames(t, ownerFlow)
 	flushServerFrames(t, peerFlow)
+	flushServerFrames(t, floorFlow)
+	flushServerFrames(t, distantFlow)
 
 	attack := func(attackType uint8) [][]byte {
 		t.Helper()
@@ -418,15 +435,29 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 			t.Fatal("non-lethal hit emitted CREATE_FLY")
 		}
 	}
-	flushServerFrames(t, peerFlow)
+	peerFirst := flushServerFrames(t, peerFlow)
+	for _, raw := range peerFirst {
+		if _, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, raw)); err == nil {
+			t.Fatal("nonlethal consumed intent queued peer CREATE_FLY")
+		}
+	}
 	flushServerFrames(t, ownerFlow)
 	if out := attack(combatproto.ClientAttackTypeNormal); len(out) != 0 {
 		t.Fatalf("cadence-denied attack must fail closed, got %d frames", len(out))
+	}
+	if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
+		t.Fatalf("cadence-denied hit must not queue peer fly, got %d", len(extra))
 	}
 	if out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientFlyTargeting(combatproto.ClientFlyTargetingPacket{TargetVID: targetVID, X: 1200, Y: 2200}))); err != nil || len(out) != 2 {
 		t.Fatalf("arm killing-hit selected-target fly: frames=%d err=%v", len(out), err)
 	}
 	flushServerFrames(t, peerFlow)
+	if out := attack(99); len(out) != 0 {
+		t.Fatalf("rejected attack after arming must fail closed, got %d", len(out))
+	}
+	if extra := flushServerFrames(t, peerFlow); len(extra) != 0 {
+		t.Fatalf("rejected attack after arming queued peer frames: %d", len(extra))
+	}
 	now = now.Add(bootstrapNormalAttackCadenceWindow)
 	kill := attack(combatproto.ClientAttackTypeNormal)
 	if len(kill) != 5 {
@@ -450,13 +481,23 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 		t.Fatalf("reward after fly: %+v, %v", reward, err)
 	}
 	peerKill := flushServerFrames(t, peerFlow)
-	if len(peerKill) != 2 {
-		t.Fatalf("peer kill must keep DEAD + DAMAGE_INFO without fly, got %d frames", len(peerKill))
+	if len(peerKill) != 3 {
+		t.Fatalf("peer kill must queue DEAD + DAMAGE_INFO + one fly, got %d frames", len(peerKill))
 	}
 	if peerDead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerKill[0])); err != nil || peerDead.VID != targetVID {
 		t.Fatalf("peer DEAD: %+v, %v", peerDead, err)
 	}
 	assertDamageInfoFrame(t, peerKill[1], targetVID, 1, "fly killing peer")
+	peerFly, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, peerKill[2]))
+	if err != nil || peerFly != fly {
+		t.Fatalf("peer killing-hit fly must match owner fly: peer=%+v owner=%+v err=%v", peerFly, fly, err)
+	}
+	if extra := flushServerFrames(t, floorFlow); len(extra) != 0 {
+		t.Fatalf("zero-HP peer received killing-hit frames: %d", len(extra))
+	}
+	if extra := flushServerFrames(t, distantFlow); len(extra) != 0 {
+		t.Fatalf("out-of-visibility peer received killing-hit frames: %d", len(extra))
+	}
 	if extra := flushServerFrames(t, ownerFlow); len(extra) != 0 {
 		t.Fatalf("owner must have no queued duplicate fly, got %d", len(extra))
 	}
@@ -478,7 +519,9 @@ func TestGameSessionFlowSelectedKillingHitEmitsSelfOnlyCreateFlyBeforeReward(t *
 func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	owner := peerVisibilityCharacter("FlyClearer", 0x01030196, 0x02040196, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("FlyClearWatcher", 0x0103019a, 0x0204019a, 1120, 2100, 0, 102, 202)
 	issuePeerTicket(t, store, "fly-clearer", 0x96969696, owner)
+	issuePeerTicket(t, store, "fly-clear-watcher", 0x9a9a9a9a, peer)
 	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
 	if err != nil {
 		t.Fatalf("new fly clear runtime: %v", err)
@@ -490,7 +533,10 @@ func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing
 	targetVID := uint32(actor.EntityID)
 	flow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-clearer", 0x96969696)
 	defer closeSessionFlow(t, flow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "fly-clear-watcher", 0x9a9a9a9a)
+	defer closeSessionFlow(t, peerFlow)
 	flushServerFrames(t, flow)
+	flushServerFrames(t, peerFlow)
 	selectTarget := func(vid uint32) {
 		t.Helper()
 		out, err := flow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: vid})))
@@ -515,6 +561,7 @@ func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing
 			t.Fatalf("decode add-fly projectile after clear: %v", err)
 		}
 	}
+	flushServerFrames(t, peerFlow) // discard the earlier primary targeting presentation
 	now := time.Unix(1_700_000_900, 0)
 	runtime.now = func() time.Time { return now }
 	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP/worldruntime.TrainingDummyBootstrapDamagePerNormalAttack); hit++ {
@@ -527,6 +574,72 @@ func TestGameSessionFlowKillingFlyIntentDiscardsOnExplicitTargetClear(t *testing
 				t.Fatalf("unarmed death after explicit clear and add-fly must keep three frames, got %d", len(out))
 			}
 			stripTrainingDummyKillingHitDeathPrefix(t, out, targetVID, "cleared fly intent")
+			peerKill := flushServerFrames(t, peerFlow)
+			if len(peerKill) != 2 {
+				t.Fatalf("ADD_FLY-only kill must queue only DEAD and DAMAGE_INFO, got %d", len(peerKill))
+			}
+			if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerKill[0])); err != nil || dead.VID != targetVID {
+				t.Fatalf("ADD_FLY-only peer DEAD: %+v %v", dead, err)
+			}
+			assertDamageInfoFrame(t, peerKill[1], targetVID, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "ADD_FLY-only peer kill")
+		} else {
+			for _, raw := range flushServerFrames(t, peerFlow) {
+				if _, err := combatproto.DecodeServerCreateFly(decodeSingleFrame(t, raw)); err == nil {
+					t.Fatal("unarmed nonlethal hit queued peer fly")
+				}
+			}
+		}
+		now = now.Add(bootstrapNormalAttackCadenceWindow)
+	}
+}
+
+func TestGameSessionFlowPlainKillingHitQueuesNoPeerFly(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	owner := peerVisibilityCharacter("PlainFlyOwner", 0x0103019b, 0x0204019b, 1100, 2100, 0, 101, 201)
+	peer := peerVisibilityCharacter("PlainFlyPeer", 0x0103019c, 0x0204019c, 1120, 2100, 0, 102, 202)
+	issuePeerTicket(t, store, "plain-fly-owner", 0x9b9b9b9b, owner)
+	issuePeerTicket(t, store, "plain-fly-peer", 0x9c9c9c9c, peer)
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatalf("new plain kill runtime: %v", err)
+	}
+	actor, ok := runtime.sharedWorld.RegisterStaticActorWithCombatKind(0, "PlainFlyDummy", bootstrapMapIndex, 1200, 2200, 20350, worldruntime.StaticActorCombatKindTrainingDummy)
+	if !ok {
+		t.Fatal("register plain kill dummy")
+	}
+	vid := uint32(actor.EntityID)
+	ownerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "plain-fly-owner", 0x9b9b9b9b)
+	defer closeSessionFlow(t, ownerFlow)
+	peerFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "plain-fly-peer", 0x9c9c9c9c)
+	defer closeSessionFlow(t, peerFlow)
+	flushServerFrames(t, ownerFlow)
+	flushServerFrames(t, peerFlow)
+	if selected, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientTarget(combatproto.ClientTargetPacket{TargetVID: vid}))); err != nil || len(selected) != 1 {
+		t.Fatalf("select plain dummy: frames=%d err=%v", len(selected), err)
+	}
+	flushSelfOnlyTargetCreateNew(t, ownerFlow, "PlainFlyDummy", vid)
+	now := time.Unix(1_700_000_950, 0)
+	runtime.now = func() time.Time { return now }
+	for hit := 1; hit <= int(worldruntime.TrainingDummyBootstrapMaxHP/worldruntime.TrainingDummyBootstrapDamagePerNormalAttack); hit++ {
+		out, err := ownerFlow.HandleClientFrame(decodeSingleFrame(t, combatproto.EncodeClientAttack(combatproto.ClientAttackPacket{AttackType: combatproto.ClientAttackTypeNormal, TargetVID: vid})))
+		if err != nil {
+			t.Fatalf("plain attack %d: %v", hit, err)
+		}
+		if hit == int(worldruntime.TrainingDummyBootstrapMaxHP/worldruntime.TrainingDummyBootstrapDamagePerNormalAttack) {
+			if len(out) != 3 {
+				t.Fatalf("plain owner kill expected unchanged three frames, got %d", len(out))
+			}
+			stripTrainingDummyKillingHitDeathPrefix(t, out, vid, "plain peer kill")
+			peerKill := flushServerFrames(t, peerFlow)
+			if len(peerKill) != 2 {
+				t.Fatalf("plain peer kill expected DEAD + DAMAGE_INFO without fly, got %d", len(peerKill))
+			}
+			if dead, err := worldproto.DecodeDead(decodeSingleFrame(t, peerKill[0])); err != nil || dead.VID != vid {
+				t.Fatalf("plain peer DEAD: %+v %v", dead, err)
+			}
+			assertDamageInfoFrame(t, peerKill[1], vid, int32(worldruntime.TrainingDummyBootstrapDamagePerNormalAttack), "plain peer kill")
+		} else {
+			flushServerFrames(t, peerFlow)
 		}
 		now = now.Add(bootstrapNormalAttackCadenceWindow)
 	}
