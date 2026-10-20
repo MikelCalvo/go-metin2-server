@@ -196,6 +196,16 @@ func main() {
 			return snapshot, true
 		},
 	)
+	opsHandler = ops.RegisterLocalSpawnGroupChaseStepEndpoint(
+		opsHandler,
+		func(entityID uint64, maxStep int32) (any, bool) {
+			snapshot, ok := gameRuntime.StepSpawnGroupChase(entityID, maxStep)
+			if !ok {
+				return nil, false
+			}
+			return snapshot, true
+		},
+	)
 	opsHandler = ops.RegisterLocalSpawnGroupReturnStepsEndpoint(
 		opsHandler,
 		func() any { return gameRuntime.SpawnGroupReturnSteps() },

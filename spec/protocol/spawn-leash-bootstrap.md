@@ -193,7 +193,7 @@ Cleanup / fail-closed rules:
 - focused daemon-restart coverage now also freezes that same chase-displaced still-dead corpse across `gamed` process restart: persist/restore keeps current death coords with `combat_current_hp=0` plus absolute `respawn_ready_at`, rematerialize stays still-dead / non-targetable at those coords with no homeward/return/chase arm, late EnterGame trailing `GC DEAD` uses the death coords, and due respawn rebuilds at authored home (`TestGameRuntimeKillingHitAfterChaseDisplaceStillDeadPersistsAcrossDaemonRestart`)
 - focused still-dead `return_required` restore coverage now also freezes the complementary register-snapshot hole: `loadPersistedStaticActors` must re-read after the still-dead overlay so a rematerialized `return_required` corpse does not arm an internal return-step deadline, pending inspection stays omitted, and a due return-step flush does not MOVE the corpse from death coords (`TestGameRuntimeRestoreStillDeadReturnRequiredSpawnGroupDoesNotArmReturnStep`)
 - dead actors waiting on respawn do not arm chase; a successful respawn rebuild starts unengaged at authored home and clears any pre-death return, chase, and homeward deadlines, so none can move the fresh actor after its old lifecycle boundary
-- no new operator chase-step POST surface is required for this first executor freeze
+- the first executor did not require an operator POST; the later operator companion below now exposes the same one-step path
 - profile-authored per-mob chase arming delay beyond the bootstrap `5s` default is owned as optional `combat_profiles.chase_delay_ms` in `content-spawn-groups-bootstrap.md`; live arming / re-arm consume `EffectiveStaticActorSpawnChaseDelay` for the actor's combat profile (omit/zero keeps bootstrap `5s`)
 - profile-authored per-mob return-step arming delay beyond the bootstrap `1s` default is owned as optional `combat_profiles.return_delay_ms` in `content-spawn-groups-bootstrap.md`; live return arming / re-arm consume `EffectiveStaticActorSpawnReturnDelay` for the actor's combat profile (omit/zero keeps bootstrap `1s`)
 - profile-authored per-mob chase / return / homeward step cap beyond the bootstrap `max_step = 100` default is owned as optional `combat_profiles.max_step` in `content-spawn-groups-bootstrap.md`; live chase / return / homeward planners / due-step execution / pending inspection consume `EffectiveStaticActorSpawnMaxStep` for the actor's combat profile (omit/zero keeps bootstrap `100`)
@@ -239,7 +239,7 @@ Current implementation status:
 Explicit non-goals for this chase-step executor freeze:
 - navmesh, patrol, multi-step search, or multi-actor flocking beyond one occupancy detour
 - chasing while `return_required` or across map boundaries
-- operator POST chase-step triggers
+- operator POST chase-step triggers (deferred at this stage; now owned by the later companion below)
 
 ## WORLD-PLAYER-OCCUPANCY: live player on a chase cell
 
@@ -312,7 +312,7 @@ Explicit non-goals for this chase MOVE freeze alone:
 - a dedicated chase packet family distinct from `MOVE`
 - a chase-speed formula, sit/walk table, or authored moving_speed other than the bootstrap `CHARACTER_ADD` / `CHARACTER_UPDATE` default
 - homeward / return-step / operator-position `CHANGE_SPEED` companions
-- operator POST chase-step triggers
+- operator POST chase-step triggers (deferred at this stage; now owned by the later companion below)
 
 ## First owned return-step MOVE packet choreography seam
 
@@ -551,6 +551,10 @@ Current implementation status:
 - `RegisterLocalSpawnGroupHomewardStepEndpoint` owns the loopback POST beside `return-step` / `return-home`
 - `gameRuntime.StepSpawnGroupHomeward` reuses `stepSpawnGroupHomeward` so dead / `return_required` / engaged actors stay fail-closed and a still-eligible step reschedules automatic homeward
 - focused coverage: `TestGameRuntimeStepSpawnGroupHomewardMovesOnePlannedStepAndReschedules`, `TestGameRuntimeStepSpawnGroupHomewardFailsClosedForReturnRequiredDeadAndEngaged`, plus the loopback POST mux proofs
+
+## Operator chase-step POST companion (WORLD-OPERATOR-CHASE-POST)
+
+Freeze before GREEN: `POST /local/spawn-groups/{entity_id}/chase-step?max_step=<positive-int>` is a `gamed` loopback-only, bodyless operator trigger beside `return-step` and `homeward-step`. Omitted `max_step` resolves to the actor's effective combat-profile step; malformed/zero entity IDs and malformed/non-positive/duplicate steps return `400` before runtime invocation, remote callers `403`, wrong methods `405`. Missing, non-spawn, dead, `return_required`, unengaged, cross-map-owner, or otherwise unplannable actors return `404` without moving. A live same-map engaged actor takes exactly one already-owned occupancy-aware chase step toward its **current** owner, with the existing persist-before-relocate, retained-viewer `MOVE` and chase `CHANGE_SPEED`, remove/add visibility and preserved engagement/selected target. The response is `{actor,step}` with pre-move leash evaluation, `next` and `complete`. A successful moving step refreshes its pending automatic chase deadline from operator time only if still eligible and incomplete; completion (including no-move) clears it. Persistence failure does not move or refresh a deadline. The existing pending-frame executor and its order remain unchanged; no pathfinding, pack AI, or cross-map chase `MOVE`/`WARP`.
 
 ## Done: operator/runtime UpdateStaticActor re-arms within-radius homeward
 

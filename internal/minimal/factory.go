@@ -3618,6 +3618,15 @@ func (r *gameRuntime) flushPendingSpawnGroupChaseChangeSpeed() {
 	}
 }
 
+// StepSpawnGroupChase applies one operator-requested step through the owned
+// persistence, occupancy, visibility and scheduling path for due chase frames.
+func (r *gameRuntime) StepSpawnGroupChase(entityID uint64, maxStep int32) (SpawnGroupReturnStepSnapshot, bool) {
+	if maxStep <= 0 {
+		maxStep = r.effectiveSpawnGroupMaxStep(entityID)
+	}
+	return r.stepSpawnGroupChase(entityID, maxStep, true)
+}
+
 func (r *gameRuntime) stepSpawnGroupChase(entityID uint64, maxStep int32, reschedule bool) (SpawnGroupReturnStepSnapshot, bool) {
 	if r == nil || r.sharedWorld == nil || entityID == 0 || maxStep <= 0 {
 		return SpawnGroupReturnStepSnapshot{}, false

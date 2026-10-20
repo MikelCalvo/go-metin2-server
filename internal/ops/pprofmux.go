@@ -3063,6 +3063,32 @@ func RegisterLocalSpawnGroupHomewardStepEndpoint(mux *http.ServeMux, stepSpawnGr
 	return mux
 }
 
+// RegisterLocalSpawnGroupChaseStepEndpoint exposes one already-owned live
+// chase step to loopback operators; the runtime remains the eligibility gate.
+func RegisterLocalSpawnGroupChaseStepEndpoint(mux *http.ServeMux, stepSpawnGroupChase func(uint64, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || stepSpawnGroupChase == nil {
+		return mux
+	}
+	mux.HandleFunc("POST /local/spawn-groups/{entity_id}/chase-step", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, maxStep, ok := decodeLocalSpawnGroupCappedStepRequest(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok := stepSpawnGroupChase(entityID, maxStep)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalGroundItemsEndpoint(mux *http.ServeMux, groundItems func() any) *http.ServeMux {
 	if mux == nil || groundItems == nil {
 		return mux

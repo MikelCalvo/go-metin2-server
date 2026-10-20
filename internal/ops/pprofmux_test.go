@@ -6800,6 +6800,82 @@ func TestLocalSpawnGroupReturnStepEndpointReturnsNotFoundForMissingEntityID(t *t
 	}
 }
 
+func TestLocalSpawnGroupChaseStepEndpointAppliesOneLoopbackPost(t *testing.T) {
+	calls := 0
+	mux := RegisterLocalSpawnGroupChaseStepEndpoint(NewPprofMux("gamed"), func(entityID uint64, maxStep int32) (any, bool) {
+		calls++
+		if entityID != 66 || (maxStep != 0 && maxStep != 50) {
+			t.Fatalf("unexpected chase-step arguments: id=%d max_step=%d", entityID, maxStep)
+		}
+		return map[string]any{
+			"actor": map[string]any{"entity_id": entityID, "spawn_group_ref": "practice.chase_op", "x": 1750},
+			"step":  map[string]any{"status": "at_home", "next": map[string]any{"map_index": 42, "x": 1750, "y": 2800}, "complete": false},
+		}, true
+	})
+	for _, path := range []string{"/local/spawn-groups/66/chase-step", "/local/spawn-groups/66/chase-step?max_step=50"} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+			t.Fatalf("expected JSON 200 for %s, got status=%d body=%q", path, rec.Code, rec.Body.String())
+		}
+		for _, want := range []string{`"entity_id":66`, `"spawn_group_ref":"practice.chase_op"`, `"next":{"map_index":42,"x":1750,"y":2800}`, `"complete":false`} {
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Fatalf("expected %s in chase response %q", want, rec.Body.String())
+			}
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("expected exactly two operator steps, got %d", calls)
+	}
+}
+
+func TestLocalSpawnGroupChaseStepEndpointFailsClosed(t *testing.T) {
+	calls := 0
+	mux := RegisterLocalSpawnGroupChaseStepEndpoint(NewPprofMux("gamed"), func(uint64, int32) (any, bool) {
+		calls++
+		return nil, false
+	})
+	for _, path := range []string{
+		"/local/spawn-groups/not-an-id/chase-step", "/local/spawn-groups/0/chase-step",
+		"/local/spawn-groups/66/chase-step?max_step=0", "/local/spawn-groups/66/chase-step?max_step=-1",
+		"/local/spawn-groups/66/chase-step?max_step=abc", "/local/spawn-groups/66/chase-step?max_step=1&max_step=2",
+	} {
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for %s, got %d", path, rec.Code)
+		}
+	}
+	remote := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/66/chase-step", nil)
+	remote.RemoteAddr = "198.51.100.10:12345"
+	remoteRec := httptest.NewRecorder()
+	mux.ServeHTTP(remoteRec, remote)
+	if remoteRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for remote caller, got %d", remoteRec.Code)
+	}
+	wrongMethod := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/66/chase-step", nil)
+	wrongMethod.RemoteAddr = "127.0.0.1:12345"
+	methodRec := httptest.NewRecorder()
+	mux.ServeHTTP(methodRec, wrongMethod)
+	if methodRec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for wrong method, got %d", methodRec.Code)
+	}
+	if calls != 0 {
+		t.Fatalf("rejected requests must not invoke chase callback, got %d calls", calls)
+	}
+	missing := httptest.NewRequest(http.MethodPost, "/local/spawn-groups/66/chase-step", nil)
+	missing.RemoteAddr = "127.0.0.1:12345"
+	missingRec := httptest.NewRecorder()
+	mux.ServeHTTP(missingRec, missing)
+	if missingRec.Code != http.StatusNotFound || calls != 1 {
+		t.Fatalf("expected runtime-ineligible actor to return 404 after callback, status=%d calls=%d", missingRec.Code, calls)
+	}
+}
+
 func TestLocalSpawnGroupHomewardStepEndpointReturnsJSONSnapshotForLoopbackPost(t *testing.T) {
 	snapshot := map[string]any{
 		"actor": map[string]any{"entity_id": uint64(66), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_homeward", "x": int32(1800), "y": int32(2800)},
