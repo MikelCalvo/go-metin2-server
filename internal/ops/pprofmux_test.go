@@ -5995,8 +5995,12 @@ func TestLocalSpawnGroupByRefAndLeashRoutesCoexist(t *testing.T) {
 	)
 	for _, path := range []string{
 		"/local/spawn-groups/44",
+		"/local/spawn-groups/4%34",
 		"/local/spawn-groups/by-ref/practice.wolf_1",
+		"/local/spawn-groups/by-%72ef/practice.wolf_1",
 		"/local/spawn-groups/44/leash?radius=400",
+		"/local/spawn-groups/4%34/leash?radius=400",
+		"/local/spawn-groups/44/%6ceash?radius=400",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.RemoteAddr = "127.0.0.1:12345"

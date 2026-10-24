@@ -2932,9 +2932,19 @@ func RegisterLocalSpawnGroupLookupEndpoints(mux *http.ServeMux, spawnGroup func(
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
-		// Route on the escaped path. URL.Path has already decoded %2F, which
-		// must not turn an encoded slash into a valid entity/leash separator.
-		path := strings.TrimPrefix(r.URL.EscapedPath(), "/local/spawn-groups/")
+		// Decode segments independently, so %2F never becomes a separator,
+		// while ordinary escaped characters retain ServeMux's segment behavior.
+		escaped := strings.TrimPrefix(r.URL.EscapedPath(), "/local/spawn-groups/")
+		parts := strings.Split(escaped, "/")
+		for i, part := range parts {
+			decoded, err := url.PathUnescape(part)
+			if err != nil || strings.Contains(decoded, "/") {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			parts[i] = decoded
+		}
+		path := strings.Join(parts, "/")
 		var value any
 		var found bool
 		switch {
