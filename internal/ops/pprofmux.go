@@ -3612,13 +3612,7 @@ func RegisterLocalStaticActorEndpoint(mux *http.ServeMux, staticActor func(uint6
 		return mux
 	}
 
-	// A method-agnostic subtree with an explicit GET guard lets the exact
-	// backup/restore routes win without cross-method ServeMux conflicts.
-	mux.HandleFunc("/local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
+	mux.HandleFunc("GET /local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -3672,10 +3666,6 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 	}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch && r.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -3700,10 +3690,8 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}
-	// Let exact backup/restore routes win for all methods. Explicitly gate
-	// methods here instead of registering method-specific subtrees that
-	// conflict with the method-agnostic backup routes at gamed startup.
-	mux.HandleFunc("/local/static-actors/", handler)
+	mux.HandleFunc("PATCH /local/static-actors/", handler)
+	mux.HandleFunc("PUT /local/static-actors/", handler)
 	return mux
 }
 
@@ -6966,10 +6954,7 @@ func decodeLocalContentBundleCollection[T any](raw json.RawMessage, dst *[]T) bo
 }
 
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
-	entityIDRaw := r.PathValue("entity_id")
-	if entityIDRaw == "" {
-		entityIDRaw = strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
-	}
+	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
 	entityIDRaw = strings.TrimSpace(entityIDRaw)
 	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
 		return 0, false
