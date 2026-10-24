@@ -140,34 +140,16 @@ func main() {
 		opsHandler,
 		func() any { return gameRuntime.SpawnGroups() },
 	)
-	opsHandler = ops.RegisterLocalSpawnGroupEndpoint(
+	opsHandler = ops.RegisterLocalSpawnGroupLookupEndpoints(
 		opsHandler,
 		func(entityID uint64) (any, bool) {
-			snapshot, ok := gameRuntime.SpawnGroup(entityID)
-			if !ok {
-				return nil, false
-			}
-			return snapshot, true
+			return gameRuntime.SpawnGroup(entityID)
 		},
-	)
-	opsHandler = ops.RegisterLocalSpawnGroupByRefEndpoint(
-		opsHandler,
 		func(ref string) (any, bool) {
-			snapshot, ok := gameRuntime.SpawnGroupByRef(ref)
-			if !ok {
-				return nil, false
-			}
-			return snapshot, true
+			return gameRuntime.SpawnGroupByRef(ref)
 		},
-	)
-	opsHandler = ops.RegisterLocalSpawnGroupLeashEndpoint(
-		opsHandler,
 		func(entityID uint64, radius int32) (any, bool) {
-			snapshot, ok := gameRuntime.SpawnGroupLeash(entityID, radius)
-			if !ok {
-				return nil, false
-			}
-			return snapshot, true
+			return gameRuntime.SpawnGroupLeash(entityID, radius)
 		},
 	)
 	opsHandler = ops.RegisterLocalSpawnGroupReturnHomeEndpoint(

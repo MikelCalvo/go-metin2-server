@@ -2920,6 +2920,65 @@ func RegisterLocalSpawnGroupsEndpoint(mux *http.ServeMux, spawnGroups func() any
 	return mux
 }
 
+// RegisterLocalSpawnGroupLookupEndpoints mounts the three lookup shapes under a
+// single GET subtree. Separate ServeMux registrations for by-ref/ and
+// {entity_id}/leash overlap at by-ref/leash and panic at gamed startup.
+func RegisterLocalSpawnGroupLookupEndpoints(mux *http.ServeMux, spawnGroup func(uint64) (any, bool), spawnGroupByRef func(string) (any, bool), spawnGroupLeash func(uint64, int32) (any, bool)) *http.ServeMux {
+	if mux == nil || spawnGroup == nil || spawnGroupByRef == nil || spawnGroupLeash == nil {
+		return mux
+	}
+	mux.HandleFunc("GET /local/spawn-groups/", func(w http.ResponseWriter, r *http.Request) {
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		// Route on the escaped path. URL.Path has already decoded %2F, which
+		// must not turn an encoded slash into a valid entity/leash separator.
+		path := strings.TrimPrefix(r.URL.EscapedPath(), "/local/spawn-groups/")
+		var value any
+		var found bool
+		switch {
+		case strings.HasPrefix(path, "by-ref/"):
+			ref, ok := decodeLocalSpawnGroupRef(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value, found = spawnGroupByRef(ref)
+		case strings.HasSuffix(path, "/leash"):
+			parts := strings.Split(path, "/")
+			if len(parts) != 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			entityID, ok := decodeLocalPositiveUint64PathComponent(parts[0])
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			radius, ok := decodeLocalSpawnGroupLeashRadius(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value, found = spawnGroupLeash(entityID, radius)
+		default:
+			entityID, ok := decodeLocalSpawnGroupEntityID(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value, found = spawnGroup(entityID)
+		}
+		if !found {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeLocalJSONMutationResponse(w, value, http.StatusOK)
+	})
+	return mux
+}
+
 func RegisterLocalSpawnGroupEndpoint(mux *http.ServeMux, spawnGroup func(uint64) (any, bool)) *http.ServeMux {
 	if mux == nil || spawnGroup == nil {
 		return mux
@@ -6873,22 +6932,27 @@ func decodeLocalSpawnGroupLeashRequest(r *http.Request) (uint64, int32, bool) {
 	if !ok {
 		return 0, 0, false
 	}
+	radius, ok := decodeLocalSpawnGroupLeashRadius(r)
+	return entityID, radius, ok
+}
+
+func decodeLocalSpawnGroupLeashRadius(r *http.Request) (int32, bool) {
 	radiusValues := r.URL.Query()["radius"]
 	if len(radiusValues) == 0 {
-		return entityID, 0, true
+		return 0, true
 	}
 	if len(radiusValues) != 1 {
-		return 0, 0, false
+		return 0, false
 	}
 	radiusRaw := strings.TrimSpace(radiusValues[0])
 	if radiusRaw == "" || strings.Contains(radiusRaw, "/") {
-		return 0, 0, false
+		return 0, false
 	}
 	radius, err := strconv.ParseInt(radiusRaw, 10, 32)
 	if err != nil || radius <= 0 {
-		return 0, 0, false
+		return 0, false
 	}
-	return entityID, int32(radius), true
+	return int32(radius), true
 }
 
 func decodeLocalSpawnGroupEntityIDPathValue(r *http.Request) (uint64, bool) {

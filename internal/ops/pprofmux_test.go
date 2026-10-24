@@ -5972,6 +5972,62 @@ func TestLocalSpawnGroupByRefEndpointReturnsNotFoundForMissingRef(t *testing.T) 
 	}
 }
 
+func TestLocalSpawnGroupByRefAndLeashRoutesCoexist(t *testing.T) {
+	mux := RegisterLocalSpawnGroupLookupEndpoints(NewPprofMux("gamed"),
+		func(entityID uint64) (any, bool) {
+			if entityID != 44 {
+				return nil, false
+			}
+			return map[string]any{"entity_id": entityID}, true
+		},
+		func(ref string) (any, bool) {
+			if ref != "practice.wolf_1" {
+				return nil, false
+			}
+			return map[string]any{"spawn_group_ref": ref}, true
+		},
+		func(entityID uint64, radius int32) (any, bool) {
+			if entityID != 44 || radius != 400 {
+				return nil, false
+			}
+			return map[string]any{"entity_id": entityID}, true
+		},
+	)
+	for _, path := range []string{
+		"/local/spawn-groups/44",
+		"/local/spawn-groups/by-ref/practice.wolf_1",
+		"/local/spawn-groups/44/leash?radius=400",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("GET %s: status %d, body %q", path, rec.Code, rec.Body.String())
+		}
+	}
+	// The former by-ref subtree also matched this leash-shaped path.
+	req := httptest.NewRequest(http.MethodGet, "/local/spawn-groups/by-ref/leash?radius=400", nil)
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatalf("unexpected success for ambiguous by-ref/leash path: %q", rec.Body.String())
+	}
+	for _, path := range []string{
+		"/local/spawn-groups/44%2Fleash?radius=400",
+		"/local/spawn-groups/44/leash%2F?radius=400",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code == http.StatusOK {
+			t.Fatalf("encoded separator %s unexpectedly reached a lookup: %q", path, rec.Body.String())
+		}
+	}
+}
+
 func TestLocalSpawnGroupLeashEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	snapshot := map[string]any{
 		"actor":           map[string]any{"entity_id": uint64(44), "name": "Practice Wolf", "spawn_group_ref": "practice.wolf_1"},
