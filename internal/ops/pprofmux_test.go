@@ -7769,8 +7769,9 @@ func TestLocalStaticActorLookupAndBackupRoutesCoexist(t *testing.T) {
 			return nil, false
 		},
 	)
-	mux.HandleFunc("/local/static-actors/backup", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+	RegisterLocalStaticActorStoreBackupEndpoint(mux, func(string) (any, error) {
+		t.Fatal("invalid backup request reached callback")
+		return nil, nil
 	})
 	for _, tc := range []struct {
 		method, path string
@@ -7778,8 +7779,8 @@ func TestLocalStaticActorLookupAndBackupRoutesCoexist(t *testing.T) {
 	}{
 		{http.MethodGet, "/local/static-actors/44", http.StatusOK},
 		{http.MethodPost, "/local/static-actors/not-a-number", http.StatusMethodNotAllowed},
-		{http.MethodPost, "/local/static-actors/backup", http.StatusNoContent},
-		{http.MethodGet, "/local/static-actors/backup", http.StatusNoContent},
+		{http.MethodPost, "/local/static-actors/backup", http.StatusBadRequest},
+		{http.MethodGet, "/local/static-actors/backup", http.StatusMethodNotAllowed},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.RemoteAddr = "127.0.0.1:12345"
@@ -11258,18 +11259,14 @@ func TestLocalGroundItemLookupAndQuarantineRoutesCoexist(t *testing.T) {
 		}
 		return map[string]any{"vid": vid}, true
 	})
-	// Reproduce the method-agnostic export path which used to conflict with
-	// the GET subtree during gamed startup.
-	mux.HandleFunc("/local/ground-items/exports/bootstrap-ground-item-state/quarantine", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	RegisterLocalBootstrapGroundItemStateQuarantineEndpoint(mux)
 	for _, tc := range []struct {
 		method, path string
 		want         int
 	}{
 		{http.MethodGet, "/local/ground-items/44", http.StatusOK},
-		{http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusNoContent},
-		{http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusNoContent},
+		{http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusBadRequest},
+		{http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusMethodNotAllowed},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.RemoteAddr = "127.0.0.1:12345"
