@@ -11211,6 +11211,37 @@ func (t *stubCharacterTransferer) TransferCharacter(name string, mapIndex uint32
 	t.lastY = y
 	return t.result, t.found
 }
+func TestLocalGroundItemLookupAndQuarantineRoutesCoexist(t *testing.T) {
+	mux := NewPprofMux("gamed")
+	RegisterLocalGroundItemEndpoint(mux, func(vid uint32) (any, bool) {
+		if vid != 44 {
+			return nil, false
+		}
+		return map[string]any{"vid": vid}, true
+	})
+	// Reproduce the method-agnostic export path which used to conflict with
+	// the GET subtree during gamed startup.
+	mux.HandleFunc("/local/ground-items/exports/bootstrap-ground-item-state/quarantine", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, tc := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/local/ground-items/44", http.StatusOK},
+		{http.MethodPost, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusNoContent},
+		{http.MethodGet, "/local/ground-items/exports/bootstrap-ground-item-state/quarantine", http.StatusNoContent},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("%s %s: status %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
 func TestLocalGroundItemEndpointReturnsExactGroundSnapshotForLoopbackGet(t *testing.T) {
 	snapshot := worldruntime.GroundItemSnapshot{VID: 0x0700002e, Vnum: 3002, Count: 3, OwnerName: "GroundOwner", MapIndex: 1, X: 1200, Y: 2200}
 	mux := RegisterLocalGroundItemEndpoint(NewPprofMux("gamed"), func(vid uint32) (any, bool) {

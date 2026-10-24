@@ -3149,7 +3149,9 @@ func RegisterLocalGroundItemEndpoint(mux *http.ServeMux, groundItem func(uint32)
 	if mux == nil || groundItem == nil {
 		return mux
 	}
-	mux.HandleFunc("GET /local/ground-items/", func(w http.ResponseWriter, r *http.Request) {
+	// Match one VID only: a GET subtree conflicts with the method-agnostic
+	// quarantine export route beneath /local/ground-items/ at startup.
+	mux.HandleFunc("GET /local/ground-items/{vid}", func(w http.ResponseWriter, r *http.Request) {
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -7048,7 +7050,10 @@ func decodeLocalSpawnGroupRef(r *http.Request) (string, bool) {
 }
 
 func decodeLocalGroundItemVID(r *http.Request) (uint32, bool) {
-	vidRaw := strings.TrimPrefix(r.URL.Path, "/local/ground-items/")
+	vidRaw := r.PathValue("vid")
+	if vidRaw == "" {
+		vidRaw = strings.TrimPrefix(r.URL.Path, "/local/ground-items/")
+	}
 	vidRaw = strings.TrimSpace(vidRaw)
 	if vidRaw == "" || strings.Contains(vidRaw, "/") {
 		return 0, false
