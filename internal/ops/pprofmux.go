@@ -3544,12 +3544,81 @@ func RegisterLocalStaticActorEndpoints(mux *http.ServeMux, staticActors func() a
 	return mux
 }
 
+// RegisterLocalStaticActorLookupAndMutationEndpoints uses a single subtree
+// because Go ServeMux rejects method-specific subtrees overlapping the
+// method-agnostic static-actor backup and restore routes.
+func RegisterLocalStaticActorLookupAndMutationEndpoints(mux *http.ServeMux, staticActor func(uint64) (any, bool), removeStaticActor func(uint64) (any, bool), updateStaticActor func(uint64, string, uint32, int32, int32, uint32, string, string, string) (any, bool)) *http.ServeMux {
+	if mux == nil || staticActor == nil || removeStaticActor == nil || updateStaticActor == nil {
+		return mux
+	}
+	mux.HandleFunc("/local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodDelete, http.MethodPatch, http.MethodPut:
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if !isLoopbackRemoteAddr(r.RemoteAddr) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		entityID, ok := decodeLocalStaticActorEntityID(r)
+		if !ok {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet, http.MethodHead:
+			value, found := staticActor(entityID)
+			if !found {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			writeLocalJSONMutationResponse(w, value, http.StatusOK)
+		case http.MethodDelete:
+			value, found := removeStaticActor(entityID)
+			if !found {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(value); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		case http.MethodPatch, http.MethodPut:
+			request, ok := decodeLocalStaticActorRequest(r)
+			if !ok {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value, found := updateStaticActor(entityID, request.Name, request.MapIndex, request.X, request.Y, request.RaceNum, request.InteractionKind, request.InteractionRef, request.CombatProfile)
+			if !found {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			if err := json.NewEncoder(w).Encode(value); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	return mux
+}
+
 func RegisterLocalStaticActorEndpoint(mux *http.ServeMux, staticActor func(uint64) (any, bool)) *http.ServeMux {
 	if mux == nil || staticActor == nil {
 		return mux
 	}
 
-	mux.HandleFunc("GET /local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+	// A method-agnostic subtree with an explicit GET guard lets the exact
+	// backup/restore routes win without cross-method ServeMux conflicts.
+	mux.HandleFunc("/local/static-actors/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -3603,6 +3672,10 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 	}
 
 	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch && r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
 		if !isLoopbackRemoteAddr(r.RemoteAddr) {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -3627,8 +3700,10 @@ func RegisterLocalStaticActorUpdateEndpoint(mux *http.ServeMux, updateStaticActo
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	}
-	mux.HandleFunc("PATCH /local/static-actors/", handler)
-	mux.HandleFunc("PUT /local/static-actors/", handler)
+	// Let exact backup/restore routes win for all methods. Explicitly gate
+	// methods here instead of registering method-specific subtrees that
+	// conflict with the method-agnostic backup routes at gamed startup.
+	mux.HandleFunc("/local/static-actors/", handler)
 	return mux
 }
 
@@ -6891,7 +6966,10 @@ func decodeLocalContentBundleCollection[T any](raw json.RawMessage, dst *[]T) bo
 }
 
 func decodeLocalStaticActorEntityID(r *http.Request) (uint64, bool) {
-	entityIDRaw := strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
+	entityIDRaw := r.PathValue("entity_id")
+	if entityIDRaw == "" {
+		entityIDRaw = strings.TrimPrefix(r.URL.Path, "/local/static-actors/")
+	}
 	entityIDRaw = strings.TrimSpace(entityIDRaw)
 	if entityIDRaw == "" || strings.Contains(entityIDRaw, "/") {
 		return 0, false

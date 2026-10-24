@@ -437,34 +437,16 @@ func main() {
 			return actor, true
 		},
 	)
-	opsHandler = ops.RegisterLocalStaticActorEndpoint(
+	opsHandler = ops.RegisterLocalStaticActorLookupAndMutationEndpoints(
 		opsHandler,
 		func(entityID uint64) (any, bool) {
-			actor, ok := gameRuntime.StaticActor(entityID)
-			if !ok {
-				return nil, false
-			}
-			return actor, true
+			return gameRuntime.StaticActor(entityID)
 		},
-	)
-	opsHandler = ops.RegisterLocalStaticActorUpdateEndpoint(
-		opsHandler,
+		func(entityID uint64) (any, bool) {
+			return gameRuntime.RemoveStaticActor(entityID)
+		},
 		func(entityID uint64, name string, mapIndex uint32, x int32, y int32, raceNum uint32, interactionKind string, interactionRef string, combatProfile string) (any, bool) {
-			actor, ok := gameRuntime.UpdateStaticActorWithInteractionAndCombatProfile(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile)
-			if !ok {
-				return nil, false
-			}
-			return actor, true
-		},
-	)
-	opsHandler = ops.RegisterLocalStaticActorDeleteEndpoint(
-		opsHandler,
-		func(entityID uint64) (any, bool) {
-			actor, ok := gameRuntime.RemoveStaticActor(entityID)
-			if !ok {
-				return nil, false
-			}
-			return actor, true
+			return gameRuntime.UpdateStaticActorWithInteractionAndCombatProfile(entityID, name, mapIndex, x, y, raceNum, interactionKind, interactionRef, combatProfile)
 		},
 	)
 	opsHandler = ops.RegisterLocalStaticActorCombatProfileEndpoint(opsHandler)

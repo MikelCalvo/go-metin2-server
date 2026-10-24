@@ -7752,6 +7752,41 @@ func TestLocalStaticActorsEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T
 	}
 }
 
+func TestLocalStaticActorLookupAndBackupRoutesCoexist(t *testing.T) {
+	mux := RegisterLocalStaticActorLookupAndMutationEndpoints(NewPprofMux("gamed"),
+		func(id uint64) (any, bool) {
+			if id != 44 {
+				return nil, false
+			}
+			return map[string]any{"entity_id": id}, true
+		},
+		func(uint64) (any, bool) { return nil, false },
+		func(uint64, string, uint32, int32, int32, uint32, string, string, string) (any, bool) {
+			return nil, false
+		},
+	)
+	mux.HandleFunc("/local/static-actors/backup", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, tc := range []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/local/static-actors/44", http.StatusOK},
+		{http.MethodPost, "/local/static-actors/not-a-number", http.StatusMethodNotAllowed},
+		{http.MethodPost, "/local/static-actors/backup", http.StatusNoContent},
+		{http.MethodGet, "/local/static-actors/backup", http.StatusNoContent},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, nil)
+		req.RemoteAddr = "127.0.0.1:12345"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != tc.want {
+			t.Errorf("%s %s: status %d, want %d", tc.method, tc.path, rec.Code, tc.want)
+		}
+	}
+}
+
 func TestLocalStaticActorEndpointReturnsJSONSnapshotForLoopbackGet(t *testing.T) {
 	lookup := &stubStaticActorLookup{actors: map[uint64]any{7: map[string]any{"entity_id": uint64(7), "name": "TrainingDummy", "map_index": uint32(42), "x": int32(1700), "y": int32(2800), "race_num": uint32(20350), "dead": true}}}
 	mux := RegisterLocalStaticActorEndpoint(NewPprofMux("gamed"), lookup.StaticActor)
