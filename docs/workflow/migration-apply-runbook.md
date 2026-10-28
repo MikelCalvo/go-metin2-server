@@ -14,6 +14,13 @@ The current boundary is deliberately narrow:
 - account, character, item, quest, content, login-ticket, and world runtime stores are still bootstrap/file-backed unless a later repository slice says otherwise;
 - executable SQL and DSNs must not be copied into logs, tickets, or audit summaries.
 
+CLI stderr contract: `writeMigrationCommandError` replaces the exact nonempty
+operator DSN with `<redacted-dsn>` and also masks standalone `password=<value>`
+(including quoted values) and `user:<password>@` userinfo fragments in driver
+errors. A missing/whitespace-only DSN still follows the existing empty-DSN
+error path; this is a defensive stderr scrub, not permission to log credentials
+or a change to apply/rollback, backups, or the CLI-only mutation boundary.
+
 ## Required artifacts
 
 Keep these files together for each migration run:

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1719,12 +1720,21 @@ func (f *migrationApplyAuditFile) Discard() {
 	}
 }
 
+var (
+	migrationPasswordFragment = regexp.MustCompile(`(?i)\bpassword=(?:"[^"]*"|'[^']*'|[^\s&;,)}\]]+)`)
+	migrationUserinfoFragment = regexp.MustCompile(`([\w.%+~-]+):([^\s@/?#]+)@`)
+)
+
 func writeMigrationCommandError(stderr io.Writer, dsn string, format string, args ...any) {
 	message := fmt.Sprintf(format, args...)
 	trimmedDSN := strings.TrimSpace(dsn)
 	if trimmedDSN != "" {
 		message = strings.ReplaceAll(message, trimmedDSN, "<redacted-dsn>")
 	}
+	// database/sql drivers may repeat credentials as fragments instead of the
+	// exact DSN. Scrub only credential-bearing forms; retain diagnostic context.
+	message = migrationPasswordFragment.ReplaceAllString(message, "password=<redacted-dsn>")
+	message = migrationUserinfoFragment.ReplaceAllString(message, "${1}:<redacted-dsn>@")
 	fmt.Fprintln(stderr, message)
 }
 
