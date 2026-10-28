@@ -93,8 +93,19 @@ Rules:
    `SetAccessLogSampler` interval is opt-in and disabled by default: the first
    line is kept and later lines inside that window are dropped. Dropped lines
    do not skip the request, the `/local/metrics` count, or the in-memory span.
-   The interval itself is never written into the line. Daemons do not set a
-   sampler at startup in this slice.
+   The interval itself is never written into the line.
+6. `authd` and `gamed` choose this sampler once at startup with
+   `ConfigureStartupAccessLogSampler(serviceName)` before serving requests.
+   The service-specific `METIN2_AUTHD_ACCESS_LOG_SAMPLE_INTERVAL` or
+   `METIN2_GAMED_ACCESS_LOG_SAMPLE_INTERVAL` takes precedence over shared
+   `METIN2_ACCESS_LOG_SAMPLE_INTERVAL`. An unset or blank winning value
+   disables the sampler (including a blank service override). A positive Go
+   duration such as `1s` or `250ms` enables a single process-wide interval;
+   zero, negative, or malformed values refuse startup with the constant
+   `access log sampler interval refused` without echoing the value. No sampler
+   setting or dropped-line count appears in the access line. No per-path or
+   probabilistic choice is made. The sampler only changes the access line,
+   never the handler, metrics, or trace.
 
 Example safe access line shape:
 
@@ -312,7 +323,7 @@ Example safe trace shape with no exporter configured:
 - SIEM sinks, syslog framing, or any non-loopback log destination
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging
-- turning the access-line sampler on from `authd` / `gamed` startup (library only; missing sampler config stays on the current every-request line)
+- ~~turning the access-line sampler on from `authd` / `gamed` startup~~ Done for one opt-in interval chosen at startup; missing config retains the every-request line.
 - probabilistic sampling, per-path budgets, or writing the sampler interval into the access line
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication or token auth
