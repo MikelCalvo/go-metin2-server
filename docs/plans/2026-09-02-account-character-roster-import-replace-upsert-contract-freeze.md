@@ -199,3 +199,30 @@ Docs/spec freeze landed. Tip-`0002` scoped replace GREEN is owned by
 [account/character roster import scoped replace GREEN](2026-09-02-account-character-roster-import-scoped-replace-green.md).
 Insert-only remains the default without the replace option / CLI confirmation.
 Production-engine selection remains deferred.
+
+## Separate opt-in live roster repository contract
+
+The offline import policy above remains unchanged. `accountstore.SQLRosterStore`
+is a caller-supplied `database/sql` Store / AccountLister plus a tip-`0002`
+`ExportAccountCharacterRoster` projection. It is **not** the stock login/select
+store: both daemons continue to use FileStore. No driver or DSN is selected here.
+
+- Load/List read `accounts` and `characters` only after the applied tip-`0002`
+  ledger preflight; they return all four select-screen positions including
+  empty slots, and accounts with zero characters. Unknown logins return
+  `ErrAccountNotFound`; malformed SQL rows fail closed. They do not claim point,
+  item, channel, or login-ticket persistence. Export retains stored account IDs
+  (including IDs imported by the offline tool), rather than deriving new IDs.
+- Save validates one complete **roster-only** snapshot before opening a
+  transaction: non-roster point/item/shop payloads, channel assignments,
+  packet-only VID and dummy bytes fail closed rather than being dropped. Save
+  then preflights schema inside its transaction. For an existing normalized
+  login, it retains its stored account ID and replaces *that account's* entire
+  tip-`0002` roster (including removed slots). For a new login it inserts
+  using the existing deterministic export ID. No global truncate or silent
+  insert-only-to-upsert change to `ImportAccountCharacterRoster`.
+- Save deletes characters before the matching account, then inserts rows in
+  one transaction. Foreign-key children are **not** cascade-deleted; a blocked
+  delete or unique-name/ID collision rolls back the whole Save. Preserve a
+  restorable out-of-repo engine backup before any operator-directed live DB
+  writes; this repository does not provide automatic DB backup or cutover.
