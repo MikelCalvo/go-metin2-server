@@ -68,8 +68,29 @@ Contract:
      `cube_recipe_state` → parameterized INSERT; opt-in scoped replace)
 5. CLI `quarantine-export` / `import-export` kinds stay the closed ten-kind
    set. `cube-recipe-state` is a cubestore primitive only in this slice.
-6. Upsert-by-default, stock production driver, DB-backed live cube loading,
-   and extra `/local/cube-recipe*` backup routes remain deferred.
+6. At this schema/import-only stage, upsert-by-default, stock production
+   driver, DB-backed live cube loading, and extra `/local/cube-recipe*` backup
+   routes remained deferred. The opt-in repository below is the later slice.
+
+## Opt-in live SQL repository (after 0031)
+
+`cubestore.SQLStore` implements the existing `Store` Load/Save interface with a
+caller-supplied transaction executor. `SelectRematerializeStore(file, nil)` keeps
+the stock FileStore; supplying a SQLStore opts one caller in explicitly (no daemon
+cutover or driver/DSN selection). Load reads all four 0031 tables in a single
+transaction, checks the 0031 ledger and quarantines the reconstructed export;
+empty SQL tables yield an empty authored snapshot, not the lab fallback.
+Malformed or sparse positions and invalid OR groups fail closed rather than
+silently changing recipe order or crafting materials. Save validates the whole
+snapshot, including signed BIGINT gold, before starting a transaction; it
+replaces all four catalog tables children-first, including on empty saves, and
+rolls back on insertion failure. This is whole-catalog replacement, not the
+import primitive's per-NPC scoped replace. Back up the SQL target before
+switching a caller to it; no automatic FileStore-to-SQL migration, extra local
+backup route, stock production driver, or remote administration is added.
+
+Proof: `go test ./internal/cubestore -count=1` and
+`go test -tags=sqlite_harness ./internal/cubestore -count=1`.
 
 ## Verification
 
