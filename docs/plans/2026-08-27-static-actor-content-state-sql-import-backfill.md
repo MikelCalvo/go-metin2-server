@@ -113,25 +113,50 @@ claiming DB-backed live static-actor / interaction loading.
 - `metin2-migrate` CLI import command
 - upsert / merge / truncate-and-reload policy
 - production DB engine selection as a stock default
-- DB-backed runtime repositories for static actors / interactions / combat
+- Stock DB-backed runtime repositories for static actors / interactions / combat
   profiles as the stock gamed rematerialize path. Opt-in `staticstore.SQLStore`
   is now the first live exception: a caller-supplied `database/sql` executor,
   schema preflight before Load/Save, and a whole-snapshot replace of
   `static_actors`, reward drops, combat profiles, and death-reward drops on
-  tip-`0013` plus additive `0016`–`0020`. Interaction-definition rows stay
-  owned by the interaction FileStore and by tip-`0013` import; SQL Save does
-  not delete them. `SelectRematerializeStore` keeps FileStore unless
+  tip-`0013` plus additive `0016`–`0020`. Interaction-definition rows are
+  separately owned by the interaction FileStore, tip-`0013` import, and the
+  opt-in interaction SQL repository below; static-actor SQL Save leaves them
+  untouched. `SelectRematerializeStore` keeps FileStore unless
   that SQL store is passed. It does not select a production driver, upsert,
   auto-run, mount `gamed`, or call `RegisterStaticActorCombatProfile`.
   `combat_current_hp`, `respawn_ready_at`, and `proximity_suppress_vids` stay
   FileStore-only because tip-`0013` has no columns for them; a SQL save that
-  carries any of those fields fails closed. Interaction definitions stay on
-  `interactionstore` FileStore: this repository loads and saves the static-actor
-  snapshot, and its SQL export reads whatever tip-`0013` interaction rows are
-  already present without treating the static-actor snapshot as their owner.
+  carries any of those fields fails closed. Interaction definitions are separately
+  owned by `interactionstore.FileStore` (stock) and opt-in `interactionstore.SQLStore`;
+  static-actor SQL Save does not mutate them. Its SQL export reads the existing
+  tip-`0013` interaction rows without treating the static-actor snapshot as their owner.
 - loopback ops mutation endpoint
 - FreeBSD port / `pkg` enable defaults
 - remote admin, secrets in git, metrics/tracing
+
+### Opt-in interaction-definition repository (later slice)
+
+`interactionstore.SQLStore` implements the same `Load/Save` seam over the existing
+`interaction_definitions`, `interaction_merchant_catalog_entries`, and
+`interaction_quest_flag_{reward,consume}_items` tables. A caller supplies a
+transaction-capable executor; no driver, DSN, daemon wiring, or backup endpoint is
+introduced. `SelectRematerializeStore` defaults to the supplied FileStore unless
+SQL is passed explicitly. Load preflights the applied `0013` ledger identity and
+validates every row and child against the existing interaction snapshot rules;
+empty tables load as an empty snapshot. Save normalizes and validates before opening
+a transaction, preflights the ledger, deletes child rows then parent rows and
+inserts the whole supplied snapshot atomically; empty Save clears definitions,
+subject to existing `static_actors` references (fail before delete even when the
+selected driver does not enforce foreign keys, rather than silently changing actor
+bindings). No upsert/merge, no ownership of actor rows.
+
+The six tip-`0012` representable kinds are `info`, `talk`, `warp`, `shop_preview`,
+`open_safebox`, and `quest_flag`, including quest gates, flat merchant catalog,
+quest rewards and consumes. Although FileStore also owns `open_cube` and multi-tab
+`shop_preview`, tip-`0013` has neither an `open_cube` kind nor tab/coin columns:
+Save rejects those shapes before mutation rather than drop or flatten authored
+content. A future schema ticket must own them before live SQL can represent them.
+Stock interaction FileStore and its backup/restore contract remain unchanged.
 
 ## Likely files to change
 
