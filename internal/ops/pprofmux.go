@@ -6135,6 +6135,12 @@ func RegisterLocalContentBundleValidateEndpoint(mux *http.ServeMux) *http.ServeM
 }
 
 func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), transferCharacter func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any) *http.ServeMux {
+	return NewPprofMuxWithLocalRuntimeIntrospectionAndMapNotice(serviceName, broadcastNotice, relocateCharacter, previewRelocation, transferCharacter, connectedCharacters, characterVisibility, mapOccupancy, nil)
+}
+
+// NewPprofMuxWithLocalRuntimeIntrospectionAndMapNotice keeps unscoped notices
+// global and mounts map delivery only when explicitly supplied by gamed.
+func NewPprofMuxWithLocalRuntimeIntrospectionAndMapNotice(serviceName string, broadcastNotice func(string) int, relocateCharacter func(string, uint32, int32, int32) bool, previewRelocation func(string, uint32, int32, int32) (any, bool), transferCharacter func(string, uint32, int32, int32) (any, bool), connectedCharacters func() any, characterVisibility func() any, mapOccupancy func() any, broadcastMapNotice func(uint32, string) int) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -6184,8 +6190,27 @@ func NewPprofMuxWithLocalRuntimeIntrospection(serviceName string, broadcastNotic
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+			// Only a single explicit map_index selects local fanout. Reject
+			// unknown/duplicate parameters instead of accidentally broadcasting
+			// a malformed scoped request to every connected player.
+			var delivered int
+			if r.URL.RawQuery == "" {
+				delivered = broadcastNotice(message)
+			} else {
+				query, err := url.ParseQuery(r.URL.RawQuery)
+				if err != nil || len(query) != 1 || len(query["map_index"]) != 1 || broadcastMapNotice == nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				mapIndex, err := strconv.ParseUint(query["map_index"][0], 10, 32)
+				if err != nil || mapIndex == 0 {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				delivered = broadcastMapNotice(uint32(mapIndex), message)
+			}
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			_, _ = fmt.Fprintf(w, "queued %d\n", broadcastNotice(message))
+			_, _ = fmt.Fprintf(w, "queued %d\n", delivered)
 		})
 	}
 

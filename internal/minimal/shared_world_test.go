@@ -16311,6 +16311,65 @@ func TestGameRuntimeBroadcastNoticeQueuesSystemMessageAcrossMaps(t *testing.T) {
 	}
 }
 
+func TestGameRuntimeBroadcastNoticeForMapUsesEffectiveMapAndPreservesGlobal(t *testing.T) {
+	store := loginticket.NewFileStore(t.TempDir())
+	zero := peerVisibilityCharacter("ZeroMap", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
+	one := peerVisibilityCharacter("OneMap", 0x01030102, 0x02040102, 1300, 2300, 2, 102, 202)
+	one.MapIndex = 1
+	other := peerVisibilityCharacter("OtherMap", 0x01030103, 0x02040103, 1500, 2500, 0, 103, 203)
+	other.MapIndex = 42
+	for _, peer := range []struct {
+		login     string
+		key       uint32
+		character loginticket.Character
+	}{
+		{"zero", 0x11111111, zero}, {"one", 0x22222222, one}, {"other", 0x33333333, other},
+	} {
+		issuePeerTicket(t, store, peer.login, peer.key, peer.character)
+	}
+	runtime, err := newGameRuntimeWithAccountStore(config.Service{LegacyAddr: ":13000", PublicAddr: "127.0.0.1"}, store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zeroFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "zero", 0x11111111)
+	oneFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "one", 0x22222222)
+	otherFlow, _ := enterGameWithLoginTicket(t, runtime.SessionFactory(), "other", 0x33333333)
+	for _, flow := range []service.SessionFlow{zeroFlow, oneFlow, otherFlow} {
+		_ = flushServerFrames(t, flow)
+	}
+	if got := runtime.BroadcastNoticeForMap(1, "  map  "); got != 2 {
+		t.Fatalf("map 1 deliveries=%d", got)
+	}
+	for _, flow := range []service.SessionFlow{zeroFlow, oneFlow} {
+		frames := flushServerFrames(t, flow)
+		if len(frames) != 1 {
+			t.Fatalf("map recipient frames=%d", len(frames))
+		}
+		decoded, err := chatproto.DecodeChatDelivery(decodeSingleFrame(t, frames[0]))
+		if err != nil || decoded.Type != chatproto.ChatTypeNotice || decoded.VID != 0 || decoded.Empire != 0 || decoded.Message != "map" {
+			t.Fatalf("map notice=%+v error=%v", decoded, err)
+		}
+	}
+	if frames := flushServerFrames(t, otherFlow); len(frames) != 0 {
+		t.Fatalf("other map frames=%d", len(frames))
+	}
+	if got := runtime.BroadcastNoticeForMap(0, "must not escape"); got != 0 {
+		t.Fatalf("zero index deliveries=%d", got)
+	}
+	if got := runtime.BroadcastNoticeForMap(42, "  \t "); got != 0 {
+		t.Fatalf("empty message deliveries=%d", got)
+	}
+	if got := runtime.BroadcastNotice("global"); got != 3 {
+		t.Fatalf("global deliveries=%d", got)
+	}
+	for _, flow := range []service.SessionFlow{zeroFlow, oneFlow, otherFlow} {
+		frames := flushServerFrames(t, flow)
+		if len(frames) != 1 {
+			t.Fatalf("global recipient frames=%d", len(frames))
+		}
+	}
+}
+
 func TestGameRuntimeBroadcastNoticeRejectsEmptyMessage(t *testing.T) {
 	store := loginticket.NewFileStore(t.TempDir())
 	peer := peerVisibilityCharacter("PeerOne", 0x01030101, 0x02040101, 1100, 2100, 0, 101, 201)
@@ -16469,6 +16528,37 @@ func TestGameRuntimeBroadcastNoticeSkipsZeroHPOwnerAfterDelayedRetaliationReache
 	}
 	if notice.Type != chatproto.ChatTypeNotice || notice.VID != 0 || notice.Message != "server maintenance after floor" {
 		t.Fatalf("unexpected queued server notice after delayed retaliation reached owner HP floor: %+v", notice)
+	}
+}
+
+func TestSharedWorldRegistryMapNoticeSkipsZeroHPOwnerAndOtherMap(t *testing.T) {
+	registry := newSharedWorldRegistry()
+	live := peerVisibilityCharacter("Live", 0x01030110, 0x02040110, 1100, 2100, 0, 101, 201)
+	dead := peerVisibilityCharacter("Dead", 0x01030111, 0x02040111, 1200, 2200, 0, 102, 202)
+	away := peerVisibilityCharacter("Away", 0x01030112, 0x02040112, 1300, 2300, 0, 103, 203)
+	away.MapIndex = 42
+	livePending := newPendingServerFrames()
+	deadPending := newPendingServerFrames()
+	awayPending := newPendingServerFrames()
+	_, _ = registry.Join(live, livePending, nil)
+	deadID, _ := registry.Join(dead, deadPending, nil)
+	_, _ = registry.Join(away, awayPending, nil)
+	_ = livePending.flush()
+	_ = deadPending.flush()
+	_ = awayPending.flush()
+	dead.Points[bootstrapPlayerPointValueIndex] = 0
+	registry.UpdateCharacter(deadID, dead)
+	if delivered := registry.EnqueueSystemNoticeForMap(1, "  notice  "); delivered != 1 {
+		t.Fatalf("living map recipients=%d", delivered)
+	}
+	if frames := livePending.flush(); len(frames) != 1 {
+		t.Fatalf("living recipient frames=%d", len(frames))
+	}
+	if frames := deadPending.flush(); len(frames) != 0 {
+		t.Fatalf("zero HP recipient frames=%d", len(frames))
+	}
+	if frames := awayPending.flush(); len(frames) != 0 {
+		t.Fatalf("other map recipient frames=%d", len(frames))
 	}
 }
 

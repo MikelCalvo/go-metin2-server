@@ -3629,6 +3629,54 @@ func TestLocalNoticeEndpointQueuesTrimmedLoopbackNotice(t *testing.T) {
 	}
 }
 
+func TestLocalNoticeEndpointMapScopeIsOptInAndDoesNotChangeGlobalDefault(t *testing.T) {
+	global := &stubNoticeBroadcaster{delivered: 3}
+	mapCalls := 0
+	var mapIndex uint32
+	var mapMessage string
+	mux := NewPprofMuxWithLocalRuntimeIntrospectionAndMapNotice("gamed", global.BroadcastNotice, nil, nil, nil, nil, nil, nil, func(index uint32, message string) int {
+		mapCalls++
+		mapIndex, mapMessage = index, message
+		return 2
+	})
+	for _, tc := range []struct {
+		path, remote, body string
+		status             int
+		response           string
+		globalCalls, maps  int
+	}{
+		{"/local/notice", "127.0.0.1:12345", "  global  ", http.StatusOK, "queued 3\n", 1, 0},
+		{"/local/notice?map_index=42", "[::1]:12345", "  local  ", http.StatusOK, "queued 2\n", 1, 1},
+		{"/local/notice?map_index=0", "127.0.0.1:12345", "local", http.StatusBadRequest, "", 1, 1},
+		{"/local/notice?map_index=", "127.0.0.1:12345", "local", http.StatusBadRequest, "", 1, 1},
+		{"/local/notice?map_index=4294967296", "127.0.0.1:12345", "local", http.StatusBadRequest, "", 1, 1},
+		{"/local/notice?map_index=1&map_index=42", "127.0.0.1:12345", "local", http.StatusBadRequest, "", 1, 1},
+		{"/local/notice?map_indx=42", "127.0.0.1:12345", "local", http.StatusBadRequest, "", 1, 1},
+		{"/local/notice?map_index=1", "203.0.113.10:12345", "local", http.StatusForbidden, "", 1, 1},
+		{"/local/notice?map_index=1", "127.0.0.1:12345", "  ", http.StatusBadRequest, "", 1, 1},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
+		req.RemoteAddr = tc.remote
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != tc.status || (tc.response != "" && rec.Body.String() != tc.response) || global.calls != tc.globalCalls || mapCalls != tc.maps {
+			t.Fatalf("%s (%q): status=%d body=%q global=%d map=%d", tc.path, tc.remote, rec.Code, rec.Body.String(), global.calls, mapCalls)
+		}
+	}
+	if mapIndex != 42 || mapMessage != "local" {
+		t.Fatalf("map callback got index=%d message=%q", mapIndex, mapMessage)
+	}
+	// An unmounted map callback must never send a scoped request as global.
+	legacy := NewPprofMuxWithLocalNotice("gamed", global.BroadcastNotice)
+	req := httptest.NewRequest(http.MethodPost, "/local/notice?map_index=1", strings.NewReader("local"))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	legacy.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || global.calls != 1 {
+		t.Fatalf("unmounted map scope: status=%d global=%d", rec.Code, global.calls)
+	}
+}
+
 func TestLocalNoticeEndpointRejectsNonLoopbackRemoteAddr(t *testing.T) {
 	broadcaster := &stubNoticeBroadcaster{delivered: 1}
 	mux := NewPprofMuxWithLocalNotice("gamed", broadcaster.BroadcastNotice)

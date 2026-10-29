@@ -42,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	opsHandler := ops.NewPprofMuxWithLocalRuntimeIntrospection(
+	opsHandler := ops.NewPprofMuxWithLocalRuntimeIntrospectionAndMapNotice(
 		"gamed",
 		gameRuntime.BroadcastNotice,
 		gameRuntime.RelocateCharacter,
@@ -63,6 +63,7 @@ func main() {
 		func() any { return gameRuntime.ConnectedCharacters() },
 		func() any { return gameRuntime.CharacterVisibility() },
 		func() any { return gameRuntime.MapOccupancy() },
+		gameRuntime.BroadcastNoticeForMap,
 	)
 	opsHandler = minimal.RegisterGamedFileStorePersistenceOps(opsHandler, gameRuntime)
 	opsHandler = ops.RegisterLocalLoginTicketStoreIssuedBeforePreviewEndpoint(
