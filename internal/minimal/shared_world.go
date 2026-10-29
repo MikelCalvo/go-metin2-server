@@ -7098,6 +7098,19 @@ func (r *sharedWorldRegistry) EnqueueToCharacterName(name string, frames [][]byt
 }
 
 func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
+	return r.enqueueSystemNotice(message, 0, false)
+}
+
+// A zero map index is not a valid explicit scope: it denotes the bootstrap
+// default only on a character's stored position, never on an ops request.
+func (r *sharedWorldRegistry) EnqueueSystemNoticeForMap(mapIndex uint32, message string) int {
+	if mapIndex == 0 {
+		return 0
+	}
+	return r.enqueueSystemNotice(message, mapIndex, true)
+}
+
+func (r *sharedWorldRegistry) enqueueSystemNotice(message string, mapIndex uint32, mapScoped bool) int {
 	message = strings.TrimSpace(message)
 	if r == nil || message == "" {
 		return 0
@@ -7115,6 +7128,9 @@ func (r *sharedWorldRegistry) EnqueueSystemNotice(message string) int {
 
 	delivered := 0
 	for _, target := range r.scopesLocked().ConnectedTargets() {
+		if mapScoped && r.topology.EffectiveMapIndex(target.Character) != mapIndex {
+			continue
+		}
 		if characterAtBootstrapHPFloor(target.Character) {
 			continue
 		}

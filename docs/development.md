@@ -78,6 +78,8 @@ The intent is simple: every small slice should be pushable and publicly re-check
 
 The ops listener also carries loopback-only recovery/debug endpoints under `/local/*`, so startup rejects wildcard or non-loopback pprof binds such as `:6060`, `0.0.0.0:6060`, `[::]:6060`, or a remote hostname. If remote profiling is needed, keep the daemon bound to loopback and use an SSH tunnel or another explicit local transport instead of exposing the ops mux directly.
 
+`gamed` `POST /local/notice` with a raw UTF-8 text body still sends a global system notice by default. To restrict it to connected, living players on one local map, opt in with `?map_index=42` (positive decimal effective map index); stored map 0 belongs to bootstrap map 1. Both forms return `queued N`. Invalid map scope is rejected, never converted into a global notice. See [server notice broadcast](../spec/protocol/server-notice-broadcast.md); no timed, localized, channel or remote-admin notices are provided.
+
 ### Legacy TCP listeners
 
 - `authd`: `METIN2_AUTHD_LEGACY_ADDR` (default `:11002`)

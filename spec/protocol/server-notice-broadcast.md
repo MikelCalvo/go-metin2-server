@@ -46,6 +46,25 @@ Error behavior:
 - empty or whitespace-only body after trimming -> `400 Bad Request`
 - wrong method -> `405 Method Not Allowed`
 
+## Opt-in map scope (first GREEN)
+
+The same loopback-only `POST /local/notice` accepts an optional single decimal
+`map_index` query parameter (`uint32`, greater than zero). Without any query,
+it retains the existing global broadcast and `queued N\n` response. With
+`?map_index=42`, it queues the same trimmed system `CHAT_TYPE_NOTICE` only to
+currently connected, non-zero-HP `GAME` players on effective map 42, and
+returns the actual queued count. No matching players yields `queued 0\n`.
+Stored character map index 0 resolves to bootstrap map 1 via the existing
+`BootstrapTopology.EffectiveMapIndex` (the same local visibility topology);
+request map index 0 is invalid, not an alias for global or map 1.
+
+Malformed, empty, repeated, unknown or out-of-range query parameters return
+`400` without delivery; a mux without the map callback also rejects the
+scoped request instead of falling back to global. Method, loopback, body-size,
+UTF-8 and empty-body checks remain in force. The map callback is explicitly
+wired by `gamed`; other mux constructors keep global-only behavior. This is
+one process-local map policy, not channel routing, scheduling or a remote API.
+
 ## Scope notes
 
 The runtime still exposes a direct broadcast primitive, but the first operator-facing surface is now frozen too:
@@ -67,11 +86,12 @@ This slice freezes:
 - canonical trimmed notice text with no `Name : ` prefix
 - client-originated `CHAT_TYPE_NOTICE` remaining rejected
 - runtime-owned connected-target selection through `internal/worldruntime.Scopes.ConnectedTargets()`, while keeping the current bootstrap-global notice policy unchanged
-- one narrow dead-owner carve-out for that same global notice policy: still-connected zero-HP owners reached through the current practice-mob retaliation loop are skipped as recipients
+- opt-in map-scoped notices on the same loopback endpoint (`?map_index=N`), using the existing effective-map topology and keeping the unscoped global notice default
+- one narrow dead-owner carve-out for both global and map-scoped notices: still-connected zero-HP owners reached through the current practice-mob retaliation loop are skipped as recipients
 
 It does not yet freeze:
 - GM/operator notice tooling beyond the local-only ops endpoint
 - remote admin HTTP/CLI notice triggers
-- map/channel-scoped notice policies
+- map-scoped notice policy is now limited to the opt-in local `map_index` request described above; channel-scoped notice policies remain deferred
 - timed, scheduled, or event-driven notice generation
 - localization or template systems

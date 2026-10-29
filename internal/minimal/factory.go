@@ -830,6 +830,15 @@ func (r *gameRuntime) BroadcastNotice(message string) int {
 	return r.sharedWorld.EnqueueSystemNotice(message)
 }
 
+// BroadcastNoticeForMap targets the same effective local map as world visibility.
+// The unscoped BroadcastNotice remains bootstrap-global.
+func (r *gameRuntime) BroadcastNoticeForMap(mapIndex uint32, message string) int {
+	if r == nil || r.sharedWorld == nil {
+		return 0
+	}
+	return r.sharedWorld.EnqueueSystemNoticeForMap(mapIndex, message)
+}
+
 func (r *gameRuntime) MigrationStatus() (dbmigrations.Plan, error) {
 	if r != nil && strings.TrimSpace(r.config.DatabaseDriver) != "" {
 		db, err := sql.Open(strings.TrimSpace(r.config.DatabaseDriver), strings.TrimSpace(r.config.DatabaseDSN))
