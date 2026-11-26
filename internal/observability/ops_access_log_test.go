@@ -228,6 +228,83 @@ func TestAccessLogSamplerMissingConfigKeepsEveryRequestLine(t *testing.T) {
 	}
 }
 
+func TestAccessLogSamplerIntervalFieldOnlyOnEmittedPositiveSampledLines(t *testing.T) {
+	SetAccessLogSampler(nil)
+	t.Cleanup(func() { SetAccessLogSampler(nil) })
+	var buf bytes.Buffer
+	logger := NewServiceLogger("gamed", &buf)
+	calls := 0
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{"secret":"response-body"}`)
+	})
+	handler := WrapOpsAccessLog(logger, next)
+	hit := func() {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/local/build-info?token=should-not-log", strings.NewReader("request-body"))
+		req.RemoteAddr = "127.0.0.1:9"
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated || rec.Body.String() != `{"secret":"response-body"}` {
+			t.Fatalf("handler changed: code=%d body=%q", rec.Code, rec.Body.String())
+		}
+	}
+
+	// Neither unset nor invalid intervals add a key or suppress an access line.
+	for _, sampler := range []*AccessLogSampler{nil, {Every: 0}, {Every: -time.Second}} {
+		SetAccessLogSampler(sampler)
+		hit()
+	}
+	lines := accessLogLines(t, buf.Bytes())
+	if len(lines) != 3 {
+		t.Fatalf("disabled sampler: %d lines, want 3", len(lines))
+	}
+	for _, line := range lines {
+		if _, ok := line["sampler_interval"]; ok {
+			t.Fatalf("disabled sampler added interval: %v", line)
+		}
+	}
+	baseline := lines[0]
+	for _, interval := range []time.Duration{250 * time.Millisecond, 3 * time.Second} {
+		before := len(lines)
+		SetAccessLogSampler(&AccessLogSampler{Every: interval})
+		hit()
+		hit() // sampled out
+		lines = accessLogLines(t, buf.Bytes())
+		if len(lines) != before+1 {
+			t.Fatalf("interval %s: %d lines, want %d", interval, len(lines), before+1)
+		}
+		line := lines[len(lines)-1]
+		if got := line["sampler_interval"]; got != interval.String() {
+			t.Fatalf("interval field = %v, want %q", got, interval.String())
+		}
+		if len(line) != len(baseline)+1 {
+			t.Fatalf("interval changed access line shape beyond additive field: %v vs %v", line, baseline)
+		}
+		for key := range baseline {
+			if _, ok := line[key]; !ok {
+				t.Fatalf("sampled line lost %q: %v", key, line)
+			}
+		}
+	}
+	if calls != 7 {
+		t.Fatalf("handler calls = %d, want 7", calls)
+	}
+	if strings.Contains(buf.String(), "should-not-log") || strings.Contains(buf.String(), "request-body") || strings.Contains(buf.String(), "response-body") {
+		t.Fatalf("access line leaked request/response data: %s", buf.String())
+	}
+	SetAccessLogSampler(nil)
+	hit()
+	lines = accessLogLines(t, buf.Bytes())
+	if len(lines) != 6 {
+		t.Fatalf("disabling sampler: %d lines, want 6", len(lines))
+	}
+	if _, ok := lines[len(lines)-1]["sampler_interval"]; ok {
+		t.Fatalf("disabling sampler retained interval: %v", lines[len(lines)-1])
+	}
+}
+
 func TestAccessLogSamplerDropsLinesInsideInterval(t *testing.T) {
 	SetAccessLogSampler(&AccessLogSampler{Every: time.Hour})
 	t.Cleanup(func() { SetAccessLogSampler(nil) })
@@ -257,6 +334,9 @@ func TestAccessLogSamplerDropsLinesInsideInterval(t *testing.T) {
 	}
 	if got := lines[0]["path"]; got != "/local/notice" {
 		t.Fatalf("path = %v, want /local/notice", got)
+	}
+	if got := lines[0]["sampler_interval"]; got != "1h0m0s" {
+		t.Fatalf("sampler_interval = %v, want 1h0m0s", got)
 	}
 	if strings.Contains(buf.String(), "token=") || strings.Contains(buf.String(), "secret-body") || strings.Contains(buf.String(), "Every") {
 		t.Fatalf("sampled line leaked request or config: %s", buf.String())
@@ -331,6 +411,9 @@ func TestAccessLogSamplerKeepsMetricsAndTraceOnDroppedLines(t *testing.T) {
 
 	if got := len(accessLogLines(t, buf.Bytes())); got != 1 {
 		t.Fatalf("lines = %d, want 1", got)
+	}
+	if got := accessLogLines(t, buf.Bytes())[0]["sampler_interval"]; got != "1h0m0s" {
+		t.Fatalf("sampler_interval = %v, want 1h0m0s", got)
 	}
 	snap := metrics.Snapshot()
 	if snap.LocalRequestsTotal != 3 || snap.LocalRequestsByPath["/local/build-info"] != 3 {

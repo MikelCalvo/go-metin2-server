@@ -81,6 +81,7 @@ Access-line fields (in addition to the process-logger baseline attrs):
 | `remote_addr` | request `RemoteAddr` |
 | `status` | response status (`200` when the handler wrote a body without `WriteHeader`) |
 | `duration_ms` | wall-clock milliseconds spent in the handler |
+| `sampler_interval` | positive `AccessLogSampler.Every` as a Go duration string (for example `250ms`); present only on emitted lines while sampling is configured |
 
 Rules:
 
@@ -93,7 +94,9 @@ Rules:
    `SetAccessLogSampler` interval is opt-in and disabled by default: the first
    line is kept and later lines inside that window are dropped. Dropped lines
    do not skip the request, the `/local/metrics` count, or the in-memory span.
-   The interval itself is never written into the line.
+   Only emitted lines under a positive sampler include `sampler_interval`,
+   derived from the configured duration. No interval is invented for unset,
+   zero, or negative config; the existing every-request line shape is unchanged.
 6. `authd` and `gamed` choose this sampler once at startup with
    `ConfigureStartupAccessLogSampler(serviceName)` before serving requests.
    The service-specific `METIN2_AUTHD_ACCESS_LOG_SAMPLE_INTERVAL` or
@@ -102,8 +105,8 @@ Rules:
    disables the sampler (including a blank service override). A positive Go
    duration such as `1s` or `250ms` enables a single process-wide interval;
    zero, negative, or malformed values refuse startup with the constant
-   `access log sampler interval refused` without echoing the value. No sampler
-   setting or dropped-line count appears in the access line. No per-path or
+   `access log sampler interval refused` without echoing the value. No
+   dropped-line count appears in the access line. No per-path or
    probabilistic choice is made. The sampler only changes the access line,
    never the handler, metrics, or trace.
 
@@ -112,6 +115,9 @@ Example safe access line shape:
 ```json
 {"time":"...","level":"INFO","msg":"ops local request","service":"gamed","version":"v0.1.0","commit":"abcdef012345","build_date":"2026-08-20T15:30:45Z","method":"GET","path":"/local/build-info","remote_addr":"127.0.0.1:54321","status":200,"duration_ms":1}
 ```
+
+With a positive `250ms` sampler, an emitted line has the same metadata plus
+`"sampler_interval":"250ms"`; sampled-out requests have no access line.
 
 ## Loopback `/local/metrics` companion
 
@@ -324,7 +330,7 @@ Example safe trace shape with no exporter configured:
 - logging `/healthz` or `/debug/pprof/*`
 - request/response body capture or query-string logging
 - ~~turning the access-line sampler on from `authd` / `gamed` startup~~ Done for one opt-in interval chosen at startup; missing config retains the every-request line.
-- probabilistic sampling, per-path budgets, or writing the sampler interval into the access line
+- probabilistic sampling or per-path budgets
 - changing the migration CLI redaction helper beyond its existing DSN scrub
 - remote admin authentication or token auth
 - ~~packaging that installs enabled `newsyslog` / `logrotate` entries by default~~ Done for one print-only, disabled-by-default packaging note beside the already-owned fragments (`contrib/lab-daemons/newsyslog.conf.d/metin2-log-rotation.pkg-message.sample`, `installed=NO`, `authd_enable="NO"` / `gamed_enable="NO"`). See [Print-only rotation packaging note](lab-daemon-unit-samples.md#print-only-rotation-packaging-note). A FreeBSD port / `pkg` that installs those entries enabled, or starts daemons, stays deferred.

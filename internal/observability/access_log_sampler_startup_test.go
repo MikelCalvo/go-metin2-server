@@ -85,7 +85,10 @@ func TestStartupAccessLogSamplerSharedIntervalAndServiceOverride(t *testing.T) {
 		if calls != 5 || len(lines) != 1 || lines[0]["path"] != "/local/notice" {
 			t.Fatalf("%s: calls=%d lines=%v", tc.service, calls, lines)
 		}
-		for _, forbidden := range []string{"private", "token=", "sample", tc.gap.String(), "pprof", "healthz"} {
+		if got := lines[0]["sampler_interval"]; got != tc.gap.String() {
+			t.Fatalf("%s sampler_interval = %v, want %s", tc.service, got, tc.gap)
+		}
+		for _, forbidden := range []string{"private", "token=", "pprof", "healthz"} {
 			if strings.Contains(stdout.String(), forbidden) {
 				t.Fatalf("%s access line leaked %q", tc.service, forbidden)
 			}

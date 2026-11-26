@@ -36,7 +36,7 @@ var (
 
 // SetAccessLogSampler accepts only a positive interval. A nil argument or a
 // non-positive Every clears the sampler. Missing config stays on the current
-// every-request access line. The interval is never written into a log record.
+// every-request access line. Emitted sampled lines include the configured gap.
 //
 // Setting the flag does not attach a logger. Only WrapOpsAccessLog consults
 // it, and only for the JSON access line.
@@ -64,16 +64,24 @@ func AccessLogSamplerConfigured() bool {
 // allows the first line and then at most one line per interval. The decision
 // does not look at the request.
 func accessLogLineAllowed(now time.Time) bool {
+	allowed, _ := accessLogLineDecision(now)
+	return allowed
+}
+
+// accessLogLineDecision snapshots the allowance and its configured interval
+// under one lock so a concurrent reconfiguration cannot label an emitted line
+// with a different interval (or invent one for an unsampled line).
+func accessLogLineDecision(now time.Time) (bool, time.Duration) {
 	accessLogSampleMu.Lock()
 	defer accessLogSampleMu.Unlock()
 	if accessLogSampleEvery <= 0 {
-		return true
+		return true, 0
 	}
 	if !accessLogSampleLastEmit.IsZero() && now.Sub(accessLogSampleLastEmit) < accessLogSampleEvery {
-		return false
+		return false, 0
 	}
 	accessLogSampleLastEmit = now
-	return true
+	return true, accessLogSampleEvery
 }
 
 // WrapOpsAccessLog returns an http.Handler that emits one metadata-only JSON
@@ -134,7 +142,11 @@ func WrapOpsAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 		if recordTrace {
 			trace.FinishSpan(ctx, recorder.status)
 		}
-		if logger == nil || !accessLogLineAllowed(time.Now()) {
+		if logger == nil {
+			return
+		}
+		allowed, interval := accessLogLineDecision(time.Now())
+		if !allowed {
 			return
 		}
 		elapsed := time.Since(started)
@@ -143,13 +155,17 @@ func WrapOpsAccessLog(logger *slog.Logger, next http.Handler) http.Handler {
 			durationMS = 0
 		}
 
-		logger.Info("ops local request",
+		attrs := []any{
 			"method", r.Method,
 			"path", r.URL.Path,
 			"remote_addr", r.RemoteAddr,
 			"status", recorder.status,
 			"duration_ms", durationMS,
-		)
+		}
+		if interval > 0 {
+			attrs = append(attrs, "sampler_interval", interval.String())
+		}
+		logger.Info("ops local request", attrs...)
 	})
 }
 

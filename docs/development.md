@@ -30,6 +30,12 @@ curl -sS http://127.0.0.1:6060/local/build-info
 ./bin/metin2-migrate version
 ```
 
+The metadata-only `/local/*` JSON access line includes `sampler_interval` as a
+Go duration string only when a positive access-log interval is configured and
+that line is emitted. With no sampler, every request keeps the old line shape;
+sampled-out requests still run and still contribute to metrics and traces. See
+[production observability](workflow/production-observability.md#loopback-local-access-logs).
+
 ## Docker
 
 Build the default lightweight runtime image:
